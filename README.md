@@ -6,13 +6,13 @@ BCIT **Business Consulting Project** — a **MerchantWerx** onboarding demo for 
 
 - **Merchant portal** — Application flow, agreements, status, and AI underwriting integration.
 - **Admin portal** — Review submitted applications and recommendations in a demo environment.
-- **Gemini** — Uses Google’s Gemini API for AI-powered underwriting features (requires an API key).
+- **AI underwriting** — Uses the [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) via the [AI SDK](https://sdk.vercel.ai/) (`generateObject`). Set `AI_GATEWAY_API_KEY` (or OIDC on Vercel).
 
 ## Stack
 
 - React 19 · TypeScript · Vite 6  
 - Tailwind CSS 4 · Lucide icons · Sonner toasts  
-- `@google/genai` for Gemini
+- `ai` + `zod` for structured outputs through the AI Gateway
 
 ## Prerequisites
 
@@ -30,18 +30,20 @@ Create a `.env` or `.env.local` file in the project root (see `.env.example`):
 
 | Variable | Description |
 |----------|-------------|
-| `GEMINI_API_KEY` | **Required** for AI underwriting. Stored server-side only (`api/underwrite` on Vercel, or Vite dev middleware locally). **Not** exposed in the frontend bundle. |
+| `AI_GATEWAY_API_KEY` | **Required for local `npm run dev`** (unless you use `vercel dev` with OIDC). On Vercel you can use this key **or** [OIDC](https://vercel.com/docs/ai-gateway#using-the-ai-gateway-with-a-vercel-oidc-token) without a key. Never exposed in the frontend bundle. |
+| `AI_GATEWAY_MODEL` | Optional. Gateway model id, e.g. `openai/gpt-5.4`, `anthropic/claude-sonnet-4.6`. Defaults to `openai/gpt-4o`. |
 | `APP_URL` | Optional; base URL when deployed (e.g. Cloud Run). |
 
 Example:
 
 ```env
-GEMINI_API_KEY=your_key_here
+AI_GATEWAY_API_KEY=your_vercel_ai_gateway_key
+# AI_GATEWAY_MODEL=openai/gpt-5.4
 ```
 
-On **Vercel**, add the same variable under **Project → Settings → Environment Variables** (Production / Preview). Redeploy after changing it.
+On **Vercel**, add `AI_GATEWAY_API_KEY` under **Project → Settings → Environment Variables** if you are not relying on OIDC alone. Redeploy after changing variables.
 
-Local **`npm run dev`**: put the key in `.env` or `.env.local`; the dev server handles `POST /api/underwrite` without exposing the key to the browser.
+Local **`npm run dev`**: set `AI_GATEWAY_API_KEY` in `.env` or `.env.local`; the Vite dev server proxies `POST /api/underwrite` on the server only.
 
 ## Scripts
 

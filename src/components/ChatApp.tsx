@@ -450,12 +450,23 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
         recommendedProcessor?: string;
         reason?: string;
         documentSummary?: string;
+        verificationStatus?: string;
+        verificationNotes?: string[];
         error?: string;
       };
 
       if (!apiRes.ok) {
         throw new Error(payload.error || `Request failed (${apiRes.status})`);
       }
+
+      const vStatus = payload.verificationStatus;
+      const verificationStatus =
+        vStatus === 'Verified' || vStatus === 'Discrepancies Found' || vStatus === 'Unverified'
+          ? vStatus
+          : 'Unverified';
+      const verificationNotes = Array.isArray(payload.verificationNotes)
+        ? payload.verificationNotes.filter((n): n is string => typeof n === 'string')
+        : [];
 
       setAiRecommendation({
         riskScore: payload.riskScore ?? 50,
@@ -464,6 +475,8 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
         recommendedProcessor: payload.recommendedProcessor ?? '',
         reason: payload.reason ?? '',
         documentSummary: payload.documentSummary ?? '',
+        verificationStatus,
+        verificationNotes,
       });
       setIsFinished(true);
       onFinish();

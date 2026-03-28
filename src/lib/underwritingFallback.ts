@@ -7,9 +7,11 @@ export type UnderwritingDisplayResult = {
   recommendedProcessor: string;
   reason: string;
   documentSummary: string;
+  verificationStatus: 'Verified' | 'Discrepancies Found' | 'Unverified';
+  verificationNotes: string[];
 };
 
-/** Rule-based fallback when the server-side Gemini call fails or is unavailable. */
+/** Rule-based fallback when the server-side AI underwriting call fails or is unavailable. */
 export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDisplayResult {
   let riskCategory: 'Low' | 'Medium' | 'High' = 'Low';
   let riskScore = 20;
@@ -53,5 +55,7 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
     recommendedProcessor,
     reason,
     documentSummary: 'No document information extracted (Fallback mode)',
+    verificationStatus: 'Unverified',
+    verificationNotes: ['AI underwriting unavailable; verification audit was not performed.'],
   };
 }

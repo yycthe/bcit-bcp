@@ -5,7 +5,7 @@ import type { Connect, Plugin } from 'vite';
 import { defineConfig, loadEnv } from 'vite';
 import { runUnderwriting } from './server/runUnderwriting';
 
-function underwritingDevApi(geminiKey: string | undefined): Plugin {
+function underwritingDevApi(gatewayKey: string | undefined): Plugin {
   return {
     name: 'underwriting-dev-api',
     configureServer(server) {
@@ -22,12 +22,13 @@ function underwritingDevApi(geminiKey: string | undefined): Plugin {
           res.end(JSON.stringify({ error: 'Method not allowed' }));
           return;
         }
-        if (!geminiKey) {
+        if (!gatewayKey?.trim()) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');
           res.end(
             JSON.stringify({
-              error: 'Set GEMINI_API_KEY in .env or .env.local (not exposed to the browser).',
+              error:
+                'Set AI_GATEWAY_API_KEY in .env or .env.local (not exposed to the browser). On Vercel, add it under Environment Variables or rely on OIDC.',
             })
           );
           return;
@@ -60,7 +61,7 @@ function underwritingDevApi(geminiKey: string | undefined): Plugin {
         }
         try {
           const result = await runUnderwriting(
-            geminiKey,
+            gatewayKey.trim(),
             body.merchantData as import('./src/types').MerchantData
           );
           res.statusCode = 200;
@@ -80,7 +81,7 @@ function underwritingDevApi(geminiKey: string | undefined): Plugin {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
-    plugins: [react(), tailwindcss(), underwritingDevApi(env.GEMINI_API_KEY)],
+    plugins: [react(), tailwindcss(), underwritingDevApi(env.AI_GATEWAY_API_KEY)],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

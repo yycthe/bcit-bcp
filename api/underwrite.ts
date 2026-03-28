@@ -48,12 +48,6 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return;
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    sendJson(res, 500, { error: 'Server is not configured with GEMINI_API_KEY' });
-    return;
-  }
-
   const rawBody = await readJsonBody(req);
   const { merchantData } = parseBody(rawBody);
   if (!merchantData || typeof merchantData !== 'object') {
@@ -61,8 +55,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return;
   }
 
+  const gatewayKey = process.env.AI_GATEWAY_API_KEY?.trim() || undefined;
+
   try {
-    const result = await runUnderwriting(apiKey, merchantData as MerchantData);
+    const result = await runUnderwriting(gatewayKey, merchantData as MerchantData);
     sendJson(res, 200, result);
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Underwriting failed';
