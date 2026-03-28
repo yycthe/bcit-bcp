@@ -61,7 +61,11 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const result = await runUnderwriting(gatewayKey, merchantData as MerchantData);
     sendJson(res, 200, result);
   } catch (e) {
+    console.error('[v0] Underwriting API error:', e);
     const message = e instanceof Error ? e.message : 'Underwriting failed';
-    sendJson(res, 500, { error: message });
+    const stack = e instanceof Error ? e.stack : undefined;
+    console.error('[v0] Error message:', message);
+    console.error('[v0] Error stack:', stack);
+    sendJson(res, 500, { error: message, details: stack });
   }
 }
