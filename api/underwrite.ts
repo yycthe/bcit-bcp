@@ -508,4 +508,8 @@ export async function POST(request: Request): Promise<Response> {
   }
 }
 
-export default POST;
+export default {
+  async fetch(request: Request) {
+    return POST(request);
+  },
+};
