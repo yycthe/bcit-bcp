@@ -3,7 +3,29 @@ import { MerchantData, FileData } from '@/src/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
 import { MerchantView } from './MerchantPortal';
-import { CheckCircle2, AlertCircle, Edit2, FileText } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Edit2, Eye } from 'lucide-react';
+import { toast } from 'sonner';
+
+function openUploadedFileInNewTab(doc: FileData) {
+  try {
+    const raw = doc.data.replace(/^data:[^;]+;base64,/, '');
+    const binary = atob(raw);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: doc.mimeType || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!win) {
+      URL.revokeObjectURL(url);
+      toast.error('Pop-up blocked. Allow pop-ups for this site to view the file.');
+      return;
+    }
+    win.addEventListener('beforeunload', () => URL.revokeObjectURL(url));
+    setTimeout(() => URL.revokeObjectURL(url), 600_000);
+  } catch {
+    toast.error('Could not open this file.');
+  }
+}
 
 interface Props {
   data: MerchantData;
@@ -152,16 +174,39 @@ export function ReviewPage({ data, documents, setCurrentView, onEdit, onSubmit }
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-lg">Uploaded Documents</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => onEdit('idUpload')}><FileText className="w-4 h-4" /></Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              title="Edit document uploads in Intake Assistant"
+              aria-label="Edit document uploads in Intake Assistant"
+              onClick={() => onEdit('idUpload')}
+            >
+              <Edit2 className="w-4 h-4" />
+            </Button>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {documents.length === 0 ? (
               <p className="text-slate-500 italic">No documents uploaded.</p>
             ) : (
               documents.map(doc => (
-                <div key={doc.id} className="flex items-center justify-between border-b pb-2 last:border-0 last:pb-0">
-                  <span className="truncate max-w-[200px] text-slate-700">{doc.name}</span>
-                  <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 capitalize">{doc.documentType?.replace(/([A-Z])/g, ' $1').trim()}</span>
+                <div key={doc.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
+                  <span className="truncate min-w-0 text-slate-700">{doc.name}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 capitalize max-w-[100px] truncate">
+                      {doc.documentType?.replace(/([A-Z])/g, ' $1').trim()}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1"
+                      onClick={() => openUploadedFileInNewTab(doc)}
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      View
+                    </Button>
+                  </div>
                 </div>
               ))
             )}
