@@ -1,11 +1,11 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import type { Connect, Plugin } from 'vite';
+import type { Plugin } from 'vite';
 import { defineConfig, loadEnv } from 'vite';
-import { resolveXaiApiKey, runUnderwriting } from './server/runUnderwriting';
+import { POST as underwritePost } from './api/underwrite';
 
-function underwritingDevApi(env: Record<string, string>): Plugin {
+function underwritingDevApi(): Plugin {
   return {
     name: 'underwriting-dev-api',
     configureServer(server) {
@@ -20,17 +20,6 @@ function underwritingDevApi(env: Record<string, string>): Plugin {
           res.setHeader('Allow', 'POST');
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ error: 'Method not allowed' }));
-          return;
-        }
-        if (!resolveXaiApiKey()) {
-          res.statusCode = 500;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(
-            JSON.stringify({
-              error:
-                'Set XAI_API_KEY or an env var ending in _XAI_API_KEY in .env / .env.local (never VITE_* — not exposed to the browser).',
-            })
-          );
           return;
         }
         const chunks: Buffer[] = [];
@@ -60,10 +49,20 @@ function underwritingDevApi(env: Record<string, string>): Plugin {
           return;
         }
         try {
-          const result = await runUnderwriting(body.merchantData as import('./src/types').MerchantData);
-          res.statusCode = 200;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify(result));
+          const origin = `http://${req.headers.host ?? 'localhost:3000'}`;
+          const request = new Request(new URL('/api/underwrite', origin), {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          });
+          const response = await underwritePost(request);
+          res.statusCode = response.status;
+          response.headers.forEach((value, key) => {
+            res.setHeader(key, value);
+          });
+          res.end(await response.text());
         } catch (e) {
           const message = e instanceof Error ? e.message : 'Underwriting failed';
           res.statusCode = 500;
@@ -89,7 +88,7 @@ export default defineConfig(({ mode }) => {
     }
   }
   return {
-    plugins: [react(), tailwindcss(), underwritingDevApi(env)],
+    plugins: [react(), tailwindcss(), underwritingDevApi()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

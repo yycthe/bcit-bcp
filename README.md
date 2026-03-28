@@ -12,7 +12,7 @@ BCIT **Business Consulting Project** — a **MerchantWerx** onboarding demo for 
 
 - React 19 · TypeScript · Vite 6  
 - Tailwind CSS 4 · Lucide icons · Sonner toasts  
-- xAI REST + `zod` for structured validation  
+- xAI REST via `api/underwrite.ts`  
 - **[xAI REST / message format reference](docs/xai-api.md)** (Chat Completions, Files + Responses, structured outputs)  
 - **[Codex / AI agent handoff: architecture + Vercel + xAI](docs/CODEX_HANDOFF_VERCEL_XAI.md)** — copy to another tool to harden “deploy and run”
 
@@ -26,7 +26,7 @@ BCIT **Business Consulting Project** — a **MerchantWerx** onboarding demo for 
 npm install
 ```
 
-Dependencies already include **`@ai-sdk/xai`**, **`ai`**, and **`dotenv`**. You do **not** need the separate **`openai`** npm package for this app (xAI is used via `@ai-sdk/xai`).
+This project calls xAI directly from the server-side API route. Secrets stay server-only.
 
 ## Deploy on Vercel (GitHub → auto deploy)
 
@@ -47,7 +47,7 @@ npm install
 npm run dev       # or: npm run smoke:xai
 ```
 
-After `vercel env pull`, `dotenv` + `.env.local` match the Vercel / xAI docs flow. This app uses **`resolveXaiApiKey()`** so **prefixed** `*_XAI_API_KEY` values work, not only `XAI_API_KEY`.
+After `vercel env pull`, `.env.local` can be used for the smoke test and local dev middleware. The project accepts both `XAI_API_KEY` and prefixed `*_XAI_API_KEY`.
 
 ## Environment
 
@@ -81,7 +81,7 @@ Local **`npm run dev`**: underwriting calls **`POST /api/underwrite`** (Vite dev
 | `npm run build` | Production build to `dist/`. |
 | `npm run preview` | Preview the production build locally. |
 | `npm run lint` | Typecheck with `tsc --noEmit`. |
-| `npm run smoke:xai` | Quick xAI `streamText` check (needs `.env.local` or env vars). |
+| `npm run smoke:xai` | Quick xAI Responses API check (needs `.env.local` or env vars). |
 
 ## Deployment checklist
 

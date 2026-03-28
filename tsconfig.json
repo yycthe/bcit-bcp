@@ -25,7 +25,6 @@
   },
   "include": [
     "api",
-    "server",
     "src",
     "scripts",
     "vite.config.ts"

@@ -1,8 +1,23 @@
 import dotenv from 'dotenv';
-import { resolveXaiApiKey } from '../server/runUnderwriting';
 
 dotenv.config({ path: '.env.local' });
 dotenv.config();
+
+function resolveXaiApiKey(): string | undefined {
+  const direct = process.env.XAI_API_KEY?.trim();
+  if (direct) return direct;
+
+  const prefixed = Object.keys(process.env)
+    .filter((key) => key.endsWith('_XAI_API_KEY'))
+    .sort();
+
+  for (const key of prefixed) {
+    const value = process.env[key]?.trim();
+    if (value) return value;
+  }
+
+  return undefined;
+}
 
 const apiKey = resolveXaiApiKey();
 if (!apiKey) {

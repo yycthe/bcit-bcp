@@ -18,7 +18,7 @@ Reasoning models: xAI examples use **long HTTP client timeouts** (e.g. 3600s) be
 
 **`POST /v1/chat/completions`**
 
-Used by **Vercel AI SDK** `generateObject` / `generateText` with `@ai-sdk/xai` → OpenAI-compatible chat.
+Legacy xAI endpoint shape. This repo no longer uses the AI SDK path at runtime.
 
 ### Text-only
 
@@ -81,7 +81,7 @@ Same endpoint; `system` / `user` may use an array of parts:
 
 ### Structured outputs (`response_format`)
 
-xAI supports **JSON schema** style structured output on chat completions (see [Structured outputs](https://docs.x.ai/docs/guides/structured-outputs)). The AI SDK’s **`generateObject` + Zod** builds the appropriate `response_format` / tool-use flow for you.
+xAI supports **JSON schema** style structured output on chat completions (see [Structured outputs](https://docs.x.ai/docs/guides/structured-outputs)). This repo now uses the Responses API directly instead of the AI SDK helper flow.
 
 ---
 
@@ -131,16 +131,16 @@ Response shape is **`object: "response"`** with an **`output`** array (not the s
 
 | Concern | What we do |
 |--------|------------|
-| Endpoint | **Responses API via AI SDK provider** (`createXai({ apiKey }).responses(modelId)`) for underwriting generation. |
-| Structured underwriting JSON | Zod schema → SDK structured object output (aligned with xAI structured outputs). |
-| Images | SDK **`image`** parts on the Responses path; if multimodal fails, the server retries without images. |
-| PDFs | Default: **text extracted locally** (`unpdf`) and appended to the prompt. This intentionally avoids relying on raw PDF chat/file parts. If you need strict xAI document-search behavior, implement the official **Files + `input_file` + `/v1/responses`** flow from section 2. |
-| Large browser uploads on Vercel | Because Vercel Functions enforce a **4.5 MB** request-body limit, the client automatically falls back to **metadata-only** document objects when the JSON payload would be too large. The prompt still includes an uploaded-document inventory so the model knows which files were supplied, but file contents are unavailable in that mode. |
+| Endpoint | Direct `fetch` calls from **`api/underwrite.ts`** to xAI **Files** and **Responses** APIs. |
+| Structured underwriting JSON | Prompted JSON contract plus server-side normalization in **`api/underwrite.ts`**. |
+| Images | Images are sent as `input_image` parts when they fit the serverless budget. |
+| PDFs | PDFs are uploaded through xAI **Files** and referenced via `input_file`, but the API now enforces attachment count and size budgets to avoid Vercel timeouts. |
+| Large browser uploads on Vercel | The client falls back to **metadata-only** document objects when the request would be too large, and the API can also downgrade oversized attachments to metadata-only. |
 
-Environment variables for keys: `XAI_API_KEY` or any `*_XAI_API_KEY` (see `server/runUnderwriting.ts`).
+Environment variables for keys: `XAI_API_KEY` or any `*_XAI_API_KEY` (see `api/underwrite.ts`).
 
 ---
 
 ## 4. TypeScript mirrors (code)
 
-See `server/xaiApiReference.ts` for **non-runtime** type shapes that mirror the JSON above (for editors and refactors).
+The runtime implementation lives in `api/underwrite.ts`.
