@@ -4,7 +4,7 @@ import { getMerchantDocumentChecklist } from '@/src/lib/documentChecklist';
 import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
 import { Badge } from '@/src/components/ui/badge';
-import { MerchantView } from './MerchantPortal';
+import type { MerchantView } from './MerchantPortal';
 import { CheckCircle2, AlertCircle, Edit2, Eye, FileWarning } from 'lucide-react';
 import { toast } from 'sonner';
 

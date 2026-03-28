@@ -60,13 +60,6 @@ export function MerchantPortal({
     if (appStatus === 'approved' && currentView === 'status') setCurrentView('agreement');
   }, [appStatus, currentView]);
 
-  const handleIntakeComplete = (data: MerchantData, docs: FileData[], aiResult: any) => {
-    setMerchantData(data);
-    setDocuments(docs);
-    setAiRecommendation(aiResult);
-    setCurrentView('review');
-  };
-
   const navItems = [
     { id: 'intake', label: 'Intake Assistant', icon: MessageSquare },
     { id: 'review', label: 'Review Application', icon: FileCheck },
