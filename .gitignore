@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local-only Vercel documentation mirror (not pushed to GitHub)
+vercel-docs/
+download-vercel-docs.sh
