@@ -3,9 +3,9 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import type { Connect, Plugin } from 'vite';
 import { defineConfig, loadEnv } from 'vite';
-import { runUnderwriting } from './server/runUnderwriting';
+import { resolveXaiApiKey, runUnderwriting } from './server/runUnderwriting';
 
-function underwritingDevApi(gatewayKey: string | undefined): Plugin {
+function underwritingDevApi(env: Record<string, string>): Plugin {
   return {
     name: 'underwriting-dev-api',
     configureServer(server) {
@@ -22,13 +22,15 @@ function underwritingDevApi(gatewayKey: string | undefined): Plugin {
           res.end(JSON.stringify({ error: 'Method not allowed' }));
           return;
         }
-        if (!gatewayKey?.trim()) {
+        const hasXai = !!resolveXaiApiKey();
+        const hasGateway = !!env.AI_GATEWAY_API_KEY?.trim();
+        if (!hasXai && !hasGateway) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');
           res.end(
             JSON.stringify({
               error:
-                'Set AI_GATEWAY_API_KEY in .env or .env.local (not exposed to the browser). On Vercel, add it under Environment Variables or rely on OIDC.',
+                'Set XAI_API_KEY or *_XAI_API_KEY (Vercel xAI integration), or AI_GATEWAY_API_KEY in .env / .env.local (not exposed to the browser).',
             })
           );
           return;
@@ -60,10 +62,7 @@ function underwritingDevApi(gatewayKey: string | undefined): Plugin {
           return;
         }
         try {
-          const result = await runUnderwriting(
-            gatewayKey.trim(),
-            body.merchantData as import('./src/types').MerchantData
-          );
+          const result = await runUnderwriting(body.merchantData as import('./src/types').MerchantData);
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify(result));
@@ -80,8 +79,19 @@ function underwritingDevApi(gatewayKey: string | undefined): Plugin {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
+  // Populate process.env for resolveXaiApiKey / AI_GATEWAY in the dev middleware (loadEnv does not set process.env by default).
+  for (const key of ['XAI_API_KEY', 'AI_GATEWAY_API_KEY', 'AI_MODEL', 'XAI_MODEL', 'AI_GATEWAY_MODEL'] as const) {
+    if (env[key] !== undefined && env[key] !== '') {
+      process.env[key] = env[key];
+    }
+  }
+  for (const k of Object.keys(env)) {
+    if (k.endsWith('_XAI_API_KEY') && env[k]) {
+      process.env[k] = env[k];
+    }
+  }
   return {
-    plugins: [react(), tailwindcss(), underwritingDevApi(env.AI_GATEWAY_API_KEY)],
+    plugins: [react(), tailwindcss(), underwritingDevApi(env)],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

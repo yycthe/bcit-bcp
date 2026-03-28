@@ -1,4 +1,5 @@
 import { createGateway, generateObject } from 'ai';
+import { createXai } from '@ai-sdk/xai';
 import { z } from 'zod';
 import type { MerchantData } from '../src/types';
 
@@ -27,6 +28,11 @@ const underwritingSchema = z.object({
 });
 
 const ALLOWED_PROCESSORS = ['Stripe', 'Adyen', 'Nuvei', 'HighRiskPay'] as const;
+
+/** Default xAI model: low-cost, current-gen; supports multimodal/file-style inputs via AI SDK. Override with XAI_MODEL or AI_MODEL. */
+const DEFAULT_XAI_MODEL = 'grok-3-mini-latest';
+
+const DEFAULT_GATEWAY_MODEL = 'google/gemini-2.0-flash';
 
 function normalizeRiskCategory(value: unknown, riskScore: number): 'Low' | 'Medium' | 'High' {
   if (value === 'Low' || value === 'Medium' || value === 'High') {
@@ -92,31 +98,36 @@ Based on the profile and the provided documents (if any), perform a comprehensiv
 Return the result as structured fields matching the required schema exactly.`;
 }
 
-/** @param gatewayApiKey Optional; when empty, AI SDK uses AI_GATEWAY_API_KEY from env or Vercel OIDC. */
-export async function runUnderwriting(
-  gatewayApiKey: string | undefined,
-  finalData: MerchantData
-): Promise<UnderwritingApiResult> {
-  const gateway = createGateway(
-    gatewayApiKey !== undefined && gatewayApiKey.length > 0 ? { apiKey: gatewayApiKey } : {}
-  );
+/**
+ * xAI API key: explicit XAI_API_KEY, or any env var from Vercel's xAI integration (suffix `_XAI_API_KEY`).
+ */
+export function resolveXaiApiKey(): string | undefined {
+  const direct = process.env.XAI_API_KEY?.trim();
+  if (direct) return direct;
+  const prefixed = Object.keys(process.env)
+    .filter((k) => k.endsWith('_XAI_API_KEY'))
+    .sort();
+  for (const k of prefixed) {
+    const v = process.env[k]?.trim();
+    if (v) return v;
+  }
+  return undefined;
+}
 
-  const modelId =
-    (typeof process.env.AI_MODEL === 'string' && process.env.AI_MODEL.trim()) ||
-    (typeof process.env.AI_GATEWAY_MODEL === 'string' && process.env.AI_GATEWAY_MODEL.trim()) ||
-    'google/gemini-3-flash';
+// AI SDK v5 parts: ImagePart / FilePart use `mediaType` (not `mimeType`).
+type UserContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; image: Uint8Array; mediaType?: string }
+  | { type: 'file'; data: Uint8Array; mediaType: string; filename?: string };
 
+function buildUserContent(finalData: MerchantData): UserContentPart[] {
   const promptText = buildPromptText(finalData);
-
-  type UserContentPart =
-    | { type: 'text'; text: string }
-    | { type: 'image'; image: Uint8Array; mimeType?: string }
-    | { type: 'file'; data: Uint8Array; mimeType: string };
-
   const content: UserContentPart[] = [{ type: 'text', text: promptText }];
 
   for (const key of FILE_KEYS) {
-    const fileData = finalData[key as keyof MerchantData] as { mimeType?: string; data?: string } | null;
+    const fileData = finalData[key as keyof MerchantData] as
+      | { mimeType?: string; data?: string; name?: string }
+      | null;
     if (!fileData?.mimeType || !fileData?.data) continue;
     let bytes: Uint8Array;
     try {
@@ -125,37 +136,76 @@ export async function runUnderwriting(
       continue;
     }
     const mime = fileData.mimeType;
+    const filename = typeof fileData.name === 'string' && fileData.name.trim() ? fileData.name.trim() : undefined;
     if (mime.startsWith('image/')) {
-      content.push({ type: 'image', image: bytes, mimeType: mime });
+      content.push({ type: 'image', image: bytes, mediaType: mime });
     } else {
-      content.push({ type: 'file', data: bytes, mimeType: mime });
+      const filePart: { type: 'file'; data: Uint8Array; mediaType: string; filename?: string } = {
+        type: 'file',
+        data: bytes,
+        mediaType: mime,
+      };
+      if (filename) filePart.filename = filename;
+      content.push(filePart);
     }
   }
+  return content;
+}
+
+function resolveModelForXai(): string {
+  return (
+    (typeof process.env.XAI_MODEL === 'string' && process.env.XAI_MODEL.trim()) ||
+    (typeof process.env.AI_MODEL === 'string' && process.env.AI_MODEL.trim()) ||
+    DEFAULT_XAI_MODEL
+  );
+}
+
+function resolveModelForGateway(): string {
+  return (
+    (typeof process.env.AI_GATEWAY_MODEL === 'string' && process.env.AI_GATEWAY_MODEL.trim()) ||
+    (typeof process.env.AI_MODEL === 'string' && process.env.AI_MODEL.trim()) ||
+    DEFAULT_GATEWAY_MODEL
+  );
+}
+
+export async function runUnderwriting(finalData: MerchantData): Promise<UnderwritingApiResult> {
+  const content = buildUserContent(finalData);
 
   const abortSignal =
     typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-      ? AbortSignal.timeout(60_000)
+      ? AbortSignal.timeout(120_000)
       : undefined;
 
-  console.log('[v0] runUnderwriting called with model:', modelId);
-  console.log('[v0] Content parts count:', content.length);
-  console.log('[v0] Content types:', content.map(c => c.type));
-  console.log('[v0] API Key present:', !!gatewayApiKey || !!process.env.AI_GATEWAY_API_KEY);
+  const xaiKey = resolveXaiApiKey();
+  const gatewayKey = process.env.AI_GATEWAY_API_KEY?.trim();
 
   let object;
   try {
-    const result = await generateObject({
-      model: gateway(modelId),
-      schema: underwritingSchema,
-      messages: [{ role: 'user', content }],
-      abortSignal,
-    });
-    object = result.object;
-    console.log('[v0] AI Response received:', JSON.stringify(object, null, 2));
+    if (xaiKey) {
+      const xai = createXai({ apiKey: xaiKey });
+      const modelId = resolveModelForXai();
+      console.log('[underwrite] xai', modelId, 'contentParts:', content.length);
+      const result = await generateObject({
+        model: xai(modelId),
+        schema: underwritingSchema,
+        messages: [{ role: 'user', content }],
+        abortSignal,
+      });
+      object = result.object;
+    } else {
+      const gateway = createGateway(gatewayKey ? { apiKey: gatewayKey } : {});
+      const modelId = resolveModelForGateway();
+      console.log('[underwrite] gateway', modelId, 'contentParts:', content.length);
+      const result = await generateObject({
+        model: gateway(modelId),
+        schema: underwritingSchema,
+        messages: [{ role: 'user', content }],
+        abortSignal,
+      });
+      object = result.object;
+    }
   } catch (aiError) {
-    console.error('[v0] AI generateObject error:', aiError);
-    console.error('[v0] Error name:', aiError instanceof Error ? aiError.name : 'unknown');
-    console.error('[v0] Error message:', aiError instanceof Error ? aiError.message : String(aiError));
+    console.error('[underwrite] generateObject error:', aiError);
     throw aiError;
   }
 

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { runUnderwriting } from '../server/runUnderwriting';
+import { resolveXaiApiKey, runUnderwriting } from '../server/runUnderwriting';
 import type { MerchantData } from '../src/types';
 
 function sendJson(res: ServerResponse, code: number, data: unknown) {
@@ -55,10 +55,20 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return;
   }
 
-  const gatewayKey = process.env.AI_GATEWAY_API_KEY?.trim() || undefined;
+  const hasXai = !!resolveXaiApiKey();
+  const hasGatewayKey = !!process.env.AI_GATEWAY_API_KEY?.trim();
+  const onVercel = process.env.VERCEL === '1';
+  // On Vercel, AI Gateway can use OIDC without AI_GATEWAY_API_KEY in env.
+  if (!hasXai && !hasGatewayKey && !onVercel) {
+    sendJson(res, 500, {
+      error:
+        'Server is not configured: set XAI_API_KEY or Vercel xAI integration (*_XAI_API_KEY), or AI_GATEWAY_API_KEY (local). On Vercel, OIDC can supply Gateway auth without the key.',
+    });
+    return;
+  }
 
   try {
-    const result = await runUnderwriting(gatewayKey, merchantData as MerchantData);
+    const result = await runUnderwriting(merchantData as MerchantData);
     sendJson(res, 200, result);
   } catch (e) {
     console.error('[v0] Underwriting API error:', e);
