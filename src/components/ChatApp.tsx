@@ -835,6 +835,17 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
   const [inputValue, setInputValue] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!currentQuestion || currentQuestion === 'done') return;
+    const qDef = QUESTIONS[currentQuestion];
+    if (qDef?.type === 'text' || qDef?.type === 'dropdown') {
+      const v = data[currentQuestion as keyof MerchantData];
+      setInputValue(typeof v === 'string' ? v : '');
+    } else {
+      setInputValue('');
+    }
+  }, [currentQuestion]);
   const questionSequence = buildQuestionSequence(data);
   const currentStepIndex = currentQuestion === 'done' ? questionSequence.length : Math.max(questionSequence.indexOf(currentQuestion), 0) + 1;
   const progressPercent = Math.min(100, Math.max(6, Math.round((currentStepIndex / questionSequence.length) * 100)));

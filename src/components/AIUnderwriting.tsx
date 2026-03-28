@@ -1,5 +1,6 @@
 import React from 'react';
 import { MerchantData, FileData } from '@/src/types';
+import type { DocumentChecklistItem } from '@/src/lib/documentChecklist';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/src/components/ui/card';
 import { Badge } from '@/src/components/ui/badge';
 import { Button } from '@/src/components/ui/button';
@@ -12,11 +13,12 @@ interface Props {
   data: MerchantData;
   aiRecommendation: any;
   documents: FileData[];
+  documentChecklist?: DocumentChecklistItem[];
   onApprove?: () => void;
   isApproved?: boolean;
 }
 
-export function AIUnderwriting({ data, aiRecommendation, documents, onApprove, isApproved }: Props) {
+export function AIUnderwriting({ data, aiRecommendation, documents, documentChecklist, onApprove, isApproved }: Props) {
   if (!aiRecommendation) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
@@ -207,6 +209,26 @@ export function AIUnderwriting({ data, aiRecommendation, documents, onApprove, i
               <div className="flex justify-between items-center pt-1"><span className="text-slate-500">Est. Avg Ticket</span> <span className="font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded border border-blue-100">{avgTicketSize}</span></div>
             </CardContent>
           </Card>
+
+          {documentChecklist && documentChecklist.some((d) => !d.present) && (
+            <Card className="border-amber-200 bg-amber-50/60">
+              <CardHeader className="pb-2 border-b border-amber-200/80">
+                <CardTitle className="text-sm text-amber-950">Missing required uploads</CardTitle>
+              </CardHeader>
+              <CardContent className="p-4">
+                <ul className="text-xs text-amber-900 space-y-1">
+                  {documentChecklist
+                    .filter((d) => !d.present)
+                    .map((d) => (
+                      <li key={d.key} className="flex items-center gap-2">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {d.label}
+                      </li>
+                    ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="bg-blue-50 border-blue-100">
             <CardHeader className="pb-3 border-b border-blue-100">

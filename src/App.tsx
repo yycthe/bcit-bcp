@@ -3,15 +3,18 @@ import { Toaster } from 'sonner';
 import { MerchantPortal } from './components/MerchantPortal';
 import { AdminPortal } from './components/AdminPortal';
 import { AITestLab } from './components/AITestLab';
-import { MerchantData, FileData, initialMerchantData, ApplicationStatus } from './types';
+import { MerchantData, FileData, ApplicationStatus } from './types';
+import { demoMerchantData } from './lib/demoMerchantData';
 import { ArrowRightLeft, FlaskConical } from 'lucide-react';
 
 export default function App() {
   const [viewMode, setViewMode] = useState<'merchant' | 'admin' | 'ai-lab'>('merchant');
   const [appStatus, setAppStatus] = useState<ApplicationStatus>('draft');
-  const [merchantData, setMerchantData] = useState<MerchantData>(initialMerchantData);
+  const [merchantData, setMerchantData] = useState<MerchantData>(demoMerchantData);
   const [documents, setDocuments] = useState<FileData[]>([]);
   const [aiRecommendation, setAiRecommendation] = useState<any>(null);
+  /** Shown to merchant while under review (set from Admin). */
+  const [merchantNoticeFromAdmin, setMerchantNoticeFromAdmin] = useState('');
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col">
@@ -65,6 +68,8 @@ export default function App() {
             setDocuments={setDocuments}
             aiRecommendation={aiRecommendation}
             setAiRecommendation={setAiRecommendation}
+            merchantNoticeFromAdmin={merchantNoticeFromAdmin}
+            onDismissMerchantNotice={() => setMerchantNoticeFromAdmin('')}
           />
         ) : viewMode === 'admin' ? (
           <AdminPortal
@@ -73,6 +78,8 @@ export default function App() {
             merchantData={merchantData}
             documents={documents}
             aiRecommendation={aiRecommendation}
+            merchantNoticeFromAdmin={merchantNoticeFromAdmin}
+            setMerchantNoticeFromAdmin={setMerchantNoticeFromAdmin}
           />
         ) : (
           <AITestLab />

@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { AIUnderwriting } from './AIUnderwriting';
 import { ApplicationStatus, MerchantData, FileData } from '@/src/types';
-import { ShieldCheck, LayoutDashboard, Search, Filter, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
-import { Card, CardContent } from '@/src/components/ui/card';
+import { getMerchantDocumentChecklist, buildDefaultDocumentReminder } from '@/src/lib/documentChecklist';
+import { ShieldCheck, LayoutDashboard, Search, Filter, Clock, CheckCircle2, AlertCircle, FileWarning, Send, Trash2 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { Badge } from '@/src/components/ui/badge';
+import { Button } from '@/src/components/ui/button';
+import { toast } from 'sonner';
 
 interface Props {
   appStatus: ApplicationStatus;
@@ -11,6 +14,8 @@ interface Props {
   merchantData: MerchantData;
   documents: FileData[];
   aiRecommendation: any;
+  merchantNoticeFromAdmin: string;
+  setMerchantNoticeFromAdmin: (msg: string) => void;
 }
 
 export function AdminPortal({
@@ -18,11 +23,36 @@ export function AdminPortal({
   setAppStatus,
   merchantData,
   documents,
-  aiRecommendation
+  aiRecommendation,
+  merchantNoticeFromAdmin,
+  setMerchantNoticeFromAdmin,
 }: Props) {
   const [currentView, setCurrentView] = useState<'queue' | 'underwriting'>('queue');
+  const [reminderCustom, setReminderCustom] = useState('');
 
   const merchantName = merchantData.legalName || merchantData.ownerName || 'Unknown Merchant';
+  const docChecklist = getMerchantDocumentChecklist(merchantData);
+  const missingCount = docChecklist.filter((d) => !d.present).length;
+
+  const postAutoReminder = () => {
+    setMerchantNoticeFromAdmin(buildDefaultDocumentReminder(merchantData));
+    toast.success('Reminder posted to merchant portal');
+  };
+
+  const postCustomReminder = () => {
+    const t = reminderCustom.trim();
+    if (!t) {
+      toast.error('Enter a message or use the auto reminder.');
+      return;
+    }
+    setMerchantNoticeFromAdmin(t);
+    toast.success('Custom notice posted to merchant portal');
+  };
+
+  const clearMerchantNotice = () => {
+    setMerchantNoticeFromAdmin('');
+    toast.message('Merchant notice cleared');
+  };
 
   return (
     <div className="flex h-[calc(100vh-4rem)] bg-slate-50">
@@ -99,10 +129,16 @@ export function AdminPortal({
                       </td>
                     </tr>
                   ) : (
-                    <tr className="border-b hover:bg-slate-50 transition-colors">
+                    <tr className="border-b hover:bg-slate-50 transition-colors align-top">
                       <td className="px-6 py-4">
                         <div className="font-medium text-slate-900">{merchantName}</div>
                         <div className="text-slate-500 text-xs">{merchantData.country} • {merchantData.businessType?.replace('_', ' ')}</div>
+                        {missingCount > 0 && (
+                          <div className="mt-2 flex items-center gap-1 text-xs text-amber-700">
+                            <FileWarning className="w-3.5 h-3.5 shrink-0" />
+                            {missingCount} required file slot(s) empty
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 capitalize">{merchantData.industry?.replace('_', ' ')}</td>
                       <td className="px-6 py-4">
@@ -136,14 +172,83 @@ export function AdminPortal({
                 </tbody>
               </table>
             </div>
+
+            {appStatus !== 'draft' && (
+              <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <FileWarning className="w-4 h-4 text-amber-600" />
+                      Document checklist (expected for this profile)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    {docChecklist.map((row) => (
+                      <div
+                        key={row.key}
+                        className={`flex items-center justify-between rounded-md border px-3 py-2 ${
+                          row.present ? 'border-green-200 bg-green-50/50' : 'border-amber-200 bg-amber-50/40'
+                        }`}
+                      >
+                        <span className="text-slate-800">{row.label}</span>
+                        {row.present ? (
+                          <Badge className="bg-green-100 text-green-800 hover:bg-green-100">On file</Badge>
+                        ) : (
+                          <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">Missing</Badge>
+                        )}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Notify merchant (demo)</CardTitle>
+                    <p className="text-xs text-slate-500 font-normal mt-1">
+                      Shown as a banner on the Merchant portal while <strong>Under review</strong>. Use to ask for missing uploads.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" size="sm" variant="secondary" onClick={postAutoReminder} className="gap-1">
+                        <Send className="w-3.5 h-3.5" />
+                        Post auto (missing list)
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" onClick={clearMerchantNotice} className="gap-1 text-red-700 border-red-200">
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Clear notice
+                      </Button>
+                    </div>
+                    <textarea
+                      className="w-full min-h-[100px] rounded-md border border-slate-200 p-3 text-sm"
+                      placeholder="Custom message to merchant…"
+                      value={reminderCustom}
+                      onChange={(e) => setReminderCustom(e.target.value)}
+                    />
+                    <Button type="button" size="sm" onClick={postCustomReminder} className="gap-1 bg-emerald-600 hover:bg-emerald-700">
+                      <Send className="w-3.5 h-3.5" />
+                      Post custom message
+                    </Button>
+                    {merchantNoticeFromAdmin.trim() && (
+                      <p className="text-xs text-slate-500 border-t pt-2">
+                        <span className="font-medium text-slate-600">Active notice preview:</span>{' '}
+                        {merchantNoticeFromAdmin.slice(0, 120)}
+                        {merchantNoticeFromAdmin.length > 120 ? '…' : ''}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
           </div>
         )}
 
         {currentView === 'underwriting' && (
-          <AIUnderwriting 
-            data={merchantData} 
-            aiRecommendation={aiRecommendation} 
+          <AIUnderwriting
+            data={merchantData}
+            aiRecommendation={aiRecommendation}
             documents={documents}
+            documentChecklist={docChecklist}
             isApproved={appStatus === 'approved' || appStatus === 'signed'}
             onApprove={() => setAppStatus('approved')}
           />

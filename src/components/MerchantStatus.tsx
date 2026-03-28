@@ -2,15 +2,24 @@ import React from 'react';
 import { ApplicationStatus } from '@/src/types';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
-import { CheckCircle2, Clock, FileText, ArrowRight } from 'lucide-react';
+import { CheckCircle2, Clock, FileText, ArrowRight, AlertTriangle, X } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface Props {
   status: ApplicationStatus;
   onProceedToAgreement: () => void;
+  adminNotice?: string;
+  onDismissNotice?: () => void;
+  missingDocumentLabels?: string[];
 }
 
-export function MerchantStatus({ status, onProceedToAgreement }: Props) {
+export function MerchantStatus({
+  status,
+  onProceedToAgreement,
+  adminNotice,
+  onDismissNotice,
+  missingDocumentLabels = [],
+}: Props) {
   const steps = [
     {
       id: 'submitted',
@@ -44,6 +53,41 @@ export function MerchantStatus({ status, onProceedToAgreement }: Props) {
         <h1 className="text-3xl font-bold text-slate-900 mb-3">Application Status</h1>
         <p className="text-slate-500 text-lg">Track the progress of your merchant account application.</p>
       </div>
+
+      {status === 'under_review' && adminNotice?.trim() && (
+        <div className="mb-8 rounded-lg border border-amber-200 bg-amber-50 p-4 flex gap-3 text-left">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold uppercase text-amber-800">Underwriting requested an update</p>
+            <p className="text-sm text-amber-950 mt-1 whitespace-pre-wrap">{adminNotice}</p>
+            {missingDocumentLabels.length > 0 && (
+              <ul className="mt-2 text-sm text-amber-900/90 list-disc list-inside">
+                {missingDocumentLabels.map((label) => (
+                  <li key={label}>{label}</li>
+                ))}
+              </ul>
+            )}
+            <p className="text-xs text-amber-800/80 mt-2">Use <strong>Intake Assistant</strong> in the sidebar to upload, or <strong>Review Application</strong> if available.</p>
+          </div>
+          {onDismissNotice && (
+            <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={onDismissNotice} aria-label="Dismiss">
+              <X className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+      )}
+
+      {status === 'under_review' && !adminNotice?.trim() && missingDocumentLabels.length > 0 && (
+        <div className="mb-8 rounded-lg border border-slate-200 bg-slate-50 p-4 text-left text-sm text-slate-700">
+          <p className="font-medium text-slate-900">Optional: strengthen your file</p>
+          <p className="mt-1 text-slate-600">For your profile we still do not have:</p>
+          <ul className="mt-2 list-disc list-inside text-slate-700">
+            {missingDocumentLabels.map((label) => (
+              <li key={label}>{label}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="space-y-8 relative before:absolute before:inset-0 before:ml-6 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
         {steps.map((step, index) => {

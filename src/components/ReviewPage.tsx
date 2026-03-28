@@ -1,9 +1,11 @@
 import React from 'react';
 import { MerchantData, FileData } from '@/src/types';
+import { getMerchantDocumentChecklist } from '@/src/lib/documentChecklist';
 import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
+import { Badge } from '@/src/components/ui/badge';
 import { MerchantView } from './MerchantPortal';
-import { CheckCircle2, AlertCircle, Edit2, Eye } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Edit2, Eye, FileWarning } from 'lucide-react';
 import { toast } from 'sonner';
 
 function openUploadedFileInNewTab(doc: FileData) {
@@ -37,6 +39,8 @@ interface Props {
 
 export function ReviewPage({ data, documents, setCurrentView, onEdit, onSubmit }: Props) {
   const isComplete = (data.legalName || data.ownerName) && data.monthlyVolume && data.industry;
+  const docChecklist = getMerchantDocumentChecklist(data);
+  const missingDocs = docChecklist.filter((d) => !d.present);
 
   const renderSection = (title: string, sectionId: string, fields: { label: string, value: string | undefined | null }[]) => {
     const visibleFields = fields.filter(f => f.value);
@@ -81,6 +85,30 @@ export function ReviewPage({ data, documents, setCurrentView, onEdit, onSubmit }
           <div>
             <h4 className="font-semibold">Incomplete Application</h4>
             <p className="text-sm mt-1">Please complete all required fields in the Intake Assistant before submitting.</p>
+          </div>
+        </div>
+      )}
+
+      {missingDocs.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-950 p-4 rounded-lg flex items-start gap-3">
+          <FileWarning className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
+          <div className="flex-1 min-w-0">
+            <h4 className="font-semibold text-amber-900">Document slots not filled (demo)</h4>
+            <p className="text-sm mt-1 text-amber-800/90">
+              You can still submit; Admin may request uploads. Missing for your profile:
+            </p>
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {missingDocs.map((d) => (
+                <li key={d.key}>
+                  <Badge variant="outline" className="border-amber-300 bg-white/80 text-amber-900">
+                    {d.label}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+            <Button type="button" variant="link" className="h-auto p-0 mt-2 text-amber-800" onClick={() => onEdit('idUpload')}>
+              Add documents in Intake →
+            </Button>
           </div>
         </div>
       )}

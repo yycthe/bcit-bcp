@@ -4,7 +4,12 @@ import { ReviewPage } from './ReviewPage';
 import { MerchantStatus } from './MerchantStatus';
 import { AgreementPage } from './AgreementPage';
 import { MerchantData, FileData, ApplicationStatus } from '@/src/types';
-import { MessageSquare, FileCheck, Activity, PenTool } from 'lucide-react';
+import { demoMerchantData } from '@/src/lib/demoMerchantData';
+import { getMissingDocumentLabels } from '@/src/lib/documentChecklist';
+import { getFallbackUnderwriting } from '@/src/lib/underwritingFallback';
+import { MessageSquare, FileCheck, Activity, PenTool, RotateCcw, Zap, X, AlertTriangle } from 'lucide-react';
+import { Button } from '@/src/components/ui/button';
+import { toast } from 'sonner';
 
 export type MerchantView = 'intake' | 'review' | 'status' | 'agreement';
 
@@ -17,6 +22,8 @@ interface Props {
   setDocuments: (docs: FileData[]) => void;
   aiRecommendation: any;
   setAiRecommendation: (rec: any) => void;
+  merchantNoticeFromAdmin: string;
+  onDismissMerchantNotice: () => void;
 }
 
 export function MerchantPortal({
@@ -27,11 +34,14 @@ export function MerchantPortal({
   documents,
   setDocuments,
   aiRecommendation,
-  setAiRecommendation
+  setAiRecommendation,
+  merchantNoticeFromAdmin,
+  onDismissMerchantNotice,
 }: Props) {
   const [currentView, setCurrentView] = useState<MerchantView>('intake');
   const [isFinished, setIsFinished] = useState(false);
   const [editSection, setEditSection] = useState<string | null>(null);
+  const [intakeSessionKey, setIntakeSessionKey] = useState(0);
 
   // Auto-navigate based on status changes
   useEffect(() => {
@@ -61,6 +71,30 @@ export function MerchantPortal({
     return 'Not started';
   };
 
+  const missingDocs = getMissingDocumentLabels(merchantData);
+
+  const resetDemoIntake = () => {
+    setMerchantData(demoMerchantData);
+    setDocuments([]);
+    setAiRecommendation(null);
+    setAppStatus('draft');
+    setIsFinished(false);
+    setEditSection(null);
+    setIntakeSessionKey((k) => k + 1);
+    setCurrentView('intake');
+    onDismissMerchantNotice();
+    toast.message('Demo reset', { description: 'Wizard restarted with sample data. Use Skip on uploads as needed.' });
+  };
+
+  const jumpToReviewWithDemo = () => {
+    setMerchantData({ ...demoMerchantData });
+    setDocuments([]);
+    setAiRecommendation(getFallbackUnderwriting(demoMerchantData));
+    setIsFinished(true);
+    setCurrentView('review');
+    toast.message('Demo shortcut', { description: 'Review opened with sample data and placeholder underwriting.' });
+  };
+
   return (
     <div className="flex h-[calc(100vh-4rem)] bg-slate-50">
       {/* Sidebar */}
@@ -68,7 +102,7 @@ export function MerchantPortal({
         <div className="p-4 border-b border-slate-200">
           <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Merchant Portal</h2>
         </div>
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentView === item.id;
@@ -107,12 +141,48 @@ export function MerchantPortal({
             );
           })}
         </nav>
+        <div className="p-4 border-t border-slate-200 space-y-2 mt-auto">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Demo shortcuts</p>
+          <Button type="button" variant="outline" size="sm" className="w-full justify-start gap-2 text-xs h-auto py-2" onClick={resetDemoIntake}>
+            <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+            Reset wizard &amp; demo data
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="w-full justify-start gap-2 text-xs h-auto py-2" onClick={jumpToReviewWithDemo}>
+            <Zap className="w-3.5 h-3.5 shrink-0" />
+            Skip to Review (demo)
+          </Button>
+        </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-hidden relative">
+      <div className="flex-1 overflow-hidden relative flex flex-col min-h-0">
+        {appStatus === 'under_review' && (
+          <div className="shrink-0 border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900 flex flex-wrap items-center gap-3">
+            <span className="font-medium">Application under review</span>
+            <span className="text-blue-700/90">Our team is verifying your submission. You can still open Intake to add documents if requested.</span>
+          </div>
+        )}
+        {merchantNoticeFromAdmin.trim() && (
+          <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-3 flex gap-3 items-start">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Message from underwriting</p>
+              <p className="text-sm text-amber-950 mt-1 whitespace-pre-wrap">{merchantNoticeFromAdmin}</p>
+              {missingDocs.length > 0 && (
+                <p className="text-xs text-amber-900/80 mt-2">
+                  Still expected for your profile: {missingDocs.join(' · ')}
+                </p>
+              )}
+            </div>
+            <Button type="button" variant="ghost" size="sm" className="shrink-0 text-amber-900" onClick={onDismissMerchantNotice} aria-label="Dismiss notice">
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        )}
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {currentView === 'intake' && (
-          <ChatApp 
+          <ChatApp
+            key={intakeSessionKey}
             data={merchantData}
             setData={setMerchantData}
             documents={documents}
@@ -142,9 +212,12 @@ export function MerchantPortal({
           />
         )}
         {currentView === 'status' && (
-          <MerchantStatus 
+          <MerchantStatus
             status={appStatus}
             onProceedToAgreement={() => setCurrentView('agreement')}
+            adminNotice={merchantNoticeFromAdmin}
+            onDismissNotice={onDismissMerchantNotice}
+            missingDocumentLabels={missingDocs}
           />
         )}
         {currentView === 'agreement' && (
@@ -153,6 +226,7 @@ export function MerchantPortal({
             onSign={() => setAppStatus('signed')}
           />
         )}
+        </div>
       </div>
     </div>
   );
