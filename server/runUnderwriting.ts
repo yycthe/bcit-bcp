@@ -103,7 +103,7 @@ export async function runUnderwriting(
 
   const modelId =
     (typeof process.env.AI_GATEWAY_MODEL === 'string' && process.env.AI_GATEWAY_MODEL.trim()) ||
-    'openai/gpt-4o';
+    'google/gemini-3-flash';
 
   const promptText = buildPromptText(finalData);
 
