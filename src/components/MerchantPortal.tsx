@@ -226,7 +226,7 @@ export function MerchantPortal({
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-hidden relative flex flex-col min-h-0">
+      <div className="relative flex min-h-0 flex-1 flex-col">
         {appStatus === 'under_review' && (
           <div className="shrink-0 border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900 flex flex-wrap items-center gap-3">
             <span className="font-medium">Application under review</span>
@@ -300,9 +300,9 @@ export function MerchantPortal({
             </Button>
           </div>
         )}
-        <div className="flex-1 min-h-0 overflow-hidden flex flex-col min-w-0">
+        <div className="flex min-h-0 flex-1 flex-col min-w-0">
         {currentView === 'intake' && (
-          <div className="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col">
+          <div className="flex h-0 min-h-0 flex-1 min-w-0 flex-col overflow-hidden">
             <ChatApp
               key={intakeSessionKey}
               data={merchantData}
@@ -322,7 +322,7 @@ export function MerchantPortal({
           </div>
         )}
         {currentView === 'review' && (
-          <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
+          <div className="h-0 min-h-0 flex-1 min-w-0 overflow-x-hidden overflow-y-auto overscroll-y-contain">
             <ReviewPage 
               data={merchantData} 
               documents={documents} 
@@ -340,7 +340,7 @@ export function MerchantPortal({
           </div>
         )}
         {currentView === 'status' && (
-          <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
+          <div className="h-0 min-h-0 flex-1 min-w-0 overflow-x-hidden overflow-y-auto overscroll-y-contain">
             <MerchantStatus
               status={appStatus}
               onProceedToAgreement={() => setCurrentView('agreement')}
@@ -352,7 +352,7 @@ export function MerchantPortal({
           </div>
         )}
         {currentView === 'agreement' && (
-          <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
+          <div className="h-0 min-h-0 flex-1 min-w-0 overflow-x-hidden overflow-y-auto overscroll-y-contain">
             <AgreementPage 
               data={merchantData} 
               onSign={() => setAppStatus('signed')}
