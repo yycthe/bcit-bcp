@@ -5,9 +5,6 @@
   "functions": {
     "api/underwrite.ts": {
       "maxDuration": 60
-    },
-    "api/identity.ts": {
-      "maxDuration": 10
     }
   },
   "rewrites": [
