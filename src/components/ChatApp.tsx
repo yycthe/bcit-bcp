@@ -481,7 +481,8 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
       setIsFinished(true);
       onFinish();
     } catch (error) {
-      console.error('AI Analysis failed', error);
+      console.error('[v0] AI Analysis failed:', error);
+      console.error('[v0] Error details:', error instanceof Error ? error.message : String(error));
       toast.error('Failed to analyze profile. Using fallback recommendation.');
       setAiRecommendation(getFallbackUnderwriting(finalData));
       setIsFinished(true);
