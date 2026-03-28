@@ -1,5 +1,12 @@
-import { createGateway, generateObject } from 'ai';
+/**
+ * Merchant underwriting calls xAI through the Vercel AI SDK (`generateObject` → OpenAI-compatible **Chat Completions** at `https://api.x.ai/v1`).
+ * Official wire formats (images, Files + Responses for PDF, structured outputs) are summarized in `docs/xai-api.md` and typed in `server/xaiApiReference.ts`.
+ * @see https://docs.x.ai/docs/guides/chat-completions
+ * @see https://docs.x.ai/docs/guides/files
+ */
+import { generateObject } from 'ai';
 import { createXai } from '@ai-sdk/xai';
+import { extractText } from 'unpdf';
 import { z } from 'zod';
 import type { MerchantData } from '../src/types';
 
@@ -29,10 +36,14 @@ const underwritingSchema = z.object({
 
 const ALLOWED_PROCESSORS = ['Stripe', 'Adyen', 'Nuvei', 'HighRiskPay'] as const;
 
-/** Default xAI model: low-cost, current-gen; supports multimodal/file-style inputs via AI SDK. Override with XAI_MODEL or AI_MODEL. */
-const DEFAULT_XAI_MODEL = 'grok-3-mini-latest';
+/**
+ * Default xAI model: Grok 4.1 Fast (reasoning).
+ * Override with `XAI_MODEL` / `AI_MODEL` (e.g. `grok-4-1-fast-non-reasoning`, `grok-4`).
+ * We use `createXai({ apiKey })` so Vercel `*_XAI_API_KEY` from `vercel env pull` works, not only `XAI_API_KEY`.
+ */
+const DEFAULT_XAI_MODEL = 'grok-4-1-fast-reasoning';
 
-const DEFAULT_GATEWAY_MODEL = 'google/gemini-2.0-flash';
+const MAX_PDF_TEXT_CHARS = 80_000;
 
 function normalizeRiskCategory(value: unknown, riskScore: number): 'Low' | 'Medium' | 'High' {
   if (value === 'Low' || value === 'Medium' || value === 'High') {
@@ -77,11 +88,57 @@ const FILE_KEYS = [
   'complianceDocument',
 ] as const;
 
+type UploadSummary = {
+  field: typeof FILE_KEYS[number];
+  name: string;
+  mimeType: string;
+  hasBinary: boolean;
+};
+
+function getUploadSummaries(finalData: MerchantData): UploadSummary[] {
+  const summaries: UploadSummary[] = [];
+  for (const key of FILE_KEYS) {
+    const fileData = finalData[key as keyof MerchantData] as
+      | { mimeType?: string; data?: string; name?: string }
+      | null;
+    if (!fileData) continue;
+    const name = typeof fileData.name === 'string' && fileData.name.trim() ? fileData.name.trim() : key;
+    const mimeType =
+      typeof fileData.mimeType === 'string' && fileData.mimeType.trim()
+        ? fileData.mimeType.trim()
+        : 'application/octet-stream';
+    summaries.push({
+      field: key,
+      name,
+      mimeType,
+      hasBinary: typeof fileData.data === 'string' && fileData.data.trim().length > 0,
+    });
+  }
+  return summaries;
+}
+
+function buildUploadInventoryText(finalData: MerchantData): string {
+  const uploads = getUploadSummaries(finalData);
+  if (!uploads.length) {
+    return 'No uploaded supporting documents were included in this request.';
+  }
+
+  return uploads
+    .map(
+      (upload) =>
+        `- ${upload.field}: ${upload.name} (${upload.mimeType})${upload.hasBinary ? ' [content attached]' : ' [metadata only]'}`
+    )
+    .join('\n');
+}
+
 function buildPromptText(finalData: MerchantData): string {
   return `You are an expert payment processing underwriter. Analyze the following merchant profile and any provided documents.
 
 Merchant Profile:
 ${JSON.stringify(Object.fromEntries(Object.entries(finalData).filter(([k, v]) => v && typeof v !== 'object')), null, 2)}
+
+Uploaded Documents:
+${buildUploadInventoryText(finalData)}
 
 Based on the profile and the provided documents (if any), perform a comprehensive risk assessment.
 1. Calculate a numerical "riskScore" from 0 to 100 (0 = lowest risk, 100 = highest risk). Use a baseline of 20. Add points for high-risk industries (+30), cross-border processing (+15), high volume >$250k (+15), lack of financial documents (+10), lack of ID (+10). Deduct points if documents are provided and look legitimate (-10 per valid document type).
@@ -89,7 +146,7 @@ Based on the profile and the provided documents (if any), perform a comprehensiv
 3. Provide 2-3 specific "riskFactors" explaining the score (e.g., "High average ticket size increases chargeback exposure", "Regulated industry requires specialized underwriting", "Verified financial documents reduce risk"). Be specific to the data provided.
 4. Recommend a payment processor from this list: Stripe, Adyen, Nuvei, HighRiskPay.
 5. Provide a brief reason for your recommendation.
-6. If any documents were uploaded (e.g., Financial Statements, ID, Business Licenses, Proof of Address), extract the key information from them and summarize all extracted information clearly in the "documentSummary" field. Format the summary with clear bullet points separated by newlines. If no documents are provided or readable, return "No document information extracted".
+6. If any documents were uploaded (e.g., Financial Statements, ID, Business Licenses, Proof of Address), read attached PDF and image files directly when present, extract the key information, and summarize it clearly in the "documentSummary" field. Format the summary with clear bullet points separated by newlines. If no documents are provided or readable, return "No document information extracted".
 7. VERIFICATION AUDIT: Cross-reference the self-reported Merchant Profile data (like legalName, ownerName, address) against the information extracted from the uploaded documents.
    - Compare names, addresses, and business details.
    - Output "verificationStatus": "Verified" (if data matches), "Discrepancies Found" (if there are mismatches), or "Unverified" (if not enough documents to verify).
@@ -99,7 +156,10 @@ Return the result as structured fields matching the required schema exactly.`;
 }
 
 /**
- * xAI API key: explicit XAI_API_KEY, or any env var from Vercel's xAI integration (suffix `_XAI_API_KEY`).
+ * xAI API key resolution (server-only; never use VITE_* or client env):
+ * 1) `XAI_API_KEY` if set
+ * 2) Else the first non-empty env var whose name ends with `_XAI_API_KEY` (sorted by name).
+ *    Vercel’s xAI integration injects names like `AI123456789_XAI_API_KEY` — no code change needed.
  */
 export function resolveXaiApiKey(): string | undefined {
   const direct = process.env.XAI_API_KEY?.trim();
@@ -114,13 +174,24 @@ export function resolveXaiApiKey(): string | undefined {
   return undefined;
 }
 
+function isPdfFile(mime: string, filename?: string): boolean {
+  const m = mime.toLowerCase();
+  if (m === 'application/pdf' || m === 'application/x-pdf') return true;
+  if (filename?.toLowerCase().endsWith('.pdf')) return true;
+  return false;
+}
+
 // AI SDK v5 parts: ImagePart / FilePart use `mediaType` (not `mimeType`).
 type UserContentPart =
   | { type: 'text'; text: string }
   | { type: 'image'; image: Uint8Array; mediaType?: string }
   | { type: 'file'; data: Uint8Array; mediaType: string; filename?: string };
 
-function buildUserContent(finalData: MerchantData): UserContentPart[] {
+/**
+ * Build multimodal user content: images + non-PDF files + PDFs as binary `file` parts (when not omitted).
+ * `omitPdfBinary` is used for the text-only fallback path after native PDF fails.
+ */
+function buildUserContent(finalData: MerchantData, opts?: { omitPdfBinary?: boolean }): UserContentPart[] {
   const promptText = buildPromptText(finalData);
   const content: UserContentPart[] = [{ type: 'text', text: promptText }];
 
@@ -128,15 +199,23 @@ function buildUserContent(finalData: MerchantData): UserContentPart[] {
     const fileData = finalData[key as keyof MerchantData] as
       | { mimeType?: string; data?: string; name?: string }
       | null;
-    if (!fileData?.mimeType || !fileData?.data) continue;
+    if (!fileData?.data) continue;
+    const filename = typeof fileData.name === 'string' && fileData.name.trim() ? fileData.name.trim() : undefined;
+    const nameLo = filename?.toLowerCase() ?? '';
+    const mime =
+      (fileData.mimeType && fileData.mimeType.trim()) ||
+      (nameLo.endsWith('.pdf') ? 'application/pdf' : '') ||
+      (/\.(png|jpe?g|gif|webp)$/i.test(nameLo) ? 'image/jpeg' : '');
+    if (!mime) continue;
     let bytes: Uint8Array;
     try {
       bytes = Uint8Array.from(Buffer.from(fileData.data.replace(/^data:[^;]+;base64,/, ''), 'base64'));
     } catch {
       continue;
     }
-    const mime = fileData.mimeType;
-    const filename = typeof fileData.name === 'string' && fileData.name.trim() ? fileData.name.trim() : undefined;
+    if (opts?.omitPdfBinary && isPdfFile(mime, filename)) {
+      continue;
+    }
     if (mime.startsWith('image/')) {
       content.push({ type: 'image', image: bytes, mediaType: mime });
     } else {
@@ -152,6 +231,38 @@ function buildUserContent(finalData: MerchantData): UserContentPart[] {
   return content;
 }
 
+async function buildPdfTextAppendixForXai(finalData: MerchantData): Promise<string> {
+  const sections: string[] = [];
+  for (const key of FILE_KEYS) {
+    const fileData = finalData[key as keyof MerchantData] as
+      | { mimeType?: string; data?: string; name?: string }
+      | null;
+    if (!fileData?.data) continue;
+    const name = typeof fileData.name === 'string' ? fileData.name : '';
+    const mimeGuess = (fileData.mimeType && fileData.mimeType.trim()) || '';
+    if (!isPdfFile(mimeGuess, name)) continue;
+    try {
+      const raw = fileData.data.replace(/^data:[^;]+;base64,/, '');
+      const bytes = Uint8Array.from(Buffer.from(raw, 'base64'));
+      const { text, totalPages } = await extractText(bytes, { mergePages: true });
+      let body = typeof text === 'string' ? text.trim() : '';
+      if (!body) {
+        body =
+          '(No text layer in this PDF — it may be a scan. Consider XAI_MODEL with a vision-capable workflow or upload images.)';
+      } else if (body.length > MAX_PDF_TEXT_CHARS) {
+        body = body.slice(0, MAX_PDF_TEXT_CHARS) + '\n\n[PDF text truncated for length]';
+      }
+      sections.push(
+        `\n\n--- PDF "${name || key}" (${key}, ~${totalPages} page(s)) — extracted text ---\n${body}\n`
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      sections.push(`\n\n--- PDF "${name || key}" (${key}) — extraction failed ---\n${msg}\n`);
+    }
+  }
+  return sections.join('');
+}
+
 function resolveModelForXai(): string {
   return (
     (typeof process.env.XAI_MODEL === 'string' && process.env.XAI_MODEL.trim()) ||
@@ -160,49 +271,118 @@ function resolveModelForXai(): string {
   );
 }
 
-function resolveModelForGateway(): string {
-  return (
-    (typeof process.env.AI_GATEWAY_MODEL === 'string' && process.env.AI_GATEWAY_MODEL.trim()) ||
-    (typeof process.env.AI_MODEL === 'string' && process.env.AI_MODEL.trim()) ||
-    DEFAULT_GATEWAY_MODEL
-  );
+function envFlagTrue(name: string): boolean {
+  const v = process.env[name]?.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes';
+}
+
+/** Also append unpdf-extracted text alongside native PDF file parts (more tokens; optional). */
+function pdfTextSupplementEnabled(): boolean {
+  return envFlagTrue('XAI_UNDERWRITE_PDF_TEXT_SUPPLEMENT');
+}
+
+/** Skip native PDF file parts and use only extracted text (old behavior). */
+function pdfTextOnlyMode(): boolean {
+  return envFlagTrue('XAI_UNDERWRITE_PDF_TEXT_ONLY');
+}
+
+function mergePdfAppendixIntoFirstText(content: UserContentPart[], pdfAppendix: string): void {
+  if (!pdfAppendix) return;
+  const head = content[0];
+  if (head?.type !== 'text') return;
+  content[0] = {
+    type: 'text',
+    text:
+      head.text +
+      `\n\nThe following is text extracted from uploaded PDFs (supplement; use with the attached PDFs if present):\n${pdfAppendix}`,
+  };
 }
 
 export async function runUnderwriting(finalData: MerchantData): Promise<UnderwritingApiResult> {
-  const content = buildUserContent(finalData);
-
   const abortSignal =
     typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
       ? AbortSignal.timeout(120_000)
       : undefined;
 
   const xaiKey = resolveXaiApiKey();
-  const gatewayKey = process.env.AI_GATEWAY_API_KEY?.trim();
+  if (!xaiKey) {
+    throw new Error('Missing XAI_API_KEY or an environment variable ending in _XAI_API_KEY.');
+  }
+
+  const xaiProvider = createXai({ apiKey: xaiKey });
+  const modelId = resolveModelForXai();
 
   let object;
   try {
-    if (xaiKey) {
-      const xai = createXai({ apiKey: xaiKey });
-      const modelId = resolveModelForXai();
-      console.log('[underwrite] xai', modelId, 'contentParts:', content.length);
+    if (pdfTextOnlyMode()) {
+      const pdfAppendix = await buildPdfTextAppendixForXai(finalData);
+      const content = buildUserContent(finalData, { omitPdfBinary: true });
+      mergePdfAppendixIntoFirstText(content, pdfAppendix);
+      console.log(
+        '[underwrite] xai',
+        modelId,
+        'mode:text-only',
+        'contentParts:',
+        content.length,
+        'pdfAppendixChars:',
+        pdfAppendix.length
+      );
       const result = await generateObject({
-        model: xai(modelId),
+        model: xaiProvider(modelId),
         schema: underwritingSchema,
         messages: [{ role: 'user', content }],
         abortSignal,
       });
       object = result.object;
     } else {
-      const gateway = createGateway(gatewayKey ? { apiKey: gatewayKey } : {});
-      const modelId = resolveModelForGateway();
-      console.log('[underwrite] gateway', modelId, 'contentParts:', content.length);
-      const result = await generateObject({
-        model: gateway(modelId),
-        schema: underwritingSchema,
-        messages: [{ role: 'user', content }],
-        abortSignal,
-      });
-      object = result.object;
+      let content = buildUserContent(finalData);
+      let pdfAppendix = '';
+      if (pdfTextSupplementEnabled()) {
+        pdfAppendix = await buildPdfTextAppendixForXai(finalData);
+        mergePdfAppendixIntoFirstText(content, pdfAppendix);
+      }
+      console.log(
+        '[underwrite] xai',
+        modelId,
+        'mode:native-pdf',
+        'contentParts:',
+        content.length,
+        'pdfSupplementChars:',
+        pdfAppendix.length
+      );
+      try {
+        const result = await generateObject({
+          model: xaiProvider(modelId),
+          schema: underwritingSchema,
+          messages: [{ role: 'user', content }],
+          abortSignal,
+        });
+        object = result.object;
+      } catch (nativeErr) {
+        console.warn(
+          '[underwrite] native PDF multimodal failed; retrying with text extraction only:',
+          nativeErr instanceof Error ? nativeErr.message : nativeErr
+        );
+        pdfAppendix = await buildPdfTextAppendixForXai(finalData);
+        const fallback = buildUserContent(finalData, { omitPdfBinary: true });
+        mergePdfAppendixIntoFirstText(fallback, pdfAppendix);
+        console.log(
+          '[underwrite] xai',
+          modelId,
+          'mode:text-fallback',
+          'contentParts:',
+          fallback.length,
+          'pdfAppendixChars:',
+          pdfAppendix.length
+        );
+        const result = await generateObject({
+          model: xaiProvider(modelId),
+          schema: underwritingSchema,
+          messages: [{ role: 'user', content: fallback }],
+          abortSignal,
+        });
+        object = result.object;
+      }
     }
   } catch (aiError) {
     console.error('[underwrite] generateObject error:', aiError);

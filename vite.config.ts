@@ -22,15 +22,13 @@ function underwritingDevApi(env: Record<string, string>): Plugin {
           res.end(JSON.stringify({ error: 'Method not allowed' }));
           return;
         }
-        const hasXai = !!resolveXaiApiKey();
-        const hasGateway = !!env.AI_GATEWAY_API_KEY?.trim();
-        if (!hasXai && !hasGateway) {
+        if (!resolveXaiApiKey()) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');
           res.end(
             JSON.stringify({
               error:
-                'Set XAI_API_KEY or *_XAI_API_KEY (Vercel xAI integration), or AI_GATEWAY_API_KEY in .env / .env.local (not exposed to the browser).',
+                'Set XAI_API_KEY or an env var ending in _XAI_API_KEY in .env / .env.local (never VITE_* — not exposed to the browser).',
             })
           );
           return;
@@ -79,8 +77,8 @@ function underwritingDevApi(env: Record<string, string>): Plugin {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
-  // Populate process.env for resolveXaiApiKey / AI_GATEWAY in the dev middleware (loadEnv does not set process.env by default).
-  for (const key of ['XAI_API_KEY', 'AI_GATEWAY_API_KEY', 'AI_MODEL', 'XAI_MODEL', 'AI_GATEWAY_MODEL'] as const) {
+  // Populate process.env for resolveXaiApiKey in the dev middleware (loadEnv does not set process.env by default).
+  for (const key of ['XAI_API_KEY', 'AI_MODEL', 'XAI_MODEL'] as const) {
     if (env[key] !== undefined && env[key] !== '') {
       process.env[key] = env[key];
     }

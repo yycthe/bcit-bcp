@@ -20,6 +20,80 @@ interface QuestionDef {
   fields?: { id: keyof MerchantData; label: string; type: 'text' | 'email' | 'number' | 'date' }[];
 }
 
+/** readAsDataURL yields `data:...;base64,...` — must not be spread like a multi-field form answer */
+function isFileUploadAnswer(value: unknown): value is FileData {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const o = value as Record<string, unknown>;
+  return typeof o.data === 'string' && o.data.startsWith('data:') && typeof o.name === 'string';
+}
+
+function inferMimeFromFileName(fileName: string, browserMime: string): string {
+  const t = browserMime.trim();
+  if (t) return t;
+  const lo = fileName.toLowerCase();
+  if (lo.endsWith('.pdf')) return 'application/pdf';
+  if (/\.jpe?g$/i.test(lo)) return 'image/jpeg';
+  if (lo.endsWith('.png')) return 'image/png';
+  return 'application/octet-stream';
+}
+
+const VERCEL_FUNCTION_BODY_SOFT_LIMIT_BYTES = 4_000_000;
+
+function estimateJsonBytes(value: unknown): number {
+  const json = JSON.stringify(value);
+  if (typeof TextEncoder !== 'undefined') {
+    return new TextEncoder().encode(json).length;
+  }
+  return json.length;
+}
+
+function stripBinaryFromFile(file: FileData | null): FileData | null {
+  if (!file) return null;
+  return {
+    ...file,
+    data: '',
+  };
+}
+
+function buildMetadataOnlyMerchantData(data: MerchantData): MerchantData {
+  return {
+    ...data,
+    financials: stripBinaryFromFile(data.financials),
+    idUpload: stripBinaryFromFile(data.idUpload),
+    enhancedVerification: stripBinaryFromFile(data.enhancedVerification),
+    proofOfAddress: stripBinaryFromFile(data.proofOfAddress),
+    registrationCertificate: stripBinaryFromFile(data.registrationCertificate),
+    taxDocument: stripBinaryFromFile(data.taxDocument),
+    proofOfFunds: stripBinaryFromFile(data.proofOfFunds),
+    bankStatement: stripBinaryFromFile(data.bankStatement),
+    complianceDocument: stripBinaryFromFile(data.complianceDocument),
+    additionalDocuments: data.additionalDocuments?.map((file) => ({
+      ...file,
+      data: '',
+    })),
+  };
+}
+
+function prepareUnderwritePayload(data: MerchantData): {
+  body: string;
+  metadataOnly: boolean;
+} {
+  const fullPayload = { merchantData: data };
+  if (estimateJsonBytes(fullPayload) <= VERCEL_FUNCTION_BODY_SOFT_LIMIT_BYTES) {
+    return {
+      body: JSON.stringify(fullPayload),
+      metadataOnly: false,
+    };
+  }
+
+  return {
+    body: JSON.stringify({
+      merchantData: buildMetadataOnlyMerchantData(data),
+    }),
+    metadataOnly: true,
+  };
+}
+
 // Dynamic question generator based on context
 const getQuestionText = (qId: QuestionId, data: MerchantData): string => {
   const businessName = data.legalName || 'your business';
@@ -638,10 +712,15 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
     if (!currentQuestion || currentQuestion === 'done') return;
 
     let newData = { ...data };
-    if (typeof value === 'object' && !value.mimeType && !Array.isArray(value)) {
-       newData = { ...newData, ...value };
+    if (
+      value !== null &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      !isFileUploadAnswer(value)
+    ) {
+      newData = { ...newData, ...value };
     } else {
-       newData = { ...newData, [currentQuestion]: value };
+      newData = { ...newData, [currentQuestion]: value };
     }
     setData(newData);
 
@@ -650,7 +729,13 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
       {
         id: Math.random().toString(36).substring(2, 15),
         sender: 'user',
-        content: displayValue || (typeof value === 'object' && !value.mimeType ? 'Provided details' : value.toString())
+        content:
+          displayValue ||
+          (isFileUploadAnswer(value)
+            ? `Uploaded: ${value.name}`
+            : value !== null && typeof value === 'object' && !Array.isArray(value)
+              ? 'Provided details'
+              : String(value))
       }
     ]);
 
@@ -692,11 +777,26 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
     ]);
 
     try {
-      const apiRes = await fetch('/api/underwrite', {
+      let prepared = prepareUnderwritePayload(finalData);
+      if (prepared.metadataOnly) {
+        toast.warning('Large upload detected. Sending document metadata only so the Vercel API request stays under platform limits.');
+      }
+
+      let apiRes = await fetch('/api/underwrite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchantData: finalData }),
+        body: prepared.body,
       });
+
+      if (apiRes.status === 413 && !prepared.metadataOnly) {
+        prepared = prepareUnderwritePayload(buildMetadataOnlyMerchantData(finalData));
+        toast.warning('Uploaded files were too large for a Vercel Function request. Retrying without binary document contents.');
+        apiRes = await fetch('/api/underwrite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: prepared.body,
+        });
+      }
 
       const payload = (await apiRes.json().catch(() => ({}))) as {
         riskScore?: number;
@@ -737,8 +837,10 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
       onFinish();
     } catch (error) {
       console.error('[v0] AI Analysis failed:', error);
-      console.error('[v0] Error details:', error instanceof Error ? error.message : String(error));
-      toast.error('Failed to analyze profile. Using fallback recommendation.');
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error('[v0] Error details:', errMsg);
+      const short = errMsg.length > 140 ? `${errMsg.slice(0, 140)}…` : errMsg;
+      toast.error(`Analysis failed: ${short} (using fallback)`);
       setAiRecommendation(getFallbackUnderwriting(finalData));
       setIsFinished(true);
       onFinish();
@@ -940,7 +1042,7 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
                         const base64 = reader.result as string;
                         const fileData: FileData = {
                           name: file.name,
-                          mimeType: file.type,
+                          mimeType: inferMimeFromFileName(file.name, file.type),
                           data: base64
                         };
                         setDocuments(prev => [...prev, fileData]);

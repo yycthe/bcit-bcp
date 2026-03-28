@@ -6,13 +6,15 @@ BCIT **Business Consulting Project** — a **MerchantWerx** onboarding demo for 
 
 - **Merchant portal** — Application flow, agreements, status, and AI underwriting integration.
 - **Admin portal** — Review submitted applications and recommendations in a demo environment.
-- **AI underwriting** — [AI SDK](https://sdk.vercel.ai/) `generateObject` with **xAI Grok** (default `grok-3-mini-latest`) when `XAI_API_KEY` or Vercel’s `*_XAI_API_KEY` integration is present; otherwise [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) + `AI_GATEWAY_API_KEY` (or OIDC).
+- **AI underwriting** — [AI SDK](https://sdk.vercel.ai/) `generateObject` with **xAI Grok** only (`XAI_API_KEY` or Vercel’s `*_XAI_API_KEY`; default **`grok-4-1-fast-reasoning`**, override with `XAI_MODEL`).
 
 ## Stack
 
 - React 19 · TypeScript · Vite 6  
 - Tailwind CSS 4 · Lucide icons · Sonner toasts  
-- `ai` + `@ai-sdk/xai` + `zod` for structured outputs (xAI or AI Gateway)
+- `ai` + `@ai-sdk/xai` + `zod` for structured outputs (xAI only)  
+- **[xAI REST / message format reference](docs/xai-api.md)** (Chat Completions, Files + Responses, structured outputs)  
+- **[Codex / AI agent handoff: architecture + Vercel + xAI](docs/CODEX_HANDOFF_VERCEL_XAI.md)** — copy to another tool to harden “deploy and run”
 
 ## Prerequisites
 
@@ -24,29 +26,54 @@ BCIT **Business Consulting Project** — a **MerchantWerx** onboarding demo for 
 npm install
 ```
 
+Dependencies already include **`@ai-sdk/xai`**, **`ai`**, and **`dotenv`**. You do **not** need the separate **`openai`** npm package for this app (xAI is used via `@ai-sdk/xai`).
+
+## Deploy on Vercel (GitHub → auto deploy)
+
+1. Push this repo to GitHub and [import the project](https://vercel.com/new) in Vercel (or connect an existing project).
+2. In the Vercel dashboard, add **Environment Variables** for **Production** (and Preview if you want):  
+   **`XAI_API_KEY`** and/or the integration variable ending in **`_XAI_API_KEY`**.  
+   Optional: **`XAI_MODEL`** (defaults to **`grok-4-1-fast-reasoning`**).
+3. Redeploy so the serverless **`/api/underwrite`** route picks up secrets.  
+   `vercel.json` sets **`outputDirectory`: `dist`**, SPA rewrites, and a per-function **`maxDuration`** for underwriting.
+
+### Local: link project and pull env (optional)
+
+```bash
+npm i -g vercel   # if needed
+vercel link
+vercel env pull   # writes .env.local (gitignored)
+npm install
+npm run dev       # or: npm run smoke:xai
+```
+
+After `vercel env pull`, `dotenv` + `.env.local` match the Vercel AI / xAI docs flow. This app uses **`createXai({ apiKey })`** + **`resolveXaiApiKey()`** so **prefixed** `*_XAI_API_KEY` values work, not only `XAI_API_KEY`. Docs that show `import { xai } from "@ai-sdk/xai"` and `xai("grok-4")` assume a single `XAI_API_KEY`; behavior here is equivalent once the key is resolved.
+
 ## Environment
 
-Create a `.env` or `.env.local` file in the project root (see `.env.example`):
+See `.env.example`. Summary:
 
 | Variable | Description |
 |----------|-------------|
-| `XAI_API_KEY` or `*_XAI_API_KEY` | **Preferred:** xAI API key. Vercel **xAI integration** injects a prefixed `*_XAI_API_KEY` automatically. Never exposed in the frontend bundle. |
-| `XAI_MODEL` | Optional. xAI model id. Default **`grok-3-mini-latest`**. For harder PDFs, try `grok-2-vision-1212`. |
-| `AI_GATEWAY_API_KEY` | **Fallback** when no xAI key: Vercel AI Gateway key (or OIDC on Vercel). |
-| `AI_GATEWAY_MODEL` | Optional when using Gateway. Default `google/gemini-2.0-flash`. |
-| `AI_MODEL` | Optional override (used by xAI or Gateway depending on which path is active). |
-| `APP_URL` | Optional; base URL when deployed (e.g. Cloud Run). |
+| `XAI_API_KEY` or `*_XAI_API_KEY` | **Required** for underwriting. Never use **`VITE_*`** for secrets (that exposes them in the browser). |
+| `XAI_MODEL` | Optional. Default **`grok-4-1-fast-reasoning`** (Grok 4.1 Fast, reasoning). Use **`grok-4-1-fast-non-reasoning`** for the non-reasoning variant. |
+| `AI_MODEL` | Optional fallback if `XAI_MODEL` is unset. |
+| `XAI_UNDERWRITE_PDF_TEXT_ONLY` | If `true`: do **not** send PDF binaries; only **unpdf** text. |
+| `XAI_UNDERWRITE_PDF_TEXT_SUPPLEMENT` | If `true`: send **native PDF** parts **and** append extracted text (more tokens). |
+| `APP_URL` | Optional; base URL when deployed. |
 
-Example (xAI only):
+**PDFs:** By default underwriting sends **PDFs as native `file` attachments** to xAI. If that request fails, the server **retries** with text-only extraction (`unpdf`).
+
+**Vercel request-size guard:** Vercel Functions have a **4.5 MB** request/response body limit. The client now automatically falls back to sending **document metadata only** if the underwriting payload would be too large, so the AI flow still runs instead of failing with `413 FUNCTION_PAYLOAD_TOO_LARGE`. In that fallback mode, document contents are not available to the model.
+
+Example:
 
 ```env
 XAI_API_KEY=xai-...
-# XAI_MODEL=grok-3-mini-latest
+# XAI_MODEL=grok-4-1-fast-reasoning
 ```
 
-On **Vercel**, use the xAI integration or set `XAI_API_KEY` / `AI_GATEWAY_API_KEY` under **Environment Variables**. Redeploy after changes.
-
-Local **`npm run dev`**: set keys in `.env` or `.env.local`; Vite proxies `POST /api/underwrite` on the server only.
+Local **`npm run dev`**: underwriting calls **`POST /api/underwrite`** (Vite dev middleware). Production: same path on Vercel via **`api/underwrite.ts`**.
 
 ## Scripts
 
@@ -56,6 +83,15 @@ Local **`npm run dev`**: set keys in `.env` or `.env.local`; Vite proxies `POST 
 | `npm run build` | Production build to `dist/`. |
 | `npm run preview` | Preview the production build locally. |
 | `npm run lint` | Typecheck with `tsc --noEmit`. |
+| `npm run smoke:xai` | Quick xAI `streamText` check (needs `.env.local` or env vars). |
+
+## Deployment checklist
+
+1. Set **`XAI_API_KEY`** or a Vercel integration variable ending in **`_XAI_API_KEY`** for the environment you deploy.
+2. Keep secrets server-only. Do not use **`VITE_XAI_API_KEY`** or any other `VITE_*` secret.
+3. Redeploy after changing env vars.
+4. If underwriting requests include large PDFs/images, expect the app to fall back to metadata-only mode unless you move uploads to storage first.
+5. If you want faster / cheaper runs, set **`XAI_MODEL`** explicitly. xAI currently documents Grok 4 family structured-output support, including models such as **`grok-4-1-fast-reasoning`** and **`grok-4-fast-reasoning`**.
 
 ## Run locally
 
