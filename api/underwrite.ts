@@ -19,6 +19,12 @@ type MerchantFile = {
   name?: string;
   mimeType?: string;
   data?: string;
+  uploadDate?: string;
+  documentType?: string;
+  status?: string;
+  extractedFields?: Record<string, string>;
+  confidence?: number;
+  linkedRequirement?: string;
 };
 
 type MerchantDataLike = Record<string, unknown> & {
@@ -30,6 +36,19 @@ type UploadedFileDescriptor = {
   name: string;
   mimeType: string;
   data?: string;
+  uploadDate?: string;
+  documentType?: string;
+  status?: string;
+  extractedFields: Record<string, string>;
+  confidence?: number;
+  linkedRequirement?: string;
+};
+
+type ScalarValue = string | number | boolean;
+
+type IntakeSectionDefinition = {
+  title: string;
+  fields: string[];
 };
 
 type XaiResponseTextPart = {
@@ -64,6 +83,180 @@ const FILE_KEYS = [
   'bankStatement',
   'complianceDocument',
 ] as const;
+const DOMESTIC_COUNTRIES = new Set(['US', 'CA']);
+const HIGH_RISK_INDUSTRIES = new Set(['high_risk', 'crypto', 'gaming']);
+const SENSITIVE_FIELD_KEYS = new Set(['taxId', 'ownerIdNumber', 'accountNumber', 'routingNumber']);
+const CRITICAL_INTAKE_FIELDS = [
+  'businessType',
+  'country',
+  'industry',
+  'monthlyVolume',
+  'monthlyTransactions',
+  'legalName',
+  'website',
+  'ownerName',
+  'ownerEmail',
+  'targetGeography',
+  'avgTicketSize',
+  'bankName',
+  'settlementCurrency',
+] as const;
+const UPLOAD_FIELD_LABELS: Record<string, string> = {
+  financials: 'Financial statements',
+  idUpload: 'Government ID',
+  enhancedVerification: 'Enhanced verification',
+  proofOfAddress: 'Proof of address',
+  registrationCertificate: 'Registration certificate',
+  taxDocument: 'Tax document',
+  proofOfFunds: 'Proof of funds',
+  bankStatement: 'Bank statement',
+  complianceDocument: 'Compliance document',
+};
+const FIELD_LABELS: Record<string, string> = {
+  businessType: 'Business type',
+  country: 'Country / registration jurisdiction',
+  industry: 'Industry',
+  monthlyVolume: 'Monthly processing volume',
+  monthlyTransactions: 'Monthly transactions',
+  legalName: 'Legal business name',
+  taxId: 'Tax ID / EIN',
+  website: 'Website',
+  staffSize: 'Staff size',
+  paymentProducts: 'Payment products',
+  businessCategory: 'Business subcategory',
+  generalEmail: 'General email',
+  supportEmail: 'Support email',
+  disputesEmail: 'Disputes email',
+  phone: 'Phone',
+  preferredContact: 'Preferred contact method',
+  socialPresence: 'Social presence',
+  registeredAddress: 'Registered address',
+  operatingAddress: 'Operating address',
+  city: 'City',
+  region: 'Region',
+  province: 'Province / state',
+  operatingDiffers: 'Operating address differs',
+  timeInBusiness: 'Time in business',
+  targetGeography: 'Target geography',
+  deliveryMethod: 'Delivery method',
+  domesticVsInternational: 'Domestic vs international mix',
+  avgTxnCount: 'Average monthly transactions',
+  minTxnCount: 'Minimum transaction amount',
+  maxTxnCount: 'Maximum transaction amount',
+  avgTicketSize: 'Average ticket size',
+  domesticCrossBorderSplit: 'Domestic vs cross-border split',
+  processingCurrencies: 'Processing currencies',
+  recurringBillingDetails: 'Recurring billing details',
+  refundPolicy: 'Refund policy',
+  shippingPolicy: 'Shipping policy',
+  trialPeriod: 'Trial period',
+  churnRate: 'Churn rate',
+  avgDeliveryTime: 'Average delivery time',
+  cryptoServices: 'Crypto services',
+  amlKycProcedures: 'AML / KYC procedures',
+  cryptoLicenses: 'Crypto licenses',
+  custodyArrangement: 'Custody arrangement',
+  gamingType: 'Gaming type',
+  gamingLicenses: 'Gaming licenses',
+  responsibleGaming: 'Responsible gaming controls',
+  ageVerification: 'Age verification',
+  serviceType: 'Service type',
+  billingModel: 'Billing model',
+  contractLength: 'Contract length',
+  businessDescription: 'Business description',
+  regulatoryStatus: 'Regulatory status',
+  chargebackHistory: 'Chargeback history',
+  previousProcessors: 'Previous processors',
+  ownershipPercentage: 'Ownership percentage',
+  ownerName: 'Owner name',
+  ownerRole: 'Owner role',
+  ownerEmail: 'Owner email',
+  ownerIdNumber: 'Owner ID number',
+  ownerIdExpiry: 'Owner ID expiry',
+  ownerCountryOfResidence: 'Owner country of residence',
+  bankName: 'Bank name',
+  accountHolderName: 'Account holder name',
+  accountNumber: 'Account number / IBAN',
+  routingNumber: 'Routing number / branch code',
+  settlementCurrency: 'Settlement currency',
+  complianceDetails: 'Compliance details',
+};
+const INTAKE_SECTIONS: IntakeSectionDefinition[] = [
+  {
+    title: 'Qualification snapshot',
+    fields: ['businessType', 'country', 'industry', 'monthlyVolume', 'monthlyTransactions'],
+  },
+  {
+    title: 'Business details',
+    fields: ['legalName', 'taxId', 'website', 'timeInBusiness', 'staffSize', 'businessCategory'],
+  },
+  {
+    title: 'Contact and presence',
+    fields: ['generalEmail', 'supportEmail', 'disputesEmail', 'phone', 'preferredContact', 'socialPresence'],
+  },
+  {
+    title: 'Registered and operating footprint',
+    fields: ['registeredAddress', 'operatingAddress', 'city', 'region', 'province', 'operatingDiffers'],
+  },
+  {
+    title: 'Business operations',
+    fields: ['targetGeography', 'deliveryMethod', 'domesticVsInternational', 'paymentProducts', 'processingCurrencies'],
+  },
+  {
+    title: 'Transaction profile',
+    fields: [
+      'avgTxnCount',
+      'minTxnCount',
+      'maxTxnCount',
+      'avgTicketSize',
+      'domesticCrossBorderSplit',
+      'recurringBillingDetails',
+      'trialPeriod',
+      'churnRate',
+      'refundPolicy',
+      'shippingPolicy',
+    ],
+  },
+  {
+    title: 'Ownership and settlement',
+    fields: [
+      'ownerName',
+      'ownerEmail',
+      'ownerRole',
+      'ownershipPercentage',
+      'ownerIdNumber',
+      'ownerIdExpiry',
+      'ownerCountryOfResidence',
+      'bankName',
+      'accountHolderName',
+      'accountNumber',
+      'routingNumber',
+      'settlementCurrency',
+    ],
+  },
+  {
+    title: 'Industry-specific risk context',
+    fields: [
+      'serviceType',
+      'billingModel',
+      'contractLength',
+      'avgDeliveryTime',
+      'cryptoServices',
+      'amlKycProcedures',
+      'cryptoLicenses',
+      'custodyArrangement',
+      'gamingType',
+      'gamingLicenses',
+      'responsibleGaming',
+      'ageVerification',
+      'businessDescription',
+      'regulatoryStatus',
+      'chargebackHistory',
+      'previousProcessors',
+      'complianceDetails',
+    ],
+  },
+];
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -79,9 +272,23 @@ function normalizeString(value: unknown, fallback = ''): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
+function normalizeOptionalNumber(value: unknown): number | undefined {
+  const num = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(num) ? num : undefined;
+}
+
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function normalizeStringRecord(value: unknown): Record<string, string> {
+  if (!isPlainObject(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entryValue]) => typeof entryValue === 'string' && entryValue.trim().length > 0)
+      .map(([entryKey, entryValue]) => [entryKey, entryValue.trim()])
+  );
 }
 
 function normalizeRiskScore(value: unknown): number {
@@ -161,6 +368,12 @@ function getUploadedFiles(merchantData: MerchantDataLike): UploadedFileDescripto
       name: normalizeString(file.name, key),
       mimeType: normalizeString(file.mimeType, 'application/octet-stream'),
       data: typeof file.data === 'string' ? file.data : undefined,
+      uploadDate: normalizeString(file.uploadDate),
+      documentType: normalizeString(file.documentType),
+      status: normalizeString(file.status),
+      extractedFields: normalizeStringRecord(file.extractedFields),
+      confidence: normalizeOptionalNumber(file.confidence),
+      linkedRequirement: normalizeString(file.linkedRequirement),
     });
   }
 
@@ -175,10 +388,46 @@ function getUploadedFiles(merchantData: MerchantDataLike): UploadedFileDescripto
       name: normalizeString(file.name, `additional-document-${index + 1}`),
       mimeType: normalizeString(file.mimeType, 'application/octet-stream'),
       data: typeof file.data === 'string' ? file.data : undefined,
+      uploadDate: normalizeString(file.uploadDate),
+      documentType: normalizeString(file.documentType),
+      status: normalizeString(file.status),
+      extractedFields: normalizeStringRecord(file.extractedFields),
+      confidence: normalizeOptionalNumber(file.confidence),
+      linkedRequirement: normalizeString(file.linkedRequirement),
     });
   });
 
   return uploads;
+}
+
+function hasBinaryAttachmentData(merchantData: MerchantDataLike): boolean {
+  return getUploadedFiles(merchantData).some((upload) => typeof upload.data === 'string' && upload.data.trim().length > 0);
+}
+
+function stripBinaryMerchantData(merchantData: MerchantDataLike): MerchantDataLike {
+  const next: MerchantDataLike = { ...merchantData };
+
+  for (const key of FILE_KEYS) {
+    const file = next[key];
+    if (!isPlainObject(file)) continue;
+    next[key] = {
+      ...file,
+      data: '',
+    };
+  }
+
+  if (Array.isArray(next.additionalDocuments)) {
+    next.additionalDocuments = next.additionalDocuments.map((file) =>
+      isPlainObject(file)
+        ? {
+            ...file,
+            data: '',
+          }
+        : file
+    );
+  }
+
+  return next;
 }
 
 function isImageFile(mimeType: string): boolean {
@@ -195,16 +444,202 @@ function decodeBase64DataUrl(data: string): Uint8Array {
   return Uint8Array.from(Buffer.from(base64, 'base64'));
 }
 
-function buildMerchantProfileText(merchantData: MerchantDataLike): string {
-  const scalarEntries = Object.entries(merchantData).filter(([, value]) => {
-    return value !== null && value !== undefined && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean');
-  });
+function prettifyFieldLabel(key: string): string {
+  if (FIELD_LABELS[key]) return FIELD_LABELS[key];
+  return key
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, (char) => char.toUpperCase())
+    .trim();
+}
 
+function isMeaningfulScalar(value: unknown): value is ScalarValue {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (typeof value === 'number') return Number.isFinite(value);
+  return typeof value === 'boolean';
+}
+
+function getMeaningfulScalarEntries(merchantData: MerchantDataLike): Array<[string, ScalarValue]> {
+  const entries: Array<[string, ScalarValue]> = [];
+
+  for (const [field, value] of Object.entries(merchantData)) {
+    if (!isMeaningfulScalar(value)) continue;
+    entries.push([field, value]);
+  }
+
+  return entries;
+}
+
+function maskSensitiveValue(raw: string): string {
+  const compact = raw.replace(/\s+/g, '');
+  if (compact.length <= 4) return 'Provided';
+  return `Provided (ending ${compact.slice(-4)})`;
+}
+
+function formatScalarValue(field: string, value: ScalarValue): string {
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  const raw = typeof value === 'number' ? String(value) : value.trim();
+  if (!raw) return '';
+  if (SENSITIVE_FIELD_KEYS.has(field)) return maskSensitiveValue(raw);
+  return raw;
+}
+
+function buildSectionText(title: string, entries: Array<[string, ScalarValue]>): string {
+  if (!entries.length) return '';
+  const lines = entries.map(([field, value]) => `- ${prettifyFieldLabel(field)}: ${formatScalarValue(field, value)}`);
+  return `${title}:\n${lines.join('\n')}`;
+}
+
+function getExpectedDocumentFields(merchantData: MerchantDataLike): string[] {
+  const industry = normalizeString(merchantData.industry);
+  const country = normalizeString(merchantData.country);
+  const monthlyVolume = normalizeString(merchantData.monthlyVolume);
+  const isHighRisk = HIGH_RISK_INDUSTRIES.has(industry);
+  const isInternational = country.length > 0 && !DOMESTIC_COUNTRIES.has(country);
+  const isHighVolume = monthlyVolume === '>250k' || monthlyVolume === '50k-250k';
+
+  const expected = ['idUpload', 'registrationCertificate'];
+
+  if (isInternational || isHighRisk) expected.push('proofOfAddress');
+  if (isHighVolume || isHighRisk) expected.push('bankStatement', 'financials');
+  if (isHighRisk) expected.push('complianceDocument', 'proofOfFunds');
+  if (isInternational) expected.push('enhancedVerification');
+
+  return expected;
+}
+
+function buildIntakeCoverageText(merchantData: MerchantDataLike): string {
+  const scalarEntries = getMeaningfulScalarEntries(merchantData);
+  const criticalMissing = CRITICAL_INTAKE_FIELDS.filter((field) => !isMeaningfulScalar(merchantData[field])).map(prettifyFieldLabel);
+  const expectedDocuments = getExpectedDocumentFields(merchantData);
+  const presentDocuments = expectedDocuments.filter((field) => isPlainObject(merchantData[field]));
+  const missingDocuments = expectedDocuments
+    .filter((field) => !isPlainObject(merchantData[field]))
+    .map((field) => UPLOAD_FIELD_LABELS[field] ?? prettifyFieldLabel(field));
+  const uploadsWithMetadata = getUploadedFiles(merchantData).filter(
+    (upload) =>
+      Object.keys(upload.extractedFields).length > 0 ||
+      typeof upload.confidence === 'number' ||
+      Boolean(upload.status) ||
+      Boolean(upload.documentType)
+  ).length;
+
+  const lines = [
+    `- Non-empty intake fields provided: ${scalarEntries.length}`,
+    `- Expected supporting documents present: ${presentDocuments.length}/${expectedDocuments.length}`,
+    `- Uploaded files with extraction metadata: ${uploadsWithMetadata}`,
+  ];
+
+  if (criticalMissing.length) {
+    lines.push(`- Critical intake gaps: ${criticalMissing.join(', ')}`);
+  }
+
+  if (missingDocuments.length) {
+    lines.push(`- Missing expected documents: ${missingDocuments.join(', ')}`);
+  }
+
+  return lines.join('\n');
+}
+
+function buildDerivedRiskSignalsText(merchantData: MerchantDataLike): string {
+  const industry = normalizeString(merchantData.industry);
+  const country = normalizeString(merchantData.country);
+  const monthlyVolume = normalizeString(merchantData.monthlyVolume);
+  const monthlyTransactions = normalizeString(merchantData.monthlyTransactions);
+  const domesticCrossBorderSplit = normalizeString(merchantData.domesticCrossBorderSplit);
+  const domesticVsInternational = normalizeString(merchantData.domesticVsInternational);
+  const recurringBillingDetails = normalizeString(merchantData.recurringBillingDetails);
+  const trialPeriod = normalizeString(merchantData.trialPeriod);
+  const complianceDetails = normalizeString(merchantData.complianceDetails);
+  const regulatoryStatus = normalizeString(merchantData.regulatoryStatus);
+  const chargebackHistory = normalizeString(merchantData.chargebackHistory);
+  const previousProcessors = normalizeString(merchantData.previousProcessors);
+
+  const signals: string[] = [];
+
+  if (HIGH_RISK_INDUSTRIES.has(industry)) {
+    signals.push(`Industry is on the elevated-risk route: ${industry}.`);
+  }
+  if (country && !DOMESTIC_COUNTRIES.has(country)) {
+    signals.push(`Merchant is registered outside US/CA: ${country}.`);
+  }
+  if (monthlyVolume === '>250k' || monthlyVolume === '50k-250k') {
+    signals.push(`Processing volume is substantial: ${monthlyVolume} per month.`);
+  }
+  if (monthlyTransactions === '1k-10k' || monthlyTransactions === '>10k') {
+    signals.push(`Transaction count is moderately high to high: ${monthlyTransactions} per month.`);
+  }
+  if (domesticCrossBorderSplit || domesticVsInternational || country === 'EU' || country === 'UK' || country === 'Other') {
+    signals.push('Cross-border or international processing exposure is present or implied.');
+  }
+  if (recurringBillingDetails || trialPeriod) {
+    signals.push('Recurring or subscription billing behavior is present.');
+  }
+  if (complianceDetails || regulatoryStatus) {
+    signals.push('The merchant supplied compliance or licensing narrative that should be weighed in the score.');
+  }
+  if (chargebackHistory) {
+    signals.push(`Chargeback history disclosed: ${chargebackHistory}.`);
+  }
+  if (previousProcessors) {
+    signals.push(`Previous processor history supplied: ${previousProcessors}.`);
+  }
+  if (!signals.length) {
+    signals.push('No additional derived intake signals were detected beyond the raw questionnaire answers.');
+  }
+
+  return signals.map((signal) => `- ${signal}`).join('\n');
+}
+
+function buildMerchantProfileText(merchantData: MerchantDataLike): string {
+  const scalarEntries = getMeaningfulScalarEntries(merchantData);
   if (!scalarEntries.length) {
     return 'No scalar merchant profile fields were supplied.';
   }
 
-  return JSON.stringify(Object.fromEntries(scalarEntries), null, 2);
+  const entryMap = new Map<string, ScalarValue>(scalarEntries);
+  const usedFields = new Set<string>();
+  const sections: string[] = [];
+
+  for (const section of INTAKE_SECTIONS) {
+    const entries = section.fields
+      .filter((field) => entryMap.has(field))
+      .map((field) => {
+        usedFields.add(field);
+        return [field, entryMap.get(field) as ScalarValue] as [string, ScalarValue];
+      });
+    const text = buildSectionText(section.title, entries);
+    if (text) sections.push(text);
+  }
+
+  const remainingEntries = scalarEntries.filter(([field]) => !usedFields.has(field));
+  const remainingText = buildSectionText('Other provided intake fields', remainingEntries);
+  if (remainingText) sections.push(remainingText);
+
+  return sections.join('\n\n');
+}
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function formatConfidence(confidence: number | undefined): string | undefined {
+  if (typeof confidence !== 'number' || !Number.isFinite(confidence)) return undefined;
+  const normalized = confidence > 1 ? confidence : confidence * 100;
+  return `${Math.max(0, Math.min(100, Math.round(normalized)))}%`;
+}
+
+function summarizeExtractedFields(extractedFields: Record<string, string>): string {
+  const entries = Object.entries(extractedFields);
+  if (!entries.length) return '';
+
+  const preview = entries.slice(0, 6).map(([field, value]) => `${prettifyFieldLabel(field)}=${truncateText(value, 80)}`);
+  const hiddenCount = entries.length - preview.length;
+  if (hiddenCount > 0) {
+    preview.push(`+${hiddenCount} more extracted field(s)`);
+  }
+
+  return preview.join('; ');
 }
 
 function buildUploadInventoryText(
@@ -214,12 +649,25 @@ function buildUploadInventoryText(
 ): string {
   const uploads = getUploadedFiles(merchantData);
   const lines = uploads.map((upload) => {
-    const mode = deliveredFields.has(upload.field)
-      ? 'sent to model'
-      : upload.data?.trim()
-        ? 'metadata only'
-        : 'metadata only';
-    return `- ${upload.field}: ${upload.name} (${upload.mimeType}, ${mode})`;
+    const mode = deliveredFields.has(upload.field) ? 'sent to model' : 'metadata only';
+    const descriptors = [upload.mimeType, mode];
+    if (upload.documentType) descriptors.push(`doc type ${upload.documentType}`);
+    if (upload.status) descriptors.push(`status ${upload.status}`);
+    const confidenceLabel = formatConfidence(upload.confidence);
+    if (confidenceLabel) descriptors.push(`confidence ${confidenceLabel}`);
+    if (upload.linkedRequirement) descriptors.push(`requirement ${upload.linkedRequirement}`);
+    if (upload.uploadDate) descriptors.push(`uploaded ${upload.uploadDate}`);
+
+    const fileLines = [
+      `- ${UPLOAD_FIELD_LABELS[upload.field] ?? upload.field}: ${upload.name} (${descriptors.join(', ')})`,
+    ];
+
+    const extractedSummary = summarizeExtractedFields(upload.extractedFields);
+    if (extractedSummary) {
+      fileLines.push(`  extracted fields: ${extractedSummary}`);
+    }
+
+    return fileLines.join('\n');
   });
 
   if (skippedNotes.length) {
@@ -243,6 +691,12 @@ function buildPromptText(
 Merchant Profile:
 ${buildMerchantProfileText(merchantData)}
 
+Intake Coverage:
+${buildIntakeCoverageText(merchantData)}
+
+Derived Risk Signals:
+${buildDerivedRiskSignalsText(merchantData)}
+
 Uploaded Documents:
 ${buildUploadInventoryText(merchantData, deliveredFields, skippedNotes)}
 
@@ -251,9 +705,10 @@ Tasks:
 2. Return riskCategory as Low, Medium, or High.
 3. Return 2-5 riskFactors.
 4. Recommend one processor from Stripe, Adyen, Nuvei, HighRiskPay.
-5. Explain the recommendation in reason.
+5. Explain the recommendation in reason, citing the intake facts, completeness gaps, and document evidence that drove the score.
 6. Summarize what the uploaded files appear to contain in documentSummary. If only metadata was available, say that clearly.
-7. Cross-check merchant profile against documents and return verificationStatus and verificationNotes.
+7. Cross-check merchant profile, intake completeness, document metadata, and documents against each other and return verificationStatus and verificationNotes.
+8. Treat missing critical intake fields, missing expected documents, extraction mismatches, and regulated-industry answers as real scoring signals.
 
 Return JSON only with exactly these keys:
 {
@@ -499,8 +954,20 @@ export async function POST(request: Request): Promise<Response> {
       return jsonResponse({ error: 'Request body must include a merchantData object.' }, 400);
     }
 
-    const result = await runUnderwriting(body.merchantData);
-    return jsonResponse(result, 200);
+    try {
+      const result = await runUnderwriting(body.merchantData);
+      return jsonResponse(result, 200);
+    } catch (error) {
+      const firstMessage = describeError(error);
+
+      if (!hasBinaryAttachmentData(body.merchantData)) {
+        throw error;
+      }
+
+      console.warn('[underwrite] primary attempt failed, retrying metadata-only:', firstMessage);
+      const retriedResult = await runUnderwriting(stripBinaryMerchantData(body.merchantData));
+      return jsonResponse(retriedResult, 200);
+    }
   } catch (error) {
     const message = describeError(error);
     console.error('[underwrite] request failed:', message);
