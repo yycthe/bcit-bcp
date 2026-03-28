@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import type { IdentityDemoScenario, MockRemediationItem } from '@/src/lib/mockIdentityVerification';
 import { AIUnderwriting } from './AIUnderwriting';
 import { ApplicationStatus, MerchantData, FileData } from '@/src/types';
 import { getMerchantDocumentChecklist, buildDefaultDocumentReminder } from '@/src/lib/documentChecklist';
@@ -16,6 +17,7 @@ interface Props {
   aiRecommendation: any;
   merchantNoticeFromAdmin: string;
   setMerchantNoticeFromAdmin: (msg: string) => void;
+  setIdentityRemediation: (items: MockRemediationItem[]) => void;
 }
 
 export function AdminPortal({
@@ -26,9 +28,12 @@ export function AdminPortal({
   aiRecommendation,
   merchantNoticeFromAdmin,
   setMerchantNoticeFromAdmin,
+  setIdentityRemediation,
 }: Props) {
   const [currentView, setCurrentView] = useState<'queue' | 'underwriting'>('queue');
   const [reminderCustom, setReminderCustom] = useState('');
+  const [identityScenario, setIdentityScenario] = useState<IdentityDemoScenario>('default');
+  const [identityLoading, setIdentityLoading] = useState(false);
 
   const merchantName = merchantData.legalName || merchantData.ownerName || 'Unknown Merchant';
   const docChecklist = getMerchantDocumentChecklist(merchantData);
@@ -52,6 +57,39 @@ export function AdminPortal({
   const clearMerchantNotice = () => {
     setMerchantNoticeFromAdmin('');
     toast.message('Merchant notice cleared');
+  };
+
+  const callIdentityDemo = async (service: 'suite' | 'kyc' | 'kyb' | 'persona' | 'persona_webhook') => {
+    setIdentityLoading(true);
+    try {
+      const res = await fetch('/api/identity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ merchantData, scenario: identityScenario, service }),
+      });
+      const json = (await res.json()) as { error?: string; remediations?: MockRemediationItem[] };
+      if (!res.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
+      const rem = Array.isArray(json.remediations) ? json.remediations : [];
+      setIdentityRemediation(rem);
+      const label =
+        service === 'persona_webhook'
+          ? 'Persona webhook (simulated)'
+          : service === 'suite'
+            ? 'Full suite'
+            : service.toUpperCase();
+      toast.success(`${label} complete`, {
+        description:
+          rem.length === 0
+            ? 'No remediation steps — merchant view stays clear.'
+            : `${rem.length} fix-it link(s) sent to Merchant portal.`,
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Identity demo request failed');
+    } finally {
+      setIdentityLoading(false);
+    }
   };
 
   return (
@@ -239,6 +277,103 @@ export function AdminPortal({
                   </CardContent>
                 </Card>
               </div>
+            )}
+
+            {appStatus !== 'draft' && (
+              <Card className="mt-6 border-violet-200 bg-violet-50/40">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-violet-600" />
+                    Simulated KYC / KYB / Persona APIs (demo)
+                  </CardTitle>
+                  <p className="text-xs text-slate-600 font-normal mt-1">
+                    POST <code className="rounded bg-white/80 px-1">/api/identity</code> — same routes work on Vercel. Responses include{' '}
+                    <code className="rounded bg-white/80 px-1">remediations</code> with Intake targets. Merchant sees a red banner with{' '}
+                    <strong>Fix this</strong> buttons.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="flex flex-col gap-1 text-xs font-medium text-slate-700">
+                      Scenario
+                      <select
+                        className="rounded-md border border-slate-200 bg-white px-2 py-2 text-sm min-w-[220px]"
+                        value={identityScenario}
+                        onChange={(e) => setIdentityScenario(e.target.value as IdentityDemoScenario)}
+                        disabled={identityLoading}
+                      >
+                        <option value="default">Default (from missing files on profile)</option>
+                        <option value="all_pass">All pass</option>
+                        <option value="persona_decline_id">Persona: decline government ID</option>
+                        <option value="persona_decline_kyb_doc">Persona: decline business registration</option>
+                        <option value="kyc_owner_mismatch">KYC: owner name mismatch → fix owner form</option>
+                        <option value="kyb_business_mismatch">KYB: business name mismatch → fix company form</option>
+                        <option value="combined_failures">Combined ID + business doc failures</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={identityLoading}
+                      onClick={() => callIdentityDemo('kyc')}
+                    >
+                      Call KYC vendor
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={identityLoading}
+                      onClick={() => callIdentityDemo('kyb')}
+                    >
+                      Call KYB vendor
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={identityLoading}
+                      onClick={() => callIdentityDemo('persona')}
+                    >
+                      Call Persona inquiry
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="bg-violet-700 hover:bg-violet-800"
+                      disabled={identityLoading}
+                      onClick={() => callIdentityDemo('persona_webhook')}
+                    >
+                      Simulate Persona webhook
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={identityLoading}
+                      onClick={() => callIdentityDemo('suite')}
+                    >
+                      Run full suite
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="text-slate-600"
+                      disabled={identityLoading}
+                      onClick={() => {
+                        setIdentityRemediation([]);
+                        toast.message('Cleared merchant verification alerts');
+                      }}
+                    >
+                      Clear merchant alerts
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             )}
           </div>
         )}

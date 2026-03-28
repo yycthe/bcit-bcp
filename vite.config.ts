@@ -4,6 +4,19 @@ import path from 'path';
 import type { Plugin } from 'vite';
 import { defineConfig, loadEnv } from 'vite';
 import { POST as underwritePost } from './api/underwrite';
+import { POST as identityPost } from './api/identity';
+
+async function readJsonBody(req: NodeJS.ReadableStream): Promise<{ ok: true; raw: string } | { ok: false; error: string }> {
+  const chunks: Buffer[] = [];
+  try {
+    for await (const chunk of req) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+  } catch {
+    return { ok: false, error: 'Could not read request body' };
+  }
+  return { ok: true, raw: Buffer.concat(chunks).toString('utf8') };
+}
 
 function underwritingDevApi(): Plugin {
   return {
@@ -11,7 +24,7 @@ function underwritingDevApi(): Plugin {
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const pathname = req.url?.split('?')[0] ?? '';
-        if (pathname !== '/api/underwrite') {
+        if (pathname !== '/api/underwrite' && pathname !== '/api/identity') {
           next();
           return;
         }
@@ -22,27 +35,24 @@ function underwritingDevApi(): Plugin {
           res.end(JSON.stringify({ error: 'Method not allowed' }));
           return;
         }
-        const chunks: Buffer[] = [];
-        try {
-          for await (const chunk of req as NodeJS.ReadableStream) {
-            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-          }
-        } catch {
+        const read = await readJsonBody(req as NodeJS.ReadableStream);
+        if (!read.ok) {
           res.statusCode = 400;
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: 'Could not read request body' }));
+          res.end(JSON.stringify({ error: read.error }));
           return;
         }
-        let body: { merchantData?: unknown };
+        let body: unknown;
         try {
-          body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { merchantData?: unknown };
+          body = JSON.parse(read.raw) as unknown;
         } catch {
           res.statusCode = 400;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ error: 'Invalid JSON' }));
           return;
         }
-        if (!body.merchantData || typeof body.merchantData !== 'object') {
+        const b = body as { merchantData?: unknown };
+        if (!b.merchantData || typeof b.merchantData !== 'object') {
           res.statusCode = 400;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ error: 'Missing merchantData in JSON body' }));
@@ -50,21 +60,23 @@ function underwritingDevApi(): Plugin {
         }
         try {
           const origin = `http://${req.headers.host ?? 'localhost:3000'}`;
-          const request = new Request(new URL('/api/underwrite', origin), {
+          const path = pathname === '/api/identity' ? '/api/identity' : '/api/underwrite';
+          const handler = pathname === '/api/identity' ? identityPost : underwritePost;
+          const request = new Request(new URL(path, origin), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(body),
           });
-          const response = await underwritePost(request);
+          const response = await handler(request);
           res.statusCode = response.status;
           response.headers.forEach((value, key) => {
             res.setHeader(key, value);
           });
           res.end(await response.text());
         } catch (e) {
-          const message = e instanceof Error ? e.message : 'Underwriting failed';
+          const message = e instanceof Error ? e.message : 'API request failed';
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ error: message }));

@@ -1,16 +1,46 @@
 import React from 'react';
 import { ApplicationStatus } from '@/src/types';
+import type { MerchantDocumentKey } from '@/src/lib/documentChecklist';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
-import { CheckCircle2, Clock, FileText, ArrowRight, AlertTriangle, X } from 'lucide-react';
+import { CheckCircle2, Clock, FileText, ArrowRight, AlertTriangle, X, ChevronRight } from 'lucide-react';
 import { motion } from 'motion/react';
+
+export type MissingDocumentItem = { key: MerchantDocumentKey; label: string };
 
 interface Props {
   status: ApplicationStatus;
   onProceedToAgreement: () => void;
   adminNotice?: string;
   onDismissNotice?: () => void;
-  missingDocumentLabels?: string[];
+  missingDocuments?: MissingDocumentItem[];
+  onStartGuidedUpload?: (startKey: MerchantDocumentKey) => void;
+}
+
+function MissingDocsList({
+  items,
+  onPick,
+}: {
+  items: MissingDocumentItem[];
+  onPick: (key: MerchantDocumentKey) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <ul className="mt-3 space-y-2">
+      {items.map(({ key, label }) => (
+        <li key={key}>
+          <button
+            type="button"
+            onClick={() => onPick(key)}
+            className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-800 shadow-sm transition hover:border-blue-300 hover:bg-blue-50/60"
+          >
+            <span>{label}</span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export function MerchantStatus({
@@ -18,7 +48,8 @@ export function MerchantStatus({
   onProceedToAgreement,
   adminNotice,
   onDismissNotice,
-  missingDocumentLabels = [],
+  missingDocuments = [],
+  onStartGuidedUpload,
 }: Props) {
   const steps = [
     {
@@ -48,8 +79,8 @@ export function MerchantStatus({
   ];
 
   return (
-    <div className="p-8 max-w-3xl mx-auto h-full flex flex-col justify-center">
-      <div className="text-center mb-12">
+    <div className="p-8 pb-16 max-w-3xl mx-auto w-full min-h-min">
+      <div className="text-center mb-10">
         <h1 className="text-3xl font-bold text-slate-900 mb-3">Application Status</h1>
         <p className="text-slate-500 text-lg">Track the progress of your merchant account application.</p>
       </div>
@@ -60,14 +91,13 @@ export function MerchantStatus({
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold uppercase text-amber-800">Underwriting requested an update</p>
             <p className="text-sm text-amber-950 mt-1 whitespace-pre-wrap">{adminNotice}</p>
-            {missingDocumentLabels.length > 0 && (
-              <ul className="mt-2 text-sm text-amber-900/90 list-disc list-inside">
-                {missingDocumentLabels.map((label) => (
-                  <li key={label}>{label}</li>
-                ))}
-              </ul>
+            {missingDocuments.length > 0 && onStartGuidedUpload && (
+              <>
+                <p className="mt-2 text-xs font-medium text-amber-900">Tap a document to open the upload step:</p>
+                <MissingDocsList items={missingDocuments} onPick={onStartGuidedUpload} />
+              </>
             )}
-            <p className="text-xs text-amber-800/80 mt-2">Use <strong>Intake Assistant</strong> in the sidebar to upload, or <strong>Review Application</strong> if available.</p>
+            <p className="text-xs text-amber-800/80 mt-2">Or use <strong>Intake Assistant</strong> in the sidebar.</p>
           </div>
           {onDismissNotice && (
             <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={onDismissNotice} aria-label="Dismiss">
@@ -77,15 +107,11 @@ export function MerchantStatus({
         </div>
       )}
 
-      {status === 'under_review' && !adminNotice?.trim() && missingDocumentLabels.length > 0 && (
+      {status === 'under_review' && !adminNotice?.trim() && missingDocuments.length > 0 && onStartGuidedUpload && (
         <div className="mb-8 rounded-lg border border-slate-200 bg-slate-50 p-4 text-left text-sm text-slate-700">
           <p className="font-medium text-slate-900">Optional: strengthen your file</p>
-          <p className="mt-1 text-slate-600">For your profile we still do not have:</p>
-          <ul className="mt-2 list-disc list-inside text-slate-700">
-            {missingDocumentLabels.map((label) => (
-              <li key={label}>{label}</li>
-            ))}
-          </ul>
+          <p className="mt-1 text-slate-600">We still need the following. Tap one to upload (use <strong>Continue</strong> for the next):</p>
+          <MissingDocsList items={missingDocuments} onPick={onStartGuidedUpload} />
         </div>
       )}
 

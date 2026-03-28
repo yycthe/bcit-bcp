@@ -9,6 +9,15 @@ import { Badge } from '@/src/components/ui/badge';
 import { toast } from 'sonner';
 import { MerchantData, FileData } from '@/src/types';
 import { getFallbackUnderwriting } from '@/src/lib/underwritingFallback';
+import {
+  MERCHANT_FILE_QUESTION_KEYS,
+  MERCHANT_DOCUMENT_LABELS,
+  getMissingDocumentKeys,
+  getNextMissingInTourOrder,
+  type MerchantDocumentKey,
+} from '@/src/lib/documentChecklist';
+
+const MERCHANT_FILE_QUESTION_ID_SET = new Set<string>(MERCHANT_FILE_QUESTION_KEYS);
 
 type QuestionId = Exclude<keyof MerchantData, 'additionalDocuments'> | 'done' | 'companyDetailsForm' | 'contactAddressForm' | 'businessOperationsForm' | 'ownerDetailsForm' | 'bankAccountForm' | 'subscriptionForm' | 'retailForm' | 'highRiskForm' | 'cryptoForm' | 'gamingForm' | 'servicesForm';
 
@@ -826,15 +835,42 @@ interface ChatAppProps {
   editSection: string | null;
   setEditSection: (section: string | null) => void;
   onFinish: () => void;
+  /** When set, document upload/edit steps pause after each answer until the user clicks Continue (multi-missing flow). */
+  guidedTourOrder?: MerchantDocumentKey[] | null;
+  onGuidedFlowComplete?: () => void;
+  onGuidedFlowAbort?: () => void;
 }
 
-export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isFinished, documents, setDocuments, editSection, setEditSection, onFinish }: ChatAppProps) {
+export function ChatApp({
+  data,
+  setData,
+  setAiRecommendation,
+  setIsFinished,
+  isFinished,
+  documents,
+  setDocuments,
+  editSection,
+  setEditSection,
+  onFinish,
+  guidedTourOrder = null,
+  onGuidedFlowComplete,
+  onGuidedFlowAbort,
+}: ChatAppProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState<QuestionId>('businessType');
   const [isTyping, setIsTyping] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  const [guidedAwaitContinue, setGuidedAwaitContinue] = useState(false);
+  const [guidedAfterData, setGuidedAfterData] = useState<MerchantData | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!guidedTourOrder?.length) {
+      setGuidedAwaitContinue(false);
+      setGuidedAfterData(null);
+    }
+  }, [guidedTourOrder]);
 
   useEffect(() => {
     if (!currentQuestion || currentQuestion === 'done') return;
@@ -874,6 +910,26 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
     }
   }, [editSection, isFinished, setEditSection]);
 
+  /** When `editSection` is already cleared (e.g. Strict Mode remount), still open the correct guided document step. */
+  useEffect(() => {
+    if (!guidedTourOrder?.length || isFinished) return;
+    if (editSection) return;
+    const missing = getMissingDocumentKeys(data);
+    const start = missing.find((k) => guidedTourOrder.includes(k)) ?? guidedTourOrder[0];
+    if (!start) return;
+
+    setCurrentQuestion((q) => (q === 'businessType' ? (start as QuestionId) : q));
+    setIsEditing(true);
+    setMessages((prev) => {
+      if (prev.length > 0) return prev;
+      const qDef = QUESTIONS[start as QuestionId];
+      const line = qDef
+        ? `Let's add the requested document: ${qDef.text}`
+        : 'Please provide the requested upload.';
+      return [{ id: 'guided-open', content: line, sender: 'system' as const, isActionable: true }];
+    });
+  }, [guidedTourOrder, data, isFinished, editSection]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -886,8 +942,12 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
 
   useEffect(() => {
     if (!initialized.current && messages.length === 0) {
+      const openForGuidedOrEdit =
+        Boolean(editSection) || (guidedTourOrder != null && guidedTourOrder.length > 0);
       initialized.current = true;
-      askQuestion('businessType');
+      if (!openForGuidedOrEdit) {
+        askQuestion('businessType');
+      }
     }
   }, []);
 
@@ -946,13 +1006,26 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
     setInputValue('');
 
     let nextQ: QuestionId;
+    const inGuidedDocumentStep =
+      isEditing &&
+      guidedTourOrder &&
+      guidedTourOrder.length > 0 &&
+      MERCHANT_FILE_QUESTION_ID_SET.has(currentQuestion as string) &&
+      guidedTourOrder.includes(currentQuestion as MerchantDocumentKey);
+
+    if (inGuidedDocumentStep) {
+      setGuidedAfterData(newData);
+      setGuidedAwaitContinue(true);
+      return;
+    }
+
     if (isEditing) {
       setIsEditing(false);
       nextQ = 'done';
     } else {
       nextQ = getNextQuestion(currentQuestion, newData);
     }
-    
+
     setCurrentQuestion(nextQ);
 
     if (nextQ === 'done') {
@@ -1062,7 +1135,78 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
     }
   };
 
+  const handleGuidedContinue = () => {
+    if (!guidedTourOrder?.length) return;
+    const snap = guidedAfterData ?? data;
+    setGuidedAwaitContinue(false);
+    setGuidedAfterData(null);
+    const missing = getMissingDocumentKeys(snap);
+    if (missing.length === 0) {
+      setIsEditing(false);
+      setIsFinished(true);
+      onGuidedFlowComplete?.();
+      return;
+    }
+    let next = getNextMissingInTourOrder(
+      guidedTourOrder,
+      currentQuestion as MerchantDocumentKey,
+      snap
+    );
+    if (!next) next = missing[0] ?? null;
+    if (!next) {
+      setIsEditing(false);
+      setIsFinished(true);
+      onGuidedFlowComplete?.();
+      return;
+    }
+    setCurrentQuestion(next as QuestionId);
+    askQuestion(next as QuestionId);
+  };
+
+  const abortEditing = () => {
+    setIsEditing(false);
+    setGuidedAwaitContinue(false);
+    setGuidedAfterData(null);
+    if (guidedTourOrder?.length) {
+      onGuidedFlowAbort?.();
+      return;
+    }
+    setCurrentQuestion('done');
+    finishFlow(data);
+  };
+
   const renderInputArea = () => {
+    if (guidedAwaitContinue && guidedTourOrder?.length) {
+      const snap = guidedAfterData ?? data;
+      const missing = getMissingDocumentKeys(snap);
+      const doneAll = missing.length === 0;
+      const nextKey = doneAll
+        ? null
+        : getNextMissingInTourOrder(
+            guidedTourOrder,
+            currentQuestion as MerchantDocumentKey,
+            snap
+          ) ?? missing[0];
+      return (
+        <div className="border-t bg-emerald-50/95 px-4 py-4 shadow-[0_-4px_12px_rgba(15,23,42,0.06)]">
+          <p className="text-center text-sm text-slate-800">
+            {doneAll
+              ? 'All items in this upload pass are accounted for. You can return to Application Status.'
+              : 'When you are finished with this document, continue to the next required upload.'}
+          </p>
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <Button type="button" className="gap-2 bg-emerald-700 hover:bg-emerald-800" onClick={handleGuidedContinue}>
+              {doneAll
+                ? 'Back to Application Status'
+                : nextKey
+                  ? `Continue: ${MERCHANT_DOCUMENT_LABELS[nextKey]}`
+                  : 'Continue'}
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
     if (isFinished || isTyping || !currentQuestion || currentQuestion === 'done') return null;
 
     const qDef = QUESTIONS[currentQuestion];
@@ -1076,11 +1220,7 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={() => {
-                  setIsEditing(false);
-                  setCurrentQuestion('done');
-                  finishFlow(data);
-                }}
+                onClick={abortEditing}
                 className="text-slate-500 hover:text-slate-700 bg-white/80 backdrop-blur-sm"
               >
                 Cancel Edit
@@ -1157,11 +1297,7 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={() => {
-                  setIsEditing(false);
-                  setCurrentQuestion('done');
-                  finishFlow(data);
-                }}
+                onClick={abortEditing}
                 className="text-slate-500 hover:text-slate-700 bg-white/80 backdrop-blur-sm"
               >
                 Cancel Edit
@@ -1209,11 +1345,7 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={() => {
-                  setIsEditing(false);
-                  setCurrentQuestion('done');
-                  finishFlow(data);
-                }}
+                onClick={abortEditing}
                 className="text-slate-500 hover:text-slate-700 bg-white/80 backdrop-blur-sm"
               >
                 Cancel Edit
@@ -1266,11 +1398,7 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={() => {
-                  setIsEditing(false);
-                  setCurrentQuestion('done');
-                  finishFlow(data);
-                }}
+                onClick={abortEditing}
                 className="text-slate-500 hover:text-slate-700 bg-white/80 backdrop-blur-sm"
               >
                 Cancel Edit
@@ -1350,11 +1478,7 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
             <Button 
               variant="ghost" 
               size="sm" 
-              onClick={() => {
-                setIsEditing(false);
-                setCurrentQuestion('done');
-                finishFlow(data);
-              }}
+              onClick={abortEditing}
               className="text-slate-500 hover:text-slate-700 bg-white/80 backdrop-blur-sm"
             >
               Cancel Edit
