@@ -6,7 +6,7 @@ BCIT **Business Consulting Project** — a **MerchantWerx** onboarding demo for 
 
 - **Merchant portal** — Application flow, agreements, status, and AI underwriting integration.
 - **Admin portal** — Review submitted applications and recommendations in a demo environment.
-- **AI underwriting** — direct **xAI REST API** on Vercel (`XAI_API_KEY` or Vercel’s `*_XAI_API_KEY`; default **`grok-4-fast`**, override with `XAI_MODEL`).
+- **AI underwriting** — direct **xAI REST API** on Vercel (`XAI_API_KEY` or Vercel’s `*_XAI_API_KEY`; default **`grok-4-1-fast-non-reasoning`**, override with `XAI_MODEL`).
 
 ## Stack
 
@@ -33,7 +33,7 @@ This project calls xAI directly from the server-side API route. Secrets stay ser
 1. Push this repo to GitHub and [import the project](https://vercel.com/new) in Vercel (or connect an existing project).
 2. In the Vercel dashboard, add **Environment Variables** for **Production** (and Preview if you want):  
    **`XAI_API_KEY`** and/or the integration variable ending in **`_XAI_API_KEY`**.  
-   Optional: **`XAI_MODEL`** (defaults to **`grok-4-fast`**).
+   Optional: **`XAI_MODEL`** (defaults to **`grok-4-1-fast-non-reasoning`**).
 3. Redeploy so the serverless **`/api/underwrite`** route picks up secrets.  
    `vercel.json` sets **`outputDirectory`: `dist`**, SPA rewrites, and a per-function **`maxDuration`** for underwriting.
 
@@ -56,7 +56,7 @@ See `.env.example`. Summary:
 | Variable | Description |
 |----------|-------------|
 | `XAI_API_KEY` or `*_XAI_API_KEY` | **Required** for underwriting. Never use **`VITE_*`** for secrets (that exposes them in the browser). |
-| `XAI_MODEL` | Optional. Default **`grok-4-fast`**. Good Grok 4 family alternatives include `grok-4-fast-reasoning` and `grok-4-1-fast-reasoning`. |
+| `XAI_MODEL` | Optional. Default **`grok-4-1-fast-non-reasoning`**. Good Grok 4 family alternatives include `grok-4-fast-reasoning` and `grok-4-1-fast-reasoning`. |
 | `AI_MODEL` | Optional fallback if `XAI_MODEL` is unset. |
 | `APP_URL` | Optional; base URL when deployed. |
 
@@ -68,7 +68,7 @@ Example:
 
 ```env
 XAI_API_KEY=xai-...
-# XAI_MODEL=grok-4-fast
+# XAI_MODEL=grok-4-1-fast-non-reasoning
 ```
 
 Local **`npm run dev`**: underwriting calls **`POST /api/underwrite`** (Vite dev middleware). Production: same path on Vercel via **`api/underwrite.ts`**.
@@ -89,7 +89,7 @@ Local **`npm run dev`**: underwriting calls **`POST /api/underwrite`** (Vite dev
 2. Keep secrets server-only. Do not use **`VITE_XAI_API_KEY`** or any other `VITE_*` secret.
 3. Redeploy after changing env vars.
 4. If underwriting requests include large PDFs/images, expect the app to fall back to metadata-only mode unless you move uploads to storage first.
-5. If you want to tune speed vs reasoning, set **`XAI_MODEL`** explicitly. xAI currently documents Grok 4 family structured-output and file support, including models such as **`grok-4-fast`** and **`grok-4-fast-reasoning`**.
+5. If you want to tune speed vs reasoning, set **`XAI_MODEL`** explicitly. xAI currently documents Grok 4 family structured-output and file support, including models such as **`grok-4-1-fast-non-reasoning`** and **`grok-4-fast-reasoning`**.
 
 ## Run locally
 

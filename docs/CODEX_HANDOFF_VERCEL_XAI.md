@@ -39,7 +39,7 @@
 
 | 用途 | 文件 | 说明 |
 |------|------|------|
-| 实际调用模型 | `api/underwrite.ts` | 直接 `fetch` xAI **Files** / **Responses**；默认模型 **`grok-4-fast`**（可被 `XAI_MODEL` / `AI_MODEL` 覆盖）。 |
+| 实际调用模型 | `api/underwrite.ts` | 直接 `fetch` xAI **Files** / **Responses**；默认模型 **`grok-4-1-fast-non-reasoning`**（可被 `XAI_MODEL` / `AI_MODEL` 覆盖）。 |
 | 解析 API Key | `api/underwrite.ts` → `resolveXaiApiKey()` | 优先 **`XAI_API_KEY`**，否则取任意环境变量名以 **`_XAI_API_KEY`** 结尾且非空（按名排序），兼容 Vercel xAI 集成注入的 **`AIxxxxxx_XAI_API_KEY`**。 |
 | PDF / 图片策略 | `api/underwrite.ts` | 图片以内联方式发送；PDF / 文本文件通过 xAI **Files** 上传，但会受附件数、体积和超时预算限制，超出时自动退成 metadata-only。 |
 | HTTP 入口（生产） | `api/underwrite.ts` | Web `Request/Response` handler；校验 body、调用 xAI、JSON 响应。 |
@@ -58,7 +58,7 @@
 
 **可选：**
 
-- **`XAI_MODEL`** / **`AI_MODEL`**：覆盖默认 `grok-4-fast`。
+- **`XAI_MODEL`** / **`AI_MODEL`**：覆盖默认 `grok-4-1-fast-non-reasoning`。
 - **`NODE_ENV`**：由平台设置；生产下 API 错误响应一般不返回 stack（见 `api/underwrite.ts`）。
 
 **禁止：**

@@ -46,7 +46,7 @@ type XaiResponsesCreateResponse = {
 };
 
 const XAI_BASE_URL = 'https://api.x.ai/v1';
-const DEFAULT_XAI_MODEL = 'grok-4-fast';
+const DEFAULT_XAI_MODEL = 'grok-4-1-fast-non-reasoning';
 const ALLOWED_PROCESSORS: Processor[] = ['Stripe', 'Adyen', 'Nuvei', 'HighRiskPay'];
 const XAI_UPLOAD_TIMEOUT_MS = 15_000;
 const XAI_RESPONSE_TIMEOUT_MS = 35_000;

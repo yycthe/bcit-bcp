@@ -25,7 +25,7 @@ if (!apiKey) {
   process.exit(1);
 }
 
-const modelId = process.env.XAI_MODEL?.trim() || process.env.AI_MODEL?.trim() || 'grok-4-fast';
+const modelId = process.env.XAI_MODEL?.trim() || process.env.AI_MODEL?.trim() || 'grok-4-1-fast-non-reasoning';
 
 const response = await fetch('https://api.x.ai/v1/responses', {
   method: 'POST',
