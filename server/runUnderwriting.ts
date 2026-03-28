@@ -136,12 +136,19 @@ export async function runUnderwriting(
       ? AbortSignal.timeout(60_000)
       : undefined;
 
+  console.log('[v0] runUnderwriting called with model:', modelId);
+  console.log('[v0] Content parts count:', content.length);
+  console.log('[v0] Content types:', content.map(c => c.type));
+  console.log('[v0] API Key present:', !!gatewayApiKey || !!process.env.AI_GATEWAY_API_KEY);
+
   const { object } = await generateObject({
     model: gateway(modelId),
     schema: underwritingSchema,
     messages: [{ role: 'user', content }],
     abortSignal,
   });
+
+  console.log('[v0] AI Response received:', JSON.stringify(object, null, 2));
 
   const riskScore =
     typeof object.riskScore === 'number' && Number.isFinite(object.riskScore) ? object.riskScore : 50;
