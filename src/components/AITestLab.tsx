@@ -5,6 +5,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { Input } from '@/src/components/ui/input';
 import { Badge } from '@/src/components/ui/badge';
+import { FormattedSummary } from '@/src/components/ui/formatted-summary';
 import { FileData, MerchantData, initialMerchantData } from '@/src/types';
 
 type TestResult = {
@@ -317,6 +318,10 @@ export function AITestLab() {
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                         <div className="rounded-lg bg-white px-3 py-2">
+                          <p className="text-slate-500">Risk Score</p>
+                          <p className="font-semibold text-slate-900">{result.riskScore ?? 'Unknown'}</p>
+                        </div>
+                        <div className="rounded-lg bg-white px-3 py-2">
                           <p className="text-slate-500">Risk Category</p>
                           <p className="font-semibold text-slate-900">{result.riskCategory ?? 'Unknown'}</p>
                         </div>
@@ -327,10 +332,37 @@ export function AITestLab() {
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-semibold text-slate-900">Document Summary</h3>
-                      <div className="rounded-xl bg-slate-950 p-4 text-sm leading-6 text-slate-100 whitespace-pre-wrap">
-                        {result.documentSummary || 'No summary returned.'}
+                    <div className="grid gap-4">
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-semibold text-slate-900">Recommendation Reason</h3>
+                        <FormattedSummary
+                          text={result.reason}
+                          emptyText="No recommendation reason returned."
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-semibold text-slate-900">Document Summary</h3>
+                        <FormattedSummary
+                          text={result.documentSummary}
+                          emptyText="No summary returned."
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-semibold text-slate-900">Risk Factors</h3>
+                        <FormattedSummary
+                          text={result.riskFactors?.join('\n')}
+                          emptyText="No risk factors returned."
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-semibold text-slate-900">Verification Notes</h3>
+                        <FormattedSummary
+                          text={result.verificationNotes?.join('\n')}
+                          emptyText="No verification notes returned."
+                        />
                       </div>
                     </div>
 

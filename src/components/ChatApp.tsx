@@ -20,6 +20,14 @@ interface QuestionDef {
   fields?: { id: keyof MerchantData; label: string; type: 'text' | 'email' | 'number' | 'date' }[];
 }
 
+type SmartGuide = {
+  eyebrow: string;
+  title: string;
+  description: string;
+  tips: string[];
+  skipLabel?: string;
+};
+
 /** readAsDataURL yields `data:...;base64,...` — must not be spread like a multi-field form answer */
 function isFileUploadAnswer(value: unknown): value is FileData {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
@@ -91,6 +99,245 @@ function prepareUnderwritePayload(data: MerchantData): {
       merchantData: buildMetadataOnlyMerchantData(data),
     }),
     metadataOnly: true,
+  };
+}
+
+const INDUSTRY_LABELS: Record<string, string> = {
+  retail: 'Retail / E-commerce',
+  software: 'Software / SaaS',
+  services: 'Professional Services',
+  gaming: 'Gaming',
+  crypto: 'Crypto / Web3',
+  high_risk: 'Other High Risk',
+};
+
+const VOLUME_LABELS: Record<string, string> = {
+  '<10k': '< $10k / month',
+  '10k-50k': '$10k - $50k / month',
+  '50k-250k': '$50k - $250k / month',
+  '>250k': '> $250k / month',
+};
+
+function getIndustryLabel(industry: string): string {
+  return INDUSTRY_LABELS[industry] || 'your business';
+}
+
+function getVolumeLabel(volume: string): string {
+  return VOLUME_LABELS[volume] || 'your expected volume';
+}
+
+function buildQuestionSequence(data: MerchantData): QuestionId[] {
+  const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(data.industry);
+  const isSubscription = data.industry === 'software';
+  const isPhysicalGoods = data.industry === 'retail';
+  const isServices = data.industry === 'services';
+  const isCrypto = data.industry === 'crypto';
+  const isGaming = data.industry === 'gaming';
+  const isInternational = data.country !== 'CA' && data.country !== 'US' && data.country !== '';
+  const isHighVolume = data.monthlyVolume === '>250k' || data.monthlyVolume === '50k-250k';
+
+  const followUpSequence: QuestionId[] = [
+    'companyDetailsForm',
+    'contactAddressForm',
+    'ownerDetailsForm',
+    'businessOperationsForm',
+    'bankAccountForm',
+  ];
+
+  if (isSubscription) followUpSequence.push('subscriptionForm');
+  if (isPhysicalGoods) followUpSequence.push('retailForm');
+  if (isCrypto) followUpSequence.push('cryptoForm');
+  if (isGaming) followUpSequence.push('gamingForm');
+  if (isServices) followUpSequence.push('servicesForm');
+  if (data.industry === 'high_risk') followUpSequence.push('highRiskForm');
+  if (isHighRisk && !isCrypto && !isGaming) followUpSequence.push('complianceDetails');
+
+  followUpSequence.push('idUpload', 'registrationCertificate');
+
+  if (isInternational || isHighRisk) followUpSequence.push('proofOfAddress');
+  if (isHighVolume || isHighRisk) followUpSequence.push('bankStatement', 'financials');
+  if (isHighRisk) followUpSequence.push('complianceDocument', 'proofOfFunds');
+  if (isInternational) followUpSequence.push('enhancedVerification');
+
+  followUpSequence.push('done');
+  return [
+    'businessType',
+    'country',
+    'industry',
+    'monthlyVolume',
+    'monthlyTransactions',
+    ...followUpSequence,
+  ];
+}
+
+function getQuestionStage(questionId: QuestionId): string {
+  if (['businessType', 'country', 'industry', 'monthlyVolume', 'monthlyTransactions'].includes(questionId)) {
+    return 'Qualification';
+  }
+  if (questionId.includes('Form') || ['complianceDetails'].includes(questionId)) {
+    return 'Business profile';
+  }
+  if (
+    [
+      'idUpload',
+      'proofOfAddress',
+      'registrationCertificate',
+      'taxDocument',
+      'proofOfFunds',
+      'bankStatement',
+      'financials',
+      'complianceDocument',
+      'enhancedVerification',
+    ].includes(questionId)
+  ) {
+    return 'Documents';
+  }
+  return 'Review';
+}
+
+function getFieldPlaceholder(fieldId: keyof MerchantData, data: MerchantData): string {
+  const placeholders: Partial<Record<keyof MerchantData, string>> = {
+    legalName: 'MerchantWerx Holdings Inc.',
+    taxId: data.country === 'US' ? '12-3456789' : 'Business number / tax registration',
+    website: 'https://yourcompany.com',
+    timeInBusiness: '2 years',
+    staffSize: '12 employees',
+    businessCategory: 'Digital services',
+    generalEmail: 'ops@yourcompany.com',
+    phone: '+1 604 555 0123',
+    registeredAddress: '123 Main Street',
+    operatingAddress: 'Same as registered or actual operating address',
+    city: 'Vancouver',
+    province: 'British Columbia',
+    avgTxnCount: '500',
+    avgTicketSize: '120',
+    targetGeography: 'Canada and US',
+    domesticCrossBorderSplit: '70% domestic / 30% cross-border',
+    processingCurrencies: 'CAD, USD',
+    paymentProducts: 'Cards, Apple Pay, Google Pay',
+    ownerName: 'Jane Doe',
+    ownerEmail: 'jane@yourcompany.com',
+    ownerRole: 'Founder & CEO',
+    ownershipPercentage: '100',
+    ownerIdNumber: 'Passport or DL number',
+    ownerCountryOfResidence: 'Canada',
+    bankName: 'RBC',
+    accountHolderName: 'MerchantWerx Holdings Inc.',
+    accountNumber: 'Account number or IBAN',
+    routingNumber: 'Transit / routing / branch code',
+    settlementCurrency: 'CAD',
+    recurringBillingDetails: 'Monthly subscription',
+    trialPeriod: '14-day free trial',
+    refundPolicy: 'Refunds within 30 days',
+    churnRate: '3%',
+    deliveryMethod: 'In-house fulfillment',
+    avgDeliveryTime: '3-5 business days',
+    shippingPolicy: 'Tracked shipping on all orders',
+    cryptoServices: 'Custodial wallet and on-ramp',
+    amlKycProcedures: 'Vendor KYC + sanctions screening',
+    cryptoLicenses: 'MSB registration pending',
+    custodyArrangement: 'Third-party custodian',
+    gamingType: 'Skill-based competitions',
+    gamingLicenses: 'Curacao license',
+    responsibleGaming: 'Self-exclusion and deposit limits',
+    ageVerification: 'KYC + document checks',
+    serviceType: 'B2B marketing services',
+    billingModel: 'Monthly retainer',
+    contractLength: '6 months',
+    businessDescription: 'Describe what you sell and how customers pay',
+    regulatoryStatus: 'List licenses or registrations',
+    chargebackHistory: 'Under 0.7%',
+    previousProcessors: 'Stripe, local bank gateway',
+    complianceDetails: 'Short overview of AML, KYC, monitoring, or licensing',
+  };
+
+  return placeholders[fieldId] || 'Enter details';
+}
+
+function getSmartGuide(questionId: QuestionId, data: MerchantData): SmartGuide {
+  const businessName = data.legalName || 'your business';
+  const stage = getQuestionStage(questionId);
+  const baseTips = [
+    'You can keep answers concise. We only need enough detail to route you correctly.',
+    'If you are unsure, give your best current estimate and refine it later in review.',
+  ];
+
+  if (questionId === 'businessType' || questionId === 'country' || questionId === 'industry') {
+    return {
+      eyebrow: `${stage} • Smart routing`,
+      title: 'I am tailoring the flow to your profile',
+      description:
+        'These first answers determine which follow-up sections and documents actually matter for you, so we avoid asking every merchant the same long list.',
+      tips: [
+        'Once you choose an industry, I will switch to an industry-specific path.',
+        'International or higher-risk profiles will automatically get the extra compliance steps they need.',
+      ],
+    };
+  }
+
+  if (questionId === 'monthlyVolume' || questionId === 'monthlyTransactions') {
+    return {
+      eyebrow: `${stage} • Pricing fit`,
+      title: 'This helps us size your processor match',
+      description: `For ${getIndustryLabel(data.industry)}, volume and transaction count help decide whether we keep things lightweight or move into a more underwriting-heavy path.`,
+      tips: [
+        `A realistic estimate is better than a perfect one. We can refine ${getVolumeLabel(data.monthlyVolume)} later.`,
+        'Higher volumes usually trigger stronger documentation because the pricing upside is worth it.',
+      ],
+    };
+  }
+
+  if (questionId.includes('Form') || questionId === 'complianceDetails') {
+    return {
+      eyebrow: `${stage} • Guided section`,
+      title: 'Only the fields that matter are shown here',
+      description:
+        questionId === 'ownerDetailsForm'
+          ? 'We are collecting the beneficial-owner and control details processors expect, so approvals do not get stuck in manual review.'
+          : `This section is tuned for ${getIndustryLabel(data.industry)} and ${businessName}. Fill the essentials now and we will keep the rest moving.`,
+      tips: [
+        'Short, plain-English answers are fine.',
+        questionId === 'businessOperationsForm'
+          ? 'If you process in more than one region, a rough domestic vs cross-border split is enough.'
+          : 'If one field is not finalized yet, use the most current working answer you have.',
+      ],
+    };
+  }
+
+  if (
+    [
+      'idUpload',
+      'proofOfAddress',
+      'registrationCertificate',
+      'taxDocument',
+      'proofOfFunds',
+      'bankStatement',
+      'financials',
+      'complianceDocument',
+      'enhancedVerification',
+    ].includes(questionId)
+  ) {
+    const isRequiredHeavyDoc = ['bankStatement', 'financials', 'complianceDocument', 'proofOfFunds'].includes(questionId);
+    return {
+      eyebrow: `${stage} • Document step`,
+      title: isRequiredHeavyDoc ? 'This document improves approval confidence' : 'A quick upload here reduces manual follow-up',
+      description:
+        isRequiredHeavyDoc
+          ? 'If you have it ready, upload it now. If not, you can skip and still continue, but the admin team may ask for it later.'
+          : 'The goal is to keep underwriting moving without forcing a hard stop when a file is not handy.',
+      tips: [
+        'PDF, PNG, and JPG all work.',
+        'If the file is large, the system may switch to metadata-only mode to stay within Vercel limits.',
+      ],
+      skipLabel: isRequiredHeavyDoc ? 'Skip for now, upload later' : 'Continue without this file',
+    };
+  }
+
+  return {
+    eyebrow: `${stage} • Guided flow`,
+    title: 'I am keeping the process adaptive',
+    description: 'Each answer changes the next step so you only see relevant questions.',
+    tips: baseTips,
   };
 }
 
@@ -541,69 +788,8 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
 
 // Smart question flow based on context
 const getNextQuestion = (currentId: QuestionId, data: MerchantData): QuestionId => {
-  const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(data.industry);
-  const isSubscription = data.industry === 'software';
-  const isPhysicalGoods = data.industry === 'retail';
-  const isServices = data.industry === 'services';
-  const isCrypto = data.industry === 'crypto';
-  const isGaming = data.industry === 'gaming';
-  const isInternational = data.country !== 'CA' && data.country !== 'US';
-  const isHighVolume = data.monthlyVolume === '>250k' || data.monthlyVolume === '50k-250k';
-
-  // Build dynamic sequence based on merchant profile
-  const followUpSequence: QuestionId[] = [];
-  
-  // Core forms - always needed
-  followUpSequence.push('companyDetailsForm');
-  followUpSequence.push('contactAddressForm');
-  followUpSequence.push('ownerDetailsForm');
-  followUpSequence.push('businessOperationsForm');
-  followUpSequence.push('bankAccountForm');
-
-  // Industry-specific forms - add only the relevant one
-  if (isSubscription) followUpSequence.push('subscriptionForm');
-  if (isPhysicalGoods) followUpSequence.push('retailForm');
-  if (isCrypto) followUpSequence.push('cryptoForm');
-  if (isGaming) followUpSequence.push('gamingForm');
-  if (isServices) followUpSequence.push('servicesForm');
-  if (data.industry === 'high_risk') followUpSequence.push('highRiskForm');
-
-  // Compliance text for high-risk
-  if (isHighRisk && !isCrypto && !isGaming) {
-    followUpSequence.push('complianceDetails');
-  }
-
-  // Document sequence - prioritized by importance
-  followUpSequence.push('idUpload');
-  followUpSequence.push('registrationCertificate');
-  
-  // Address proof for international or high-risk
-  if (isInternational || isHighRisk) {
-    followUpSequence.push('proofOfAddress');
-  }
-  
-  // Bank statements - always for high volume or high risk
-  if (isHighVolume || isHighRisk) {
-    followUpSequence.push('bankStatement');
-  }
-  
-  // Financials - required for high volume or high risk
-  if (isHighVolume || isHighRisk) {
-    followUpSequence.push('financials');
-  }
-
-  // Additional docs for high-risk
-  if (isHighRisk) {
-    followUpSequence.push('complianceDocument');
-    followUpSequence.push('proofOfFunds');
-  }
-
-  // Enhanced verification for international
-  if (isInternational) {
-    followUpSequence.push('enhancedVerification');
-  }
-
-  followUpSequence.push('done');
+  const fullSequence = buildQuestionSequence(data);
+  const followUpSequence = fullSequence.slice(5);
 
   // Main question flow
   switch (currentId) {
@@ -649,6 +835,13 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
   const [inputValue, setInputValue] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const questionSequence = buildQuestionSequence(data);
+  const currentStepIndex = currentQuestion === 'done' ? questionSequence.length : Math.max(questionSequence.indexOf(currentQuestion), 0) + 1;
+  const progressPercent = Math.min(100, Math.max(6, Math.round((currentStepIndex / questionSequence.length) * 100)));
+  const smartGuide = currentQuestion && currentQuestion !== 'done' ? getSmartGuide(currentQuestion, data) : null;
+  const remainingCount = currentQuestion && currentQuestion !== 'done'
+    ? Math.max(questionSequence.length - currentStepIndex, 0)
+    : 0;
 
   useEffect(() => {
     if (editSection && !isFinished) {
@@ -662,8 +855,8 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
       if (qDef) {
         setMessages(prev => [...prev, {
           id: Date.now().toString(),
-          text: `Let's update your ${qDef.text.toLowerCase()}`,
-          sender: 'bot',
+          content: `Let's update this section: ${qDef.text}`,
+          sender: 'system',
           isActionable: true
         }]);
       }
@@ -883,7 +1076,25 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
               </Button>
             </div>
           )}
-          <div className="p-4 border-t bg-white">
+          <div className="border-t bg-white">
+            {smartGuide ? (
+              <div className="border-b bg-slate-50/90 px-4 py-4">
+                <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">{smartGuide.eyebrow}</p>
+                  <h3 className="mt-1 text-sm font-semibold text-slate-900">{smartGuide.title}</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">{smartGuide.description}</p>
+                  <div className="mt-3 space-y-2">
+                    {smartGuide.tips.map((tip, index) => (
+                      <div key={`${tip}-${index}`} className="flex items-start gap-2 text-xs leading-5 text-slate-500">
+                        <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                        <span>{tip}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            <div className="p-4">
             <form 
               className="space-y-4 max-w-2xl mx-auto"
               onSubmit={(e) => {
@@ -903,7 +1114,7 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
                 handleAnswer(values, "Provided details");
               }}
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {qDef.fields?.map(field => (
                   <div key={field.id} className="space-y-1">
                     <label className="text-sm font-medium text-slate-700">{field.label}</label>
@@ -911,6 +1122,7 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
                       name={field.id} 
                       type={field.type} 
                       required 
+                      placeholder={getFieldPlaceholder(field.id, data)}
                       defaultValue={data[field.id as keyof MerchantData] as string || ''}
                     />
                   </div>
@@ -920,6 +1132,7 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
                 <Button type="submit">Submit Details</Button>
               </div>
             </form>
+          </div>
           </div>
         </div>
       );
@@ -944,7 +1157,17 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
               </Button>
             </div>
           )}
-          <div className="flex flex-wrap gap-2 p-4 border-t bg-white justify-center">
+          <div className="border-t bg-white">
+            {smartGuide ? (
+              <div className="border-b bg-slate-50/90 px-4 py-4">
+                <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">{smartGuide.eyebrow}</p>
+                  <h3 className="mt-1 text-sm font-semibold text-slate-900">{smartGuide.title}</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">{smartGuide.description}</p>
+                </div>
+              </div>
+            ) : null}
+            <div className="flex flex-wrap gap-2 p-4 justify-center">
             {qDef.options?.map(opt => (
               <motion.div
                 key={opt.value}
@@ -961,6 +1184,7 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
                 </Button>
               </motion.div>
             ))}
+          </div>
           </div>
         </div>
       );
@@ -985,7 +1209,17 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
               </Button>
             </div>
           )}
-          <div className="flex gap-2 p-4 border-t bg-white max-w-md mx-auto">
+          <div className="border-t bg-white">
+            {smartGuide ? (
+              <div className="border-b bg-slate-50/90 px-4 py-4">
+                <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">{smartGuide.eyebrow}</p>
+                  <h3 className="mt-1 text-sm font-semibold text-slate-900">{smartGuide.title}</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">{smartGuide.description}</p>
+                </div>
+              </div>
+            ) : null}
+            <div className="flex gap-2 p-4 max-w-md mx-auto">
             <Select
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
@@ -1007,6 +1241,7 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
             >
               <Send className="h-4 w-4" />
             </Button>
+          </div>
           </div>
         </div>
       );
@@ -1031,7 +1266,24 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
               </Button>
             </div>
           )}
-          <div className="p-4 border-t bg-white">
+          <div className="border-t bg-white">
+            {smartGuide ? (
+              <div className="border-b bg-slate-50/90 px-4 py-4">
+                <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">{smartGuide.eyebrow}</p>
+                  <h3 className="mt-1 text-sm font-semibold text-slate-900">{smartGuide.title}</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">{smartGuide.description}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {smartGuide.tips.map((tip, index) => (
+                      <span key={`${tip}-${index}`} className="rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-600">
+                        {tip}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            <div className="p-4">
             <div className="max-w-md mx-auto">
               <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
                 <div className="flex flex-col items-center justify-center pt-5 pb-6">
@@ -1066,13 +1318,14 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleAnswer(null, 'Skipped')}
+                  onClick={() => handleAnswer(null, smartGuide?.skipLabel || 'Skipped')}
                   className="text-slate-500"
                 >
-                  Skip this document
+                  {smartGuide?.skipLabel || 'Skip this document'}
                 </Button>
               </div>
             </div>
+          </div>
           </div>
         </div>
       );
@@ -1097,8 +1350,18 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
             </Button>
           </div>
         )}
+        <div className="border-t bg-white">
+        {smartGuide ? (
+          <div className="border-b bg-slate-50/90 px-4 py-4">
+            <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">{smartGuide.eyebrow}</p>
+              <h3 className="mt-1 text-sm font-semibold text-slate-900">{smartGuide.title}</h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600">{smartGuide.description}</p>
+            </div>
+          </div>
+        ) : null}
         <form 
-          className="flex gap-2 p-4 border-t bg-white"
+          className="flex gap-2 p-4"
           onSubmit={(e) => {
             e.preventDefault();
             if (inputValue.trim()) {
@@ -1109,13 +1372,14 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
           <Input
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Type your answer..."
+            placeholder={currentQuestion === 'complianceDetails' ? 'A short plain-English summary is enough...' : 'Type your answer...'}
             className="flex-1"
           />
           <Button type="submit" disabled={!inputValue.trim()}>
             <Send className="h-4 w-4" />
           </Button>
         </form>
+        </div>
       </div>
     );
   };
@@ -1132,6 +1396,25 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
 
   return (
     <div className="flex flex-col h-full bg-gradient-to-b from-slate-50 to-white">
+      {!isFinished && currentQuestion !== 'done' ? (
+        <div className="border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-sm">
+          <div className="mx-auto max-w-4xl">
+            <div className="flex items-center justify-between gap-4 text-xs text-slate-500">
+              <div>
+                <span className="font-semibold text-slate-700">{getQuestionStage(currentQuestion)}</span>
+                <span className="ml-2">Step {currentStepIndex} of {questionSequence.length}</span>
+              </div>
+              <div>{remainingCount > 0 ? `${remainingCount} step(s) left` : 'Final step'}</div>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <AnimatePresence>

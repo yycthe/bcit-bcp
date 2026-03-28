@@ -1,9 +1,10 @@
 import React from 'react';
 import { MerchantData, FileData } from '@/src/types';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/src/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/src/components/ui/card';
 import { Badge } from '@/src/components/ui/badge';
 import { Button } from '@/src/components/ui/button';
-import { Zap, Globe, AlertCircle, Building, Activity, FileText, CheckCircle2, RefreshCcw, FileSearch, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { FormattedSummary } from '@/src/components/ui/formatted-summary';
+import { Zap, Globe, AlertCircle, Building, Activity, FileText, CheckCircle2, FileSearch, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
@@ -97,7 +98,10 @@ export function AIUnderwriting({ data, aiRecommendation, documents, onApprove, i
                   </div>
                   <Badge variant="success" className="px-3 py-1 text-sm">AI Recommended Match</Badge>
                 </div>
-                <p className="text-slate-700">{reason}</p>
+                <FormattedSummary
+                  text={reason}
+                  emptyText="No recommendation reason returned."
+                />
               </div>
               
               <CardContent className="p-6">
@@ -213,9 +217,11 @@ export function AIUnderwriting({ data, aiRecommendation, documents, onApprove, i
             </CardHeader>
             <CardContent className="p-4">
               {documentSummary && documentSummary !== "No document information extracted" && documentSummary !== "No document information extracted (Fallback mode)" ? (
-                <div className="text-sm text-blue-800 whitespace-pre-wrap leading-relaxed">
-                  {documentSummary.replace(/:\s+-\s+/g, ':\n\n• ').replace(/\s+-\s+/g, '\n• ')}
-                </div>
+                <FormattedSummary
+                  text={documentSummary}
+                  emptyText="No document data extracted."
+                  tone="blue"
+                />
               ) : (
                 <div className="text-sm text-blue-600/70 italic text-center py-4">
                   No document data extracted.
