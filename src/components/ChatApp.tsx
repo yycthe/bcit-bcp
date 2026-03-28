@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Badge } from '@/src/components/ui/badge';
 import { toast } from 'sonner';
 import { MerchantData, FileData } from '@/src/types';
-import { GoogleGenAI, Type } from '@google/genai';
+import { getFallbackUnderwriting } from '@/src/lib/underwritingFallback';
 
 type QuestionId = Exclude<keyof MerchantData, 'additionalDocuments'> | 'done' | 'companyDetailsForm' | 'contactAddressForm' | 'businessOperationsForm' | 'ownerDetailsForm' | 'bankAccountForm' | 'subscriptionForm' | 'retailForm';
 
@@ -437,145 +437,40 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
     ]);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
-      const parts: any[] = [
-        {
-          text: `You are an expert payment processing underwriter. Analyze the following merchant profile and any provided documents.
-          
-          Merchant Profile:
-          ${JSON.stringify(Object.fromEntries(Object.entries(finalData).filter(([k, v]) => v && typeof v !== 'object')), null, 2)}
-          
-          Based on the profile and the provided documents (if any), perform a comprehensive risk assessment.
-          1. Calculate a numerical "riskScore" from 0 to 100 (0 = lowest risk, 100 = highest risk). Use a baseline of 20. Add points for high-risk industries (+30), cross-border processing (+15), high volume >$250k (+15), lack of financial documents (+10), lack of ID (+10). Deduct points if documents are provided and look legitimate (-10 per valid document type).
-          2. Categorize the risk into "riskCategory" (0-33: Low, 34-66: Medium, 67-100: High).
-          3. Provide 2-3 specific "riskFactors" explaining the score (e.g., "High average ticket size increases chargeback exposure", "Regulated industry requires specialized underwriting", "Verified financial documents reduce risk"). Be specific to the data provided.
-          4. Recommend a payment processor from this list: Stripe, Adyen, Nuvei, HighRiskPay.
-          5. Provide a brief reason for your recommendation.
-          6. If any documents were uploaded (e.g., Financial Statements, ID, Business Licenses, Proof of Address), extract the key information from them and summarize all extracted information clearly in the "documentSummary" field. Format the summary with clear bullet points separated by newlines (e.g., "\n- Name: John Doe\n- ID: 12345"). You MUST include all extracted information from ID documents (e.g., name, date of birth, ID number) and all legal documents (e.g., business license details, registration numbers). If no documents are provided or readable, return "No document information extracted".
-          7. VERIFICATION AUDIT: Cross-reference the self-reported Merchant Profile data (like legalName, ownerName, address) against the information extracted from the uploaded documents. 
-             - Compare names, addresses, and business details.
-             - Output a "verificationStatus": "Verified" (if data matches), "Discrepancies Found" (if there are mismatches), or "Unverified" (if not enough documents to verify).
-             - Output an array of "verificationNotes" explaining the audit results (e.g., "Owner name 'John Doe' matches ID", "Address on bank statement does not match reported address").
-          
-          Respond ONLY with a JSON object in this format:
-          {
-            "riskScore": number,
-            "riskCategory": "Low" | "Medium" | "High",
-            "riskFactors": ["string", "string"],
-            "recommendedProcessor": "Stripe" | "Adyen" | "Nuvei" | "HighRiskPay",
-            "reason": "string",
-            "documentSummary": "string",
-            "verificationStatus": "Verified" | "Discrepancies Found" | "Unverified",
-            "verificationNotes": ["string", "string"]
-          }`
-        }
-      ];
-
-      const fileKeys = [
-        'financials', 'idUpload', 'enhancedVerification', 
-        'proofOfAddress', 'registrationCertificate', 'taxDocument', 
-        'proofOfFunds', 'bankStatement', 'complianceDocument'
-      ];
-
-      fileKeys.forEach(key => {
-        const fileData = finalData[key as keyof MerchantData] as any;
-        if (fileData && fileData.mimeType && fileData.data) {
-          parts.push({
-            inlineData: {
-              mimeType: fileData.mimeType,
-              data: fileData.data
-            }
-          });
-        }
+      const apiRes = await fetch('/api/underwrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ merchantData: finalData }),
       });
 
-      const aiCall = ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: { parts },
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              riskScore: { type: Type.NUMBER },
-              riskCategory: { type: Type.STRING },
-              riskFactors: { type: Type.ARRAY, items: { type: Type.STRING } },
-              recommendedProcessor: { type: Type.STRING },
-              reason: { type: Type.STRING },
-              documentSummary: { type: Type.STRING }
-            },
-            required: ['riskScore', 'riskCategory', 'riskFactors', 'recommendedProcessor', 'reason', 'documentSummary']
-          }
-        }
-      });
+      const payload = (await apiRes.json().catch(() => ({}))) as {
+        riskScore?: number;
+        riskCategory?: string;
+        riskFactors?: string[];
+        recommendedProcessor?: string;
+        reason?: string;
+        documentSummary?: string;
+        error?: string;
+      };
 
-      // Add a 60-second timeout
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("AI Analysis timed out")), 60000)
-      );
+      if (!apiRes.ok) {
+        throw new Error(payload.error || `Request failed (${apiRes.status})`);
+      }
 
-      const response = await Promise.race([aiCall, timeoutPromise]) as any;
-
-      const result = JSON.parse(response.text || '{}');
       setAiRecommendation({
-        riskScore: result.riskScore || 50,
-        riskCategory: result.riskCategory as 'Low' | 'Medium' | 'High',
-        riskFactors: result.riskFactors || [],
-        recommendedProcessor: result.recommendedProcessor,
-        reason: result.reason,
-        documentSummary: result.documentSummary
+        riskScore: payload.riskScore ?? 50,
+        riskCategory: (payload.riskCategory as 'Low' | 'Medium' | 'High') || 'Medium',
+        riskFactors: payload.riskFactors ?? [],
+        recommendedProcessor: payload.recommendedProcessor ?? '',
+        reason: payload.reason ?? '',
+        documentSummary: payload.documentSummary ?? '',
       });
       setIsFinished(true);
       onFinish();
     } catch (error) {
-      console.error("AI Analysis failed", error);
-      toast.error("Failed to analyze profile. Using fallback recommendation.");
-      
-      // Fallback logic
-      let riskCategory: 'Low' | 'Medium' | 'High' = 'Low';
-      let riskScore = 20;
-      let riskFactors: string[] = ["Standard processing profile"];
-
-      if (finalData.industry === 'high_risk' || finalData.industry === 'crypto' || finalData.industry === 'gaming') {
-        riskCategory = 'High';
-        riskScore = 85;
-        riskFactors = ["High-risk industry classification", "Elevated chargeback potential"];
-      } else if (finalData.country !== 'US' && finalData.country !== 'CA' && finalData.country !== 'UK') {
-        riskCategory = 'Medium';
-        riskScore = 55;
-        riskFactors = ["Cross-border processing", "Moderate regulatory complexity"];
-      } else if (finalData.monthlyVolume === '>250k') {
-        riskCategory = 'Medium';
-        riskScore = 45;
-        riskFactors = ["High processing volume", "Increased financial exposure"];
-      }
-
-      let recommendedProcessor = '';
-      let reason = '';
-
-      if (riskCategory === 'High') {
-        recommendedProcessor = 'HighRiskPay';
-        reason = 'Your industry requires specialized underwriting and risk management.';
-      } else if ((finalData.country === 'US' || finalData.country === 'CA') && finalData.monthlyVolume !== '>250k') {
-        recommendedProcessor = 'Stripe';
-        reason = 'Stripe offers the fastest onboarding and best developer tools for low-risk businesses in North America.';
-      } else if (finalData.monthlyVolume === '>250k') {
-        recommendedProcessor = 'Adyen';
-        reason = 'Adyen is optimized for high-volume enterprise merchants with global reach.';
-      } else {
-        recommendedProcessor = 'Nuvei';
-        reason = 'Nuvei provides excellent coverage and competitive rates for your region and industry.';
-      }
-
-      setAiRecommendation({
-        riskScore,
-        riskCategory,
-        riskFactors,
-        recommendedProcessor,
-        reason,
-        documentSummary: "No document information extracted (Fallback mode)"
-      });
+      console.error('AI Analysis failed', error);
+      toast.error('Failed to analyze profile. Using fallback recommendation.');
+      setAiRecommendation(getFallbackUnderwriting(finalData));
       setIsFinished(true);
       onFinish();
     } finally {

@@ -30,7 +30,7 @@ Create a `.env` or `.env.local` file in the project root (see `.env.example`):
 
 | Variable | Description |
 |----------|-------------|
-| `GEMINI_API_KEY` | **Required** for Gemini API calls in the app. |
+| `GEMINI_API_KEY` | **Required** for AI underwriting. Stored server-side only (`api/underwrite` on Vercel, or Vite dev middleware locally). **Not** exposed in the frontend bundle. |
 | `APP_URL` | Optional; base URL when deployed (e.g. Cloud Run). |
 
 Example:
@@ -39,7 +39,9 @@ Example:
 GEMINI_API_KEY=your_key_here
 ```
 
-Vite injects `GEMINI_API_KEY` at build/dev time via `vite.config.ts`.
+On **Vercel**, add the same variable under **Project → Settings → Environment Variables** (Production / Preview). Redeploy after changing it.
+
+Local **`npm run dev`**: put the key in `.env` or `.env.local`; the dev server handles `POST /api/underwrite` without exposing the key to the browser.
 
 ## Scripts
 
