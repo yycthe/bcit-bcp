@@ -60,7 +60,7 @@ Open the URL shown in the terminal (typically `http://localhost:3000`).
 
 ## Repository
 
-Remote: `https://github.com/yycthe/merchantwerx-onboarding`
+`https://github.com/yycthe/bcit-bcp`
 
 ---
 
