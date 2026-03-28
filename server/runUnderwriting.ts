@@ -96,29 +96,61 @@ const FILE_KEYS = [
   'complianceDocument',
 ] as const;
 
+type UploadedFileDescriptor = {
+  field: string;
+  name: string;
+  mimeType: string;
+  data?: string;
+};
+
 type UploadSummary = {
-  field: typeof FILE_KEYS[number];
+  field: string;
   name: string;
   mimeType: string;
   hasBinary: boolean;
 };
 
-function getUploadSummaries(finalData: MerchantData): UploadSummary[] {
-  const summaries: UploadSummary[] = [];
+function getAllUploadedFiles(finalData: MerchantData): UploadedFileDescriptor[] {
+  const files: UploadedFileDescriptor[] = [];
   for (const key of FILE_KEYS) {
     const fileData = finalData[key as keyof MerchantData] as
       | { mimeType?: string; data?: string; name?: string }
       | null;
     if (!fileData) continue;
-    const name = typeof fileData.name === 'string' && fileData.name.trim() ? fileData.name.trim() : key;
-    const mimeType =
-      typeof fileData.mimeType === 'string' && fileData.mimeType.trim()
-        ? fileData.mimeType.trim()
-        : 'application/octet-stream';
-    summaries.push({
+    files.push({
       field: key,
-      name,
-      mimeType,
+      name: typeof fileData.name === 'string' && fileData.name.trim() ? fileData.name.trim() : key,
+      mimeType:
+        typeof fileData.mimeType === 'string' && fileData.mimeType.trim()
+          ? fileData.mimeType.trim()
+          : 'application/octet-stream',
+      data: typeof fileData.data === 'string' ? fileData.data : undefined,
+    });
+  }
+
+  finalData.additionalDocuments?.forEach((file, index) => {
+    if (!file) return;
+    files.push({
+      field: `additionalDocument${index + 1}`,
+      name: typeof file.name === 'string' && file.name.trim() ? file.name.trim() : `additional-document-${index + 1}`,
+      mimeType:
+        typeof file.mimeType === 'string' && file.mimeType.trim()
+          ? file.mimeType.trim()
+          : 'application/octet-stream',
+      data: typeof file.data === 'string' ? file.data : undefined,
+    });
+  });
+
+  return files;
+}
+
+function getUploadSummaries(finalData: MerchantData): UploadSummary[] {
+  const summaries: UploadSummary[] = [];
+  for (const fileData of getAllUploadedFiles(finalData)) {
+    summaries.push({
+      field: fileData.field,
+      name: fileData.name,
+      mimeType: fileData.mimeType,
       hasBinary: typeof fileData.data === 'string' && fileData.data.trim().length > 0,
     });
   }
@@ -204,10 +236,7 @@ function buildUserContent(finalData: MerchantData, opts?: { omitImages?: boolean
   const promptText = buildPromptText(finalData);
   const content: UserContentPart[] = [{ type: 'text', text: promptText }];
 
-  for (const key of FILE_KEYS) {
-    const fileData = finalData[key as keyof MerchantData] as
-      | { mimeType?: string; data?: string; name?: string }
-      | null;
+  for (const fileData of getAllUploadedFiles(finalData)) {
     if (!fileData?.data) continue;
     const filename = typeof fileData.name === 'string' && fileData.name.trim() ? fileData.name.trim() : undefined;
     const nameLo = filename?.toLowerCase() ?? '';
@@ -234,10 +263,7 @@ function buildUserContent(finalData: MerchantData, opts?: { omitImages?: boolean
 
 async function buildPdfTextAppendixForXai(finalData: MerchantData): Promise<string> {
   const sections: string[] = [];
-  for (const key of FILE_KEYS) {
-    const fileData = finalData[key as keyof MerchantData] as
-      | { mimeType?: string; data?: string; name?: string }
-      | null;
+  for (const fileData of getAllUploadedFiles(finalData)) {
     if (!fileData?.data) continue;
     const name = typeof fileData.name === 'string' ? fileData.name : '';
     const mimeGuess = (fileData.mimeType && fileData.mimeType.trim()) || '';
@@ -254,11 +280,11 @@ async function buildPdfTextAppendixForXai(finalData: MerchantData): Promise<stri
         body = body.slice(0, MAX_PDF_TEXT_CHARS) + '\n\n[PDF text truncated for length]';
       }
       sections.push(
-        `\n\n--- PDF "${name || key}" (${key}, ~${totalPages} page(s)) — extracted text ---\n${body}\n`
+        `\n\n--- PDF "${name || fileData.field}" (${fileData.field}, ~${totalPages} page(s)) — extracted text ---\n${body}\n`
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      sections.push(`\n\n--- PDF "${name || key}" (${key}) — extraction failed ---\n${msg}\n`);
+      sections.push(`\n\n--- PDF "${name || fileData.field}" (${fileData.field}) — extraction failed ---\n${msg}\n`);
     }
   }
   return sections.join('');

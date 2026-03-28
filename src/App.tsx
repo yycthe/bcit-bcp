@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { Toaster } from 'sonner';
 import { MerchantPortal } from './components/MerchantPortal';
 import { AdminPortal } from './components/AdminPortal';
+import { AITestLab } from './components/AITestLab';
 import { MerchantData, FileData, initialMerchantData, ApplicationStatus } from './types';
-import { ArrowRightLeft } from 'lucide-react';
+import { ArrowRightLeft, FlaskConical } from 'lucide-react';
 
 export default function App() {
-  const [viewMode, setViewMode] = useState<'merchant' | 'admin'>('merchant');
+  const [viewMode, setViewMode] = useState<'merchant' | 'admin' | 'ai-lab'>('merchant');
   const [appStatus, setAppStatus] = useState<ApplicationStatus>('draft');
   const [merchantData, setMerchantData] = useState<MerchantData>(initialMerchantData);
   const [documents, setDocuments] = useState<FileData[]>([]);
@@ -27,7 +28,7 @@ export default function App() {
             <span className="ml-2 px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold uppercase tracking-wider">Demo Env</span>
           </div>
           
-          <div className="flex items-center gap-4 bg-slate-800 p-1 rounded-lg">
+          <div className="flex items-center gap-2 bg-slate-800 p-1 rounded-lg">
             <button
               onClick={() => setViewMode('merchant')}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'merchant' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:text-white'}`}
@@ -40,6 +41,14 @@ export default function App() {
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'admin' ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:text-white'}`}
             >
               Admin Portal
+            </button>
+            <ArrowRightLeft className="w-4 h-4 text-slate-500" />
+            <button
+              onClick={() => setViewMode('ai-lab')}
+              className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'ai-lab' ? 'bg-amber-500 text-slate-950' : 'text-slate-300 hover:text-white'}`}
+            >
+              <FlaskConical className="w-4 h-4" />
+              AI Test Lab
             </button>
           </div>
         </div>
@@ -57,7 +66,7 @@ export default function App() {
             aiRecommendation={aiRecommendation}
             setAiRecommendation={setAiRecommendation}
           />
-        ) : (
+        ) : viewMode === 'admin' ? (
           <AdminPortal
             appStatus={appStatus}
             setAppStatus={setAppStatus}
@@ -65,6 +74,8 @@ export default function App() {
             documents={documents}
             aiRecommendation={aiRecommendation}
           />
+        ) : (
+          <AITestLab />
         )}
       </main>
     </div>
