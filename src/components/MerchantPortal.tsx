@@ -12,7 +12,7 @@ import {
   type MerchantDocumentKey,
 } from '@/src/lib/documentChecklist';
 import { getFallbackUnderwriting } from '@/src/lib/underwritingFallback';
-import type { MockRemediationItem } from '@/src/lib/mockIdentityVerification';
+import type { VerificationIssue } from '@/src/lib/localVerification';
 import { MessageSquare, FileCheck, Activity, PenTool, RotateCcw, Zap, X, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { Button } from '@/src/components/ui/button';
 import { toast } from 'sonner';
@@ -30,8 +30,8 @@ interface Props {
   setAiRecommendation: (rec: any) => void;
   merchantNoticeFromAdmin: string;
   onDismissMerchantNotice: () => void;
-  identityRemediation: MockRemediationItem[];
-  onClearIdentityRemediation: () => void;
+  verificationIssues: VerificationIssue[];
+  onClearVerificationIssues: () => void;
 }
 
 export function MerchantPortal({
@@ -45,8 +45,8 @@ export function MerchantPortal({
   setAiRecommendation,
   merchantNoticeFromAdmin,
   onDismissMerchantNotice,
-  identityRemediation,
-  onClearIdentityRemediation,
+  verificationIssues,
+  onClearVerificationIssues,
 }: Props) {
   const [currentView, setCurrentView] = useState<MerchantView>('intake');
   const [isFinished, setIsFinished] = useState(false);
@@ -94,7 +94,7 @@ export function MerchantPortal({
     setCurrentView('intake');
   };
 
-  const openRemediationTarget = (item: MockRemediationItem) => {
+  const openRemediationTarget = (item: VerificationIssue) => {
     const { target } = item;
     setGuidedTourOrder(null);
     setIsFinished(false);
@@ -112,9 +112,6 @@ export function MerchantPortal({
     setCurrentView('intake');
     toast.message('Update your application', { description: target.whereLabel });
   };
-
-  const providerShort = (p: MockRemediationItem['provider']) =>
-    p === 'kyc_vendor' ? 'KYC' : p === 'kyb_vendor' ? 'KYB' : 'Persona';
 
   const endGuidedUpload = () => {
     setGuidedTourOrder(null);
@@ -144,7 +141,7 @@ export function MerchantPortal({
     setIntakeSessionKey((k) => k + 1);
     setCurrentView('intake');
     onDismissMerchantNotice();
-    onClearIdentityRemediation();
+    onClearVerificationIssues();
     toast.message('Demo reset', { description: 'Wizard restarted with sample data. Use Skip on uploads as needed.' });
   };
 
@@ -153,7 +150,7 @@ export function MerchantPortal({
     setDocuments([]);
     setAiRecommendation(getFallbackUnderwriting(demoMerchantData));
     setGuidedTourOrder(null);
-    onClearIdentityRemediation();
+    onClearVerificationIssues();
     setIsFinished(true);
     setCurrentView('review');
     toast.message('Demo shortcut', { description: 'Review opened with sample data and placeholder underwriting.' });
@@ -226,22 +223,21 @@ export function MerchantPortal({
             <span className="text-blue-700/90">Our team is verifying your submission. You can still open Intake to add documents if requested.</span>
           </div>
         )}
-        {identityRemediation.length > 0 && (
+        {verificationIssues.length > 0 && (
           <div className="shrink-0 border-b border-rose-200 bg-rose-50 px-4 py-3 flex gap-3 items-start">
             <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-rose-900">Verification needs a fix (KYC / KYB / Persona)</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-rose-900">Application needs updates</p>
               <p className="text-sm text-rose-950/90 mt-1">
-                A simulated provider rejected part of your submission. Use the buttons to jump to the exact Intake step.
+                A local submission check found follow-up items. Use the buttons to jump to the exact Intake step.
               </p>
               <ul className="mt-3 space-y-2">
-                {identityRemediation.map((item) => (
+                {verificationIssues.map((item) => (
                   <li
                     key={item.id}
                     className="flex flex-col gap-2 rounded-lg border border-rose-200 bg-white/80 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="min-w-0 text-sm">
-                      <span className="font-semibold text-rose-900">[{providerShort(item.provider)}]</span>{' '}
                       <span className="text-slate-800">{item.reason}</span>
                       <p className="text-xs text-slate-500 mt-1">{item.target.whereLabel}</p>
                     </div>
@@ -257,7 +253,7 @@ export function MerchantPortal({
                 ))}
               </ul>
             </div>
-            <Button type="button" variant="ghost" size="sm" className="shrink-0 text-rose-900" onClick={onClearIdentityRemediation} aria-label="Dismiss verification alerts">
+            <Button type="button" variant="ghost" size="sm" className="shrink-0 text-rose-900" onClick={onClearVerificationIssues} aria-label="Dismiss submission alerts">
               <X className="w-4 h-4" />
             </Button>
           </div>

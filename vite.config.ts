@@ -4,7 +4,6 @@ import path from 'path';
 import type { Plugin } from 'vite';
 import { defineConfig, loadEnv } from 'vite';
 import { POST as underwritePost } from './api/underwrite';
-import { POST as identityPost } from './api/identity';
 
 async function readJsonBody(req: NodeJS.ReadableStream): Promise<{ ok: true; raw: string } | { ok: false; error: string }> {
   const chunks: Buffer[] = [];
@@ -24,7 +23,7 @@ function underwritingDevApi(): Plugin {
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const pathname = req.url?.split('?')[0] ?? '';
-        if (pathname !== '/api/underwrite' && pathname !== '/api/identity') {
+        if (pathname !== '/api/underwrite') {
           next();
           return;
         }
@@ -60,16 +59,14 @@ function underwritingDevApi(): Plugin {
         }
         try {
           const origin = `http://${req.headers.host ?? 'localhost:3000'}`;
-          const path = pathname === '/api/identity' ? '/api/identity' : '/api/underwrite';
-          const handler = pathname === '/api/identity' ? identityPost : underwritePost;
-          const request = new Request(new URL(path, origin), {
+          const request = new Request(new URL('/api/underwrite', origin), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(body),
           });
-          const response = await handler(request);
+          const response = await underwritePost(request);
           res.statusCode = response.status;
           response.headers.forEach((value, key) => {
             res.setHeader(key, value);

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import type { IdentityDemoScenario, MockRemediationItem } from '@/src/lib/mockIdentityVerification';
 import { AIUnderwriting } from './AIUnderwriting';
 import { ApplicationStatus, MerchantData, FileData } from '@/src/types';
 import { getMerchantDocumentChecklist, buildDefaultDocumentReminder } from '@/src/lib/documentChecklist';
-import { ShieldCheck, LayoutDashboard, Search, Filter, Clock, CheckCircle2, AlertCircle, FileWarning, Send, Trash2 } from 'lucide-react';
+import { runLocalVerificationCheck, type VerificationCheckResult, type VerificationIssue } from '@/src/lib/localVerification';
+import { ShieldCheck, LayoutDashboard, Search, Filter, Clock, CheckCircle2, FileWarning, Send, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { Badge } from '@/src/components/ui/badge';
 import { Button } from '@/src/components/ui/button';
@@ -17,7 +17,7 @@ interface Props {
   aiRecommendation: any;
   merchantNoticeFromAdmin: string;
   setMerchantNoticeFromAdmin: (msg: string) => void;
-  setIdentityRemediation: (items: MockRemediationItem[]) => void;
+  setVerificationIssues: (items: VerificationIssue[]) => void;
 }
 
 export function AdminPortal({
@@ -28,12 +28,12 @@ export function AdminPortal({
   aiRecommendation,
   merchantNoticeFromAdmin,
   setMerchantNoticeFromAdmin,
-  setIdentityRemediation,
+  setVerificationIssues,
 }: Props) {
   const [currentView, setCurrentView] = useState<'queue' | 'underwriting'>('queue');
   const [reminderCustom, setReminderCustom] = useState('');
-  const [identityScenario, setIdentityScenario] = useState<IdentityDemoScenario>('default');
-  const [identityLoading, setIdentityLoading] = useState(false);
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [lastVerification, setLastVerification] = useState<VerificationCheckResult | null>(null);
 
   const merchantName = merchantData.legalName || merchantData.ownerName || 'Unknown Merchant';
   const docChecklist = getMerchantDocumentChecklist(merchantData);
@@ -59,36 +59,17 @@ export function AdminPortal({
     toast.message('Merchant notice cleared');
   };
 
-  const callIdentityDemo = async (service: 'suite' | 'kyc' | 'kyb' | 'persona' | 'persona_webhook') => {
-    setIdentityLoading(true);
+  const runVerification = () => {
+    setVerificationLoading(true);
     try {
-      const res = await fetch('/api/identity', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchantData, scenario: identityScenario, service }),
+      const result = runLocalVerificationCheck(merchantData);
+      setLastVerification(result);
+      setVerificationIssues(result.issues);
+      toast.success('Submission check complete', {
+        description: result.summary,
       });
-      const json = (await res.json()) as { error?: string; remediations?: MockRemediationItem[] };
-      if (!res.ok) {
-        throw new Error(json.error || `HTTP ${res.status}`);
-      }
-      const rem = Array.isArray(json.remediations) ? json.remediations : [];
-      setIdentityRemediation(rem);
-      const label =
-        service === 'persona_webhook'
-          ? 'Persona webhook (simulated)'
-          : service === 'suite'
-            ? 'Full suite'
-            : service.toUpperCase();
-      toast.success(`${label} complete`, {
-        description:
-          rem.length === 0
-            ? 'No remediation steps — merchant view stays clear.'
-            : `${rem.length} fix-it link(s) sent to Merchant portal.`,
-      });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Identity demo request failed');
     } finally {
-      setIdentityLoading(false);
+      setVerificationLoading(false);
     }
   };
 
@@ -284,94 +265,56 @@ export function AdminPortal({
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-violet-600" />
-                    Simulated KYC / KYB / Persona APIs (demo)
+                    Submission check
                   </CardTitle>
                   <p className="text-xs text-slate-600 font-normal mt-1">
-                    POST <code className="rounded bg-white/80 px-1">/api/identity</code> — same routes work on Vercel. Responses include{' '}
-                    <code className="rounded bg-white/80 px-1">remediations</code> with Intake targets. Merchant sees a red banner with{' '}
-                    <strong>Fix this</strong> buttons.
+                    Runs a local rules pass across the intake answers and uploaded documents. No external API is involved.
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex flex-wrap items-end gap-3">
-                    <label className="flex flex-col gap-1 text-xs font-medium text-slate-700">
-                      Scenario
-                      <select
-                        className="rounded-md border border-slate-200 bg-white px-2 py-2 text-sm min-w-[220px]"
-                        value={identityScenario}
-                        onChange={(e) => setIdentityScenario(e.target.value as IdentityDemoScenario)}
-                        disabled={identityLoading}
-                      >
-                        <option value="default">Default (from missing files on profile)</option>
-                        <option value="all_pass">All pass</option>
-                        <option value="persona_decline_id">Persona: decline government ID</option>
-                        <option value="persona_decline_kyb_doc">Persona: decline business registration</option>
-                        <option value="kyc_owner_mismatch">KYC: owner name mismatch → fix owner form</option>
-                        <option value="kyb_business_mismatch">KYB: business name mismatch → fix company form</option>
-                        <option value="combined_failures">Combined ID + business doc failures</option>
-                      </select>
-                    </label>
-                  </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
                       size="sm"
-                      variant="secondary"
-                      disabled={identityLoading}
-                      onClick={() => callIdentityDemo('kyc')}
-                    >
-                      Call KYC vendor
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      disabled={identityLoading}
-                      onClick={() => callIdentityDemo('kyb')}
-                    >
-                      Call KYB vendor
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      disabled={identityLoading}
-                      onClick={() => callIdentityDemo('persona')}
-                    >
-                      Call Persona inquiry
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
                       className="bg-violet-700 hover:bg-violet-800"
-                      disabled={identityLoading}
-                      onClick={() => callIdentityDemo('persona_webhook')}
+                      disabled={verificationLoading}
+                      onClick={runVerification}
                     >
-                      Simulate Persona webhook
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={identityLoading}
-                      onClick={() => callIdentityDemo('suite')}
-                    >
-                      Run full suite
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="text-slate-600"
-                      disabled={identityLoading}
-                      onClick={() => {
-                        setIdentityRemediation([]);
-                        toast.message('Cleared merchant verification alerts');
-                      }}
-                    >
-                      Clear merchant alerts
+                      Run submission check
                     </Button>
                   </div>
+                  {lastVerification && (
+                    <div className="rounded-lg border border-violet-200 bg-white/90 p-4 text-sm">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge className={lastVerification.status === 'clear' ? 'bg-emerald-100 text-emerald-900 hover:bg-emerald-100' : 'bg-amber-100 text-amber-900 hover:bg-amber-100'}>
+                          {lastVerification.status === 'clear' ? 'Clear' : 'Needs follow-up'}
+                        </Badge>
+                        <Badge variant="outline" className="border-slate-200 text-slate-700">
+                          {lastVerification.issues.length} item{lastVerification.issues.length === 1 ? '' : 's'}
+                        </Badge>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Summary</p>
+                          <p className="mt-1 text-slate-800">{lastVerification.summary}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Checked At</p>
+                          <p className="mt-1 text-slate-800">{new Date(lastVerification.checkedAt).toLocaleString()}</p>
+                        </div>
+                      </div>
+                      {lastVerification.issues.length > 0 ? (
+                        <ul className="mt-3 space-y-2">
+                          {lastVerification.issues.map((issue) => (
+                            <li key={issue.id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="text-slate-800">{issue.reason}</p>
+                              <p className="mt-1 text-xs text-slate-500">{issue.target.whereLabel}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
