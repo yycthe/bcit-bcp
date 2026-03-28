@@ -131,15 +131,13 @@ Response shape is **`object: "response"`** with an **`output`** array (not the s
 
 | Concern | What we do |
 |--------|------------|
-| Endpoint | **Chat Completions** via AI SDK `generateObject` + `createXai({ apiKey })(modelId)`. |
+| Endpoint | **Responses API via AI SDK provider** (`createXai({ apiKey }).responses(modelId)`) for underwriting generation. |
 | Structured underwriting JSON | Zod schema → SDK structured object output (aligned with xAI structured outputs). |
-| Images | SDK **`image`** parts → provider maps toward **`image_url`** style chat content. |
-| PDFs | Default: SDK **`file`** parts on the **chat** path; on failure, **fallback** to **text extracted locally** (`unpdf`). This is **not** identical to the official **Files + `input_file` + `/v1/responses`** flow; see section 2 if you need strict parity with that documented pattern. |
+| Images | SDK **`image`** parts on the Responses path; if multimodal fails, the server retries without images. |
+| PDFs | Default: **text extracted locally** (`unpdf`) and appended to the prompt. This intentionally avoids relying on raw PDF chat/file parts. If you need strict xAI document-search behavior, implement the official **Files + `input_file` + `/v1/responses`** flow from section 2. |
 | Large browser uploads on Vercel | Because Vercel Functions enforce a **4.5 MB** request-body limit, the client automatically falls back to **metadata-only** document objects when the JSON payload would be too large. The prompt still includes an uploaded-document inventory so the model knows which files were supplied, but file contents are unavailable in that mode. |
 
 Environment variables for keys: `XAI_API_KEY` or any `*_XAI_API_KEY` (see `server/runUnderwriting.ts`).
-
-Optional PDF modes: `XAI_UNDERWRITE_PDF_TEXT_ONLY`, `XAI_UNDERWRITE_PDF_TEXT_SUPPLEMENT` (see `.env.example`).
 
 ---
 

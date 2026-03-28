@@ -2,7 +2,7 @@
  * Local check: dotenv + @ai-sdk/xai + ai `streamText` (aligned with Vercel env pull workflow).
  * Docs often use:
  *   import { xai } from "@ai-sdk/xai";
- *   streamText({ model: xai("grok-4"), prompt: "..." })
+ *   streamText({ model: xai.responses("grok-4-fast"), prompt: "..." })
  * We use createXai + resolveXaiApiKey() so *_XAI_API_KEY from integrations works too.
  *
  *   npm run smoke:xai
@@ -24,12 +24,12 @@ if (!apiKey) {
 const modelId =
   process.env.XAI_MODEL?.trim() ||
   process.env.AI_MODEL?.trim() ||
-  'grok-4-1-fast-reasoning';
+  'grok-4-fast-non-reasoning';
 
 const xaiProvider = createXai({ apiKey });
 
 const result = streamText({
-  model: xaiProvider(modelId),
+  model: xaiProvider.responses(modelId),
   prompt: 'In one sentence, confirm you are running and name your model.',
 });
 

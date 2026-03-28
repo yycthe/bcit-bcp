@@ -39,9 +39,9 @@
 
 | 用途 | 文件 | 说明 |
 |------|------|------|
-| 实际调用模型 | `server/runUnderwriting.ts` | `createXai({ apiKey })` + `generateObject`；默认模型 **`grok-4-1-fast-reasoning`**（可被 `XAI_MODEL` / `AI_MODEL` 覆盖）。 |
+| 实际调用模型 | `server/runUnderwriting.ts` | `createXai({ apiKey })` + `generateObject`；默认模型 **`grok-4-fast-non-reasoning`**（可被 `XAI_MODEL` / `AI_MODEL` 覆盖）。 |
 | 解析 API Key | `server/runUnderwriting.ts` → `resolveXaiApiKey()` | 优先 **`XAI_API_KEY`**，否则取任意环境变量名以 **`_XAI_API_KEY`** 结尾且非空（按名排序），兼容 Vercel xAI 集成注入的 **`AIxxxxxx_XAI_API_KEY`**。 |
-| PDF 策略 | 同文件 | 默认：**原生 `file` 多模态**；失败则 **unpdf 文本**重试；`XAI_UNDERWRITE_PDF_TEXT_ONLY` / `XAI_UNDERWRITE_PDF_TEXT_SUPPLEMENT` 控制变体。Prompt 里会额外写入上传文件清单，便于 metadata-only 降级时保留上下文。 |
+| PDF / 图片策略 | 同文件 | 默认：**PDF 先做本地文本抽取**，图片保留多模态输入；如果图片多模态失败，再退回纯文本。Prompt 里会额外写入上传文件清单，便于 metadata-only 降级时保留上下文。 |
 | HTTP 入口（生产） | `api/underwrite.ts` | Web `Request/Response` handler；校验 body、检查 `resolveXaiApiKey()`、调 `runUnderwriting`、JSON 响应。 |
 | HTTP 入口（本地） | `vite.config.ts` 中间件 | 同上逻辑。 |
 | 接口格式文档 | `docs/xai-api.md`、`server/xaiApiReference.ts` | xAI Chat Completions / Files+Responses 对照说明。 |
@@ -58,9 +58,7 @@
 
 **可选：**
 
-- **`XAI_MODEL`** / **`AI_MODEL`**：覆盖默认 `grok-4-1-fast-reasoning`。
-- **`XAI_UNDERWRITE_PDF_TEXT_ONLY`** = `true`：只用文本抽取，不送 PDF 二进制。
-- **`XAI_UNDERWRITE_PDF_TEXT_SUPPLEMENT`** = `true`：PDF 二进制 + unpdf 文本双送（更耗 token）。
+- **`XAI_MODEL`** / **`AI_MODEL`**：覆盖默认 `grok-4-fast-non-reasoning`。
 - **`NODE_ENV`**：由平台设置；生产下 API 错误响应一般不返回 stack（见 `api/underwrite.ts`）。
 
 **禁止：**

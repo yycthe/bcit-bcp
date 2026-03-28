@@ -1,8 +1,15 @@
 /**
- * Merchant underwriting calls xAI through the Vercel AI SDK (`generateObject` → OpenAI-compatible **Chat Completions** at `https://api.x.ai/v1`).
- * Official wire formats (images, Files + Responses for PDF, structured outputs) are summarized in `docs/xai-api.md` and typed in `server/xaiApiReference.ts`.
- * @see https://docs.x.ai/docs/guides/chat-completions
- * @see https://docs.x.ai/docs/guides/files
+ * Merchant underwriting calls xAI through the Vercel AI SDK.
+ * We prefer the provider's Responses API path for structured output, while keeping the payload conservative:
+ * - merchant profile as text
+ * - PDF content as locally extracted text (`unpdf`)
+ * - images as image parts when present
+ *
+ * This avoids relying on chat/file-part PDF behavior, since xAI's current official "chat with files"
+ * guidance centers on uploaded files / agentic search rather than raw PDF bytes inside chat content.
+ *
+ * @see https://docs.x.ai/docs/guides/structured-outputs
+ * @see https://docs.x.ai/developers/model-capabilities/files/chat-with-files
  */
 import { generateObject } from 'ai';
 import { createXai } from '@ai-sdk/xai';
@@ -37,11 +44,12 @@ const underwritingSchema = z.object({
 const ALLOWED_PROCESSORS = ['Stripe', 'Adyen', 'Nuvei', 'HighRiskPay'] as const;
 
 /**
- * Default xAI model: Grok 4.1 Fast (reasoning).
- * Override with `XAI_MODEL` / `AI_MODEL` (e.g. `grok-4-1-fast-non-reasoning`, `grok-4`).
- * We use `createXai({ apiKey })` so Vercel `*_XAI_API_KEY` from `vercel env pull` works, not only `XAI_API_KEY`.
+ * Default xAI model: Grok 4 Fast Non-Reasoning.
+ * This is currently listed by xAI as a Grok 4 family model with structured outputs, image understanding,
+ * and chat-with-files capability, while being faster/safer for serverless time budgets than reasoning-heavy defaults.
+ * Override with `XAI_MODEL` / `AI_MODEL` if you want a different Grok 4 family model.
  */
-const DEFAULT_XAI_MODEL = 'grok-4-1-fast-reasoning';
+const DEFAULT_XAI_MODEL = 'grok-4-fast-non-reasoning';
 
 const MAX_PDF_TEXT_CHARS = 80_000;
 
@@ -146,7 +154,7 @@ Based on the profile and the provided documents (if any), perform a comprehensiv
 3. Provide 2-3 specific "riskFactors" explaining the score (e.g., "High average ticket size increases chargeback exposure", "Regulated industry requires specialized underwriting", "Verified financial documents reduce risk"). Be specific to the data provided.
 4. Recommend a payment processor from this list: Stripe, Adyen, Nuvei, HighRiskPay.
 5. Provide a brief reason for your recommendation.
-6. If any documents were uploaded (e.g., Financial Statements, ID, Business Licenses, Proof of Address), read attached PDF and image files directly when present, extract the key information, and summarize it clearly in the "documentSummary" field. Format the summary with clear bullet points separated by newlines. If no documents are provided or readable, return "No document information extracted".
+6. If any documents were uploaded (e.g., Financial Statements, ID, Business Licenses, Proof of Address), use the provided PDF text extracts and any attached images to extract key information, then summarize it clearly in the "documentSummary" field. Format the summary with clear bullet points separated by newlines. If no documents are provided or readable, return "No document information extracted".
 7. VERIFICATION AUDIT: Cross-reference the self-reported Merchant Profile data (like legalName, ownerName, address) against the information extracted from the uploaded documents.
    - Compare names, addresses, and business details.
    - Output "verificationStatus": "Verified" (if data matches), "Discrepancies Found" (if there are mismatches), or "Unverified" (if not enough documents to verify).
@@ -184,14 +192,15 @@ function isPdfFile(mime: string, filename?: string): boolean {
 // AI SDK v5 parts: ImagePart / FilePart use `mediaType` (not `mimeType`).
 type UserContentPart =
   | { type: 'text'; text: string }
-  | { type: 'image'; image: Uint8Array; mediaType?: string }
-  | { type: 'file'; data: Uint8Array; mediaType: string; filename?: string };
+  | { type: 'image'; image: Uint8Array; mediaType?: string };
 
 /**
- * Build multimodal user content: images + non-PDF files + PDFs as binary `file` parts (when not omitted).
- * `omitPdfBinary` is used for the text-only fallback path after native PDF fails.
+ * Build multimodal user content conservatively:
+ * - text always
+ * - images when present
+ * - no raw PDF/file parts by default
  */
-function buildUserContent(finalData: MerchantData, opts?: { omitPdfBinary?: boolean }): UserContentPart[] {
+function buildUserContent(finalData: MerchantData, opts?: { omitImages?: boolean }): UserContentPart[] {
   const promptText = buildPromptText(finalData);
   const content: UserContentPart[] = [{ type: 'text', text: promptText }];
 
@@ -213,19 +222,11 @@ function buildUserContent(finalData: MerchantData, opts?: { omitPdfBinary?: bool
     } catch {
       continue;
     }
-    if (opts?.omitPdfBinary && isPdfFile(mime, filename)) {
+    if (isPdfFile(mime, filename)) {
       continue;
     }
-    if (mime.startsWith('image/')) {
+    if (!opts?.omitImages && mime.startsWith('image/')) {
       content.push({ type: 'image', image: bytes, mediaType: mime });
-    } else {
-      const filePart: { type: 'file'; data: Uint8Array; mediaType: string; filename?: string } = {
-        type: 'file',
-        data: bytes,
-        mediaType: mime,
-      };
-      if (filename) filePart.filename = filename;
-      content.push(filePart);
     }
   }
   return content;
@@ -271,19 +272,50 @@ function resolveModelForXai(): string {
   );
 }
 
-function envFlagTrue(name: string): boolean {
-  const v = process.env[name]?.trim().toLowerCase();
-  return v === '1' || v === 'true' || v === 'yes';
+function serializeErrorPayload(value: unknown, depth = 0): unknown {
+  if (depth > 3) return '[max-depth]';
+  if (value == null) return value;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+      cause: serializeErrorPayload((value as Error & { cause?: unknown }).cause, depth + 1),
+    };
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 8).map((item) => serializeErrorPayload(item, depth + 1));
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of ['name', 'message', 'cause', 'status', 'statusCode', 'responseBody', 'body', 'error']) {
+      if (key in record) {
+        out[key] = serializeErrorPayload(record[key], depth + 1);
+      }
+    }
+    if (Object.keys(out).length) return out;
+  }
+  return String(value);
 }
 
-/** Also append unpdf-extracted text alongside native PDF file parts (more tokens; optional). */
-function pdfTextSupplementEnabled(): boolean {
-  return envFlagTrue('XAI_UNDERWRITE_PDF_TEXT_SUPPLEMENT');
+function describeAiError(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    const extra = serializeErrorPayload(error);
+    if (typeof extra === 'object' && extra && 'statusCode' in (extra as Record<string, unknown>)) {
+      return `${error.message} (${JSON.stringify(extra)})`;
+    }
+    return error.message;
+  }
+  const serialized = serializeErrorPayload(error);
+  return typeof serialized === 'string' ? serialized : JSON.stringify(serialized);
 }
 
-/** Skip native PDF file parts and use only extracted text (old behavior). */
-function pdfTextOnlyMode(): boolean {
-  return envFlagTrue('XAI_UNDERWRITE_PDF_TEXT_ONLY');
+function countImageParts(content: UserContentPart[]): number {
+  return content.filter((part) => part.type === 'image').length;
 }
 
 function mergePdfAppendixIntoFirstText(content: UserContentPart[], pdfAppendix: string): void {
@@ -301,7 +333,7 @@ function mergePdfAppendixIntoFirstText(content: UserContentPart[], pdfAppendix: 
 export async function runUnderwriting(finalData: MerchantData): Promise<UnderwritingApiResult> {
   const abortSignal =
     typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-      ? AbortSignal.timeout(120_000)
+      ? AbortSignal.timeout(45_000)
       : undefined;
 
   const xaiKey = resolveXaiApiKey();
@@ -313,80 +345,58 @@ export async function runUnderwriting(finalData: MerchantData): Promise<Underwri
   const modelId = resolveModelForXai();
 
   let object;
+  const pdfAppendix = await buildPdfTextAppendixForXai(finalData);
   try {
-    if (pdfTextOnlyMode()) {
-      const pdfAppendix = await buildPdfTextAppendixForXai(finalData);
-      const content = buildUserContent(finalData, { omitPdfBinary: true });
-      mergePdfAppendixIntoFirstText(content, pdfAppendix);
-      console.log(
-        '[underwrite] xai',
-        modelId,
-        'mode:text-only',
-        'contentParts:',
-        content.length,
-        'pdfAppendixChars:',
-        pdfAppendix.length
-      );
+    let content = buildUserContent(finalData);
+    mergePdfAppendixIntoFirstText(content, pdfAppendix);
+    console.log(
+      '[underwrite] xai',
+      modelId,
+      'mode:responses-text+images',
+      'contentParts:',
+      content.length,
+      'imageParts:',
+      countImageParts(content),
+      'pdfAppendixChars:',
+      pdfAppendix.length
+    );
+    try {
       const result = await generateObject({
-        model: xaiProvider(modelId),
+        model: xaiProvider.responses(modelId),
         schema: underwritingSchema,
         messages: [{ role: 'user', content }],
         abortSignal,
       });
       object = result.object;
-    } else {
-      let content = buildUserContent(finalData);
-      let pdfAppendix = '';
-      if (pdfTextSupplementEnabled()) {
-        pdfAppendix = await buildPdfTextAppendixForXai(finalData);
-        mergePdfAppendixIntoFirstText(content, pdfAppendix);
+    } catch (imageErr) {
+      if (countImageParts(content) === 0) {
+        throw imageErr;
       }
+      console.warn('[underwrite] multimodal request failed; retrying without images:', describeAiError(imageErr));
+      const fallback = buildUserContent(finalData, { omitImages: true });
+      mergePdfAppendixIntoFirstText(fallback, pdfAppendix);
       console.log(
         '[underwrite] xai',
         modelId,
-        'mode:native-pdf',
+        'mode:responses-text-only',
         'contentParts:',
-        content.length,
-        'pdfSupplementChars:',
+        fallback.length,
+        'imageParts:',
+        countImageParts(fallback),
+        'pdfAppendixChars:',
         pdfAppendix.length
       );
-      try {
-        const result = await generateObject({
-          model: xaiProvider(modelId),
-          schema: underwritingSchema,
-          messages: [{ role: 'user', content }],
-          abortSignal,
-        });
-        object = result.object;
-      } catch (nativeErr) {
-        console.warn(
-          '[underwrite] native PDF multimodal failed; retrying with text extraction only:',
-          nativeErr instanceof Error ? nativeErr.message : nativeErr
-        );
-        pdfAppendix = await buildPdfTextAppendixForXai(finalData);
-        const fallback = buildUserContent(finalData, { omitPdfBinary: true });
-        mergePdfAppendixIntoFirstText(fallback, pdfAppendix);
-        console.log(
-          '[underwrite] xai',
-          modelId,
-          'mode:text-fallback',
-          'contentParts:',
-          fallback.length,
-          'pdfAppendixChars:',
-          pdfAppendix.length
-        );
-        const result = await generateObject({
-          model: xaiProvider(modelId),
-          schema: underwritingSchema,
-          messages: [{ role: 'user', content: fallback }],
-          abortSignal,
-        });
-        object = result.object;
-      }
+      const result = await generateObject({
+        model: xaiProvider.responses(modelId),
+        schema: underwritingSchema,
+        messages: [{ role: 'user', content: fallback }],
+        abortSignal,
+      });
+      object = result.object;
     }
   } catch (aiError) {
-    console.error('[underwrite] generateObject error:', aiError);
-    throw aiError;
+    console.error('[underwrite] generateObject error:', describeAiError(aiError));
+    throw new Error(describeAiError(aiError));
   }
 
   const riskScore =

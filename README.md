@@ -6,7 +6,7 @@ BCIT **Business Consulting Project** — a **MerchantWerx** onboarding demo for 
 
 - **Merchant portal** — Application flow, agreements, status, and AI underwriting integration.
 - **Admin portal** — Review submitted applications and recommendations in a demo environment.
-- **AI underwriting** — [AI SDK](https://sdk.vercel.ai/) `generateObject` with **xAI Grok** only (`XAI_API_KEY` or Vercel’s `*_XAI_API_KEY`; default **`grok-4-1-fast-reasoning`**, override with `XAI_MODEL`).
+- **AI underwriting** — [AI SDK](https://sdk.vercel.ai/) `generateObject` with **xAI Grok** only (`XAI_API_KEY` or Vercel’s `*_XAI_API_KEY`; default **`grok-4-fast-non-reasoning`**, override with `XAI_MODEL`).
 
 ## Stack
 
@@ -33,7 +33,7 @@ Dependencies already include **`@ai-sdk/xai`**, **`ai`**, and **`dotenv`**. You 
 1. Push this repo to GitHub and [import the project](https://vercel.com/new) in Vercel (or connect an existing project).
 2. In the Vercel dashboard, add **Environment Variables** for **Production** (and Preview if you want):  
    **`XAI_API_KEY`** and/or the integration variable ending in **`_XAI_API_KEY`**.  
-   Optional: **`XAI_MODEL`** (defaults to **`grok-4-1-fast-reasoning`**).
+   Optional: **`XAI_MODEL`** (defaults to **`grok-4-fast-non-reasoning`**).
 3. Redeploy so the serverless **`/api/underwrite`** route picks up secrets.  
    `vercel.json` sets **`outputDirectory`: `dist`**, SPA rewrites, and a per-function **`maxDuration`** for underwriting.
 
@@ -56,13 +56,11 @@ See `.env.example`. Summary:
 | Variable | Description |
 |----------|-------------|
 | `XAI_API_KEY` or `*_XAI_API_KEY` | **Required** for underwriting. Never use **`VITE_*`** for secrets (that exposes them in the browser). |
-| `XAI_MODEL` | Optional. Default **`grok-4-1-fast-reasoning`** (Grok 4.1 Fast, reasoning). Use **`grok-4-1-fast-non-reasoning`** for the non-reasoning variant. |
+| `XAI_MODEL` | Optional. Default **`grok-4-fast-non-reasoning`**. Good Grok 4 family alternatives include `grok-4-1-fast-non-reasoning`, `grok-4-fast`, and `grok-4-fast-reasoning`. |
 | `AI_MODEL` | Optional fallback if `XAI_MODEL` is unset. |
-| `XAI_UNDERWRITE_PDF_TEXT_ONLY` | If `true`: do **not** send PDF binaries; only **unpdf** text. |
-| `XAI_UNDERWRITE_PDF_TEXT_SUPPLEMENT` | If `true`: send **native PDF** parts **and** append extracted text (more tokens). |
 | `APP_URL` | Optional; base URL when deployed. |
 
-**PDFs:** By default underwriting sends **PDFs as native `file` attachments** to xAI. If that request fails, the server **retries** with text-only extraction (`unpdf`).
+**PDFs:** Underwriting now sends **PDFs as extracted text** by default instead of relying on raw PDF chat file parts. This is more conservative against xAI's current file/tooling split. Uploaded images are still sent as multimodal image inputs, and the server retries text-only if multimodal input fails.
 
 **Vercel request-size guard:** Vercel Functions have a **4.5 MB** request/response body limit. The client now automatically falls back to sending **document metadata only** if the underwriting payload would be too large, so the AI flow still runs instead of failing with `413 FUNCTION_PAYLOAD_TOO_LARGE`. In that fallback mode, document contents are not available to the model.
 
@@ -70,7 +68,7 @@ Example:
 
 ```env
 XAI_API_KEY=xai-...
-# XAI_MODEL=grok-4-1-fast-reasoning
+# XAI_MODEL=grok-4-fast-non-reasoning
 ```
 
 Local **`npm run dev`**: underwriting calls **`POST /api/underwrite`** (Vite dev middleware). Production: same path on Vercel via **`api/underwrite.ts`**.
@@ -91,7 +89,7 @@ Local **`npm run dev`**: underwriting calls **`POST /api/underwrite`** (Vite dev
 2. Keep secrets server-only. Do not use **`VITE_XAI_API_KEY`** or any other `VITE_*` secret.
 3. Redeploy after changing env vars.
 4. If underwriting requests include large PDFs/images, expect the app to fall back to metadata-only mode unless you move uploads to storage first.
-5. If you want faster / cheaper runs, set **`XAI_MODEL`** explicitly. xAI currently documents Grok 4 family structured-output support, including models such as **`grok-4-1-fast-reasoning`** and **`grok-4-fast-reasoning`**.
+5. If you want to tune speed vs reasoning, set **`XAI_MODEL`** explicitly. xAI currently documents Grok 4 family structured-output support, including models such as **`grok-4-fast-non-reasoning`**, **`grok-4-1-fast-non-reasoning`**, **`grok-4-fast`**, and **`grok-4-fast-reasoning`**.
 
 ## Run locally
 
