@@ -86,6 +86,7 @@ const FILE_KEYS = [
 const DOMESTIC_COUNTRIES = new Set(['US', 'CA']);
 const HIGH_RISK_INDUSTRIES = new Set(['high_risk', 'crypto', 'gaming']);
 const SENSITIVE_FIELD_KEYS = new Set(['taxId', 'ownerIdNumber', 'accountNumber', 'routingNumber']);
+const CONCERN_KEYWORDS = ['chargeback', 'fraud', 'reserve', 'terminated', 'mismatch', 'decline', 'high', 'review'];
 const CRITICAL_INTAKE_FIELDS = [
   'businessType',
   'country',
@@ -590,6 +591,177 @@ function buildDerivedRiskSignalsText(merchantData: MerchantDataLike): string {
   return signals.map((signal) => `- ${signal}`).join('\n');
 }
 
+function hasProvidedText(value: unknown): boolean {
+  return normalizeString(value).length > 0;
+}
+
+function containsConcernKeyword(value: string): boolean {
+  const lower = value.toLowerCase();
+  return CONCERN_KEYWORDS.some((keyword) => lower.includes(keyword));
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function buildRuleBasedBaselineText(merchantData: MerchantDataLike): string {
+  const industry = normalizeString(merchantData.industry);
+  const country = normalizeString(merchantData.country);
+  const monthlyVolume = normalizeString(merchantData.monthlyVolume);
+  const monthlyTransactions = normalizeString(merchantData.monthlyTransactions);
+  const billingModel = normalizeString(merchantData.billingModel);
+  const chargebackHistory = normalizeString(merchantData.chargebackHistory);
+  const previousProcessors = normalizeString(merchantData.previousProcessors);
+  const recurringBillingDetails = normalizeString(merchantData.recurringBillingDetails);
+  const trialPeriod = normalizeString(merchantData.trialPeriod);
+  const domesticVsInternational = normalizeString(merchantData.domesticVsInternational);
+  const domesticCrossBorderSplit = normalizeString(merchantData.domesticCrossBorderSplit);
+  const processingCurrencies = normalizeString(merchantData.processingCurrencies);
+
+  const isHighRisk = HIGH_RISK_INDUSTRIES.has(industry);
+  const isInternational = country.length > 0 && !DOMESTIC_COUNTRIES.has(country);
+  const isHighVolume = monthlyVolume === '50k-250k' || monthlyVolume === '>250k';
+  const isVeryHighVolume = monthlyVolume === '>250k';
+  const hasRecurringExposure =
+    recurringBillingDetails.length > 0 ||
+    trialPeriod.length > 0 ||
+    billingModel.toLowerCase().includes('subscription') ||
+    billingModel.toLowerCase().includes('recurring');
+  const hasCrossBorderExposure =
+    isInternational ||
+    domesticVsInternational.toLowerCase().includes('international') ||
+    domesticCrossBorderSplit.toLowerCase().includes('cross') ||
+    (processingCurrencies.length > 0 && processingCurrencies.includes(','));
+  const hasMitigatingCompliance =
+    hasProvidedText(merchantData.complianceDetails) ||
+    hasProvidedText(merchantData.regulatoryStatus) ||
+    hasProvidedText(merchantData.amlKycProcedures) ||
+    hasProvidedText(merchantData.cryptoLicenses) ||
+    hasProvidedText(merchantData.gamingLicenses);
+
+  const expectedDocuments = getExpectedDocumentFields(merchantData);
+  const presentDocuments = expectedDocuments.filter((field) => isPlainObject(merchantData[field]));
+  const missingDocuments = expectedDocuments
+    .filter((field) => !isPlainObject(merchantData[field]))
+    .map((field) => UPLOAD_FIELD_LABELS[field] ?? prettifyFieldLabel(field));
+  const criticalMissing = CRITICAL_INTAKE_FIELDS.filter((field) => !isMeaningfulScalar(merchantData[field])).map(prettifyFieldLabel);
+  const ruleFindings: string[] = [];
+  const uploads = getUploadedFiles(merchantData);
+  const flaggedUploads = uploads
+    .filter(
+      (upload) =>
+        upload.status === 'Needs review' ||
+        upload.status === 'Mismatch' ||
+        (typeof upload.confidence === 'number' && upload.confidence < 0.75)
+    )
+    .map((upload) => {
+      const details: string[] = [];
+      if (upload.status) details.push(`status ${upload.status}`);
+      if (typeof upload.confidence === 'number' && upload.confidence < 0.75) {
+        details.push(`confidence ${formatConfidence(upload.confidence) ?? 'low'}`);
+      }
+      return `${upload.name} (${details.join(', ')})`;
+    });
+
+  let baselineScore = 18;
+  const concernSignals: string[] = [];
+  const mitigatingSignals: string[] = [];
+
+  if (isHighRisk) {
+    baselineScore += 34;
+    concernSignals.push(`High-risk industry route: ${industry}`);
+  }
+  if (isInternational) {
+    baselineScore += 12;
+    concernSignals.push(`Registered outside US/CA: ${country}`);
+  }
+  if (isVeryHighVolume) {
+    baselineScore += 18;
+    concernSignals.push(`Very high monthly volume: ${monthlyVolume}`);
+  } else if (isHighVolume) {
+    baselineScore += 10;
+    concernSignals.push(`Elevated monthly volume: ${monthlyVolume}`);
+  }
+  if (monthlyTransactions === '>10k') {
+    baselineScore += 10;
+    concernSignals.push(`Very high monthly transaction count: ${monthlyTransactions}`);
+  } else if (monthlyTransactions === '1k-10k') {
+    baselineScore += 6;
+    concernSignals.push(`Higher transaction count: ${monthlyTransactions}`);
+  }
+  if (hasRecurringExposure) {
+    baselineScore += 8;
+    concernSignals.push('Recurring billing or trial exposure present');
+  }
+  if (hasCrossBorderExposure) {
+    baselineScore += 8;
+    concernSignals.push('Cross-border or multi-currency exposure present');
+  }
+  if (chargebackHistory.length > 0) {
+    baselineScore += containsConcernKeyword(chargebackHistory) ? 12 : 5;
+    concernSignals.push(`Chargeback history disclosed: ${truncateText(chargebackHistory, 100)}`);
+  }
+  if (previousProcessors.length > 0) {
+    baselineScore += containsConcernKeyword(previousProcessors) ? 10 : 4;
+    concernSignals.push(`Previous processor history disclosed: ${truncateText(previousProcessors, 100)}`);
+  }
+  if (criticalMissing.length > 0) {
+    baselineScore += Math.min(criticalMissing.length * 4, 20);
+  }
+  if (missingDocuments.length > 0) {
+    baselineScore += Math.min(missingDocuments.length * 5, 25);
+  }
+  if (flaggedUploads.length > 0) {
+    baselineScore += Math.min(flaggedUploads.length * 4, 12);
+  }
+  if (isHighRisk && !hasProvidedText(merchantData.complianceDetails) && !hasProvidedText(merchantData.regulatoryStatus)) {
+    ruleFindings.push('High-risk profile is missing compliance or licensing narrative');
+  }
+  if (industry === 'crypto' && !hasProvidedText(merchantData.amlKycProcedures)) {
+    ruleFindings.push('Crypto profile is missing AML / KYC procedures');
+  }
+  if (isHighVolume && !hasProvidedText(merchantData.avgTicketSize)) {
+    ruleFindings.push('Higher-volume merchant is missing average ticket size');
+  }
+  if ((isInternational || isHighRisk) && !hasProvidedText(merchantData.targetGeography)) {
+    ruleFindings.push('Target geography is missing for an international or higher-risk profile');
+  }
+  if (hasMitigatingCompliance && (isHighRisk || hasCrossBorderExposure)) {
+    baselineScore -= 6;
+    mitigatingSignals.push('Compliance / licensing context was supplied');
+  }
+  if (!isHighRisk && !isInternational && criticalMissing.length === 0 && missingDocuments.length === 0) {
+    baselineScore -= 5;
+    mitigatingSignals.push('Core intake and required uploads appear complete for a domestic merchant');
+  }
+
+  const lines = [
+    `- Deterministic baseline score before model judgment: ${Math.round(clampNumber(baselineScore, 8, 95))}/100`,
+    `- Expected document coverage: ${presentDocuments.length}/${expectedDocuments.length}`,
+  ];
+
+  if (concernSignals.length > 0) {
+    lines.push(`- Main concern signals: ${concernSignals.join('; ')}`);
+  }
+  if (mitigatingSignals.length > 0) {
+    lines.push(`- Mitigating signals: ${mitigatingSignals.join('; ')}`);
+  }
+  if (criticalMissing.length > 0) {
+    lines.push(`- Critical intake gaps to penalize: ${criticalMissing.join(', ')}`);
+  }
+  if (missingDocuments.length > 0) {
+    lines.push(`- Missing expected documents to penalize: ${missingDocuments.join(', ')}`);
+  }
+  if (ruleFindings.length > 0) {
+    lines.push(`- Local business-rule follow-up items: ${ruleFindings.join('; ')}`);
+  }
+  if (flaggedUploads.length > 0) {
+    lines.push(`- Uploaded document metadata that suggests follow-up: ${flaggedUploads.join('; ')}`);
+  }
+
+  return lines.join('\n');
+}
+
 function buildMerchantProfileText(merchantData: MerchantDataLike): string {
   const scalarEntries = getMeaningfulScalarEntries(merchantData);
   if (!scalarEntries.length) {
@@ -697,18 +869,23 @@ ${buildIntakeCoverageText(merchantData)}
 Derived Risk Signals:
 ${buildDerivedRiskSignalsText(merchantData)}
 
+Rules-Based Screening Baseline:
+${buildRuleBasedBaselineText(merchantData)}
+
 Uploaded Documents:
 ${buildUploadInventoryText(merchantData, deliveredFields, skippedNotes)}
 
 Tasks:
-1. Return a numerical riskScore from 0 to 100.
-2. Return riskCategory as Low, Medium, or High.
-3. Return 2-5 riskFactors.
-4. Recommend one processor from Stripe, Adyen, Nuvei, HighRiskPay.
-5. Explain the recommendation in reason, citing the intake facts, completeness gaps, and document evidence that drove the score.
-6. Summarize what the uploaded files appear to contain in documentSummary. If only metadata was available, say that clearly.
-7. Cross-check merchant profile, intake completeness, document metadata, and documents against each other and return verificationStatus and verificationNotes.
-8. Treat missing critical intake fields, missing expected documents, extraction mismatches, and regulated-industry answers as real scoring signals.
+1. Start from the rules-based screening baseline, then adjust the score using your own underwriting judgment from the full merchant context and uploaded evidence.
+2. Return a numerical riskScore from 0 to 100.
+3. Return riskCategory as Low, Medium, or High.
+4. Return 2-5 riskFactors.
+5. Recommend one processor from Stripe, Adyen, Nuvei, HighRiskPay.
+6. Explain the recommendation in reason, citing the intake facts, completeness gaps, document evidence, and why your final score did or did not differ from the baseline.
+7. Summarize what the uploaded files appear to contain in documentSummary. If only metadata was available, say that clearly.
+8. Cross-check merchant profile, intake completeness, document metadata, and documents against each other and return verificationStatus and verificationNotes.
+9. Treat missing critical intake fields, missing expected documents, low-confidence uploads, extraction mismatches, recurring billing exposure, prior processor issues, and regulated-industry answers as real scoring signals.
+10. Do not return Verified if material intake gaps or expected-document gaps remain unresolved.
 
 Return JSON only with exactly these keys:
 {
