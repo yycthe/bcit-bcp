@@ -1,20 +1,67 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# MerchantWerx Onboarding
 
-# Run and deploy your AI Studio app
+Multi-step merchant onboarding demo for payment-processing applications: intake, document handling, AI-assisted risk assessment, and admin review. Built for **BCIT BCP** (Business Consulting Project) coursework.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/a352ea62-47e6-49f5-9220-653c8c8fcac9
+- **Merchant portal** — Application flow, agreements, status, and AI underwriting integration.
+- **Admin portal** — Review submitted applications and recommendations in a demo environment.
+- **Gemini** — Uses Google’s Gemini API for AI-powered underwriting features (requires an API key).
 
-## Run Locally
+## Stack
 
-**Prerequisites:**  Node.js
+- React 19 · TypeScript · Vite 6  
+- Tailwind CSS 4 · Lucide icons · Sonner toasts  
+- `@google/genai` for Gemini
 
+## Prerequisites
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- [Node.js](https://nodejs.org/) (LTS recommended)
+
+## Setup
+
+```bash
+npm install
+```
+
+## Environment
+
+Create a `.env` or `.env.local` file in the project root (see `.env.example`):
+
+| Variable | Description |
+|----------|-------------|
+| `GEMINI_API_KEY` | **Required** for Gemini API calls in the app. |
+| `APP_URL` | Optional; base URL when deployed (e.g. Cloud Run). |
+
+Example:
+
+```env
+GEMINI_API_KEY=your_key_here
+```
+
+Vite injects `GEMINI_API_KEY` at build/dev time via `vite.config.ts`.
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Dev server (port **3000**, all interfaces). |
+| `npm run build` | Production build to `dist/`. |
+| `npm run preview` | Preview the production build locally. |
+| `npm run lint` | Typecheck with `tsc --noEmit`. |
+
+## Run locally
+
+```bash
+npm run dev
+```
+
+Open the URL shown in the terminal (typically `http://localhost:3000`).
+
+## Repository
+
+Remote: `https://github.com/yycthe/merchantwerx-onboarding`
+
+---
+
+*Course / demo project — not production payment software.*
