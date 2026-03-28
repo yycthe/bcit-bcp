@@ -1,6 +1,6 @@
-# MerchantWerx Onboarding
+# BCIT BCP
 
-Multi-step merchant onboarding demo for payment-processing applications: intake, document handling, AI-assisted risk assessment, and admin review. Built for **BCIT BCP** (Business Consulting Project) coursework.
+BCIT **Business Consulting Project** — a **MerchantWerx** onboarding demo for payment processing: intake, documents, AI-assisted risk assessment, and admin review.
 
 ## Features
 
