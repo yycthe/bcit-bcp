@@ -1,19 +1,3 @@
-/**
- * Merchant underwriting calls xAI through the Vercel AI SDK.
- * We prefer the provider's Responses API path for structured output, while keeping the payload conservative:
- * - merchant profile as text
- * - PDF content as locally extracted text (`unpdf`)
- * - images as image parts when present
- *
- * This avoids relying on chat/file-part PDF behavior, since xAI's current official "chat with files"
- * guidance centers on uploaded files / agentic search rather than raw PDF bytes inside chat content.
- *
- * @see https://docs.x.ai/docs/guides/structured-outputs
- * @see https://docs.x.ai/developers/model-capabilities/files/chat-with-files
- */
-import { generateObject } from 'ai';
-import { createXai } from '@ai-sdk/xai';
-import { extractText } from 'unpdf';
 import { z } from 'zod';
 import type { MerchantData } from '../src/types';
 
@@ -42,47 +26,8 @@ const underwritingSchema = z.object({
 });
 
 const ALLOWED_PROCESSORS = ['Stripe', 'Adyen', 'Nuvei', 'HighRiskPay'] as const;
-
-/**
- * Default xAI model: Grok 4 Fast Non-Reasoning.
- * This is currently listed by xAI as a Grok 4 family model with structured outputs, image understanding,
- * and chat-with-files capability, while being faster/safer for serverless time budgets than reasoning-heavy defaults.
- * Override with `XAI_MODEL` / `AI_MODEL` if you want a different Grok 4 family model.
- */
-const DEFAULT_XAI_MODEL = 'grok-4-fast-non-reasoning';
-
-const MAX_PDF_TEXT_CHARS = 80_000;
-
-function normalizeRiskCategory(value: unknown, riskScore: number): 'Low' | 'Medium' | 'High' {
-  if (value === 'Low' || value === 'Medium' || value === 'High') {
-    return value;
-  }
-  const s = Number.isFinite(riskScore) ? riskScore : 50;
-  if (s <= 33) return 'Low';
-  if (s <= 66) return 'Medium';
-  return 'High';
-}
-
-function normalizeRecommendedProcessor(value: unknown): string {
-  if (typeof value === 'string' && (ALLOWED_PROCESSORS as readonly string[]).includes(value)) {
-    return value;
-  }
-  return 'Nuvei';
-}
-
-function normalizeVerificationStatus(value: unknown): VerificationStatus {
-  if (value === 'Verified' || value === 'Discrepancies Found' || value === 'Unverified') {
-    return value;
-  }
-  return 'Unverified';
-}
-
-function nonEmptyString(value: unknown, fallback: string): string {
-  if (typeof value === 'string' && value.trim().length > 0) {
-    return value;
-  }
-  return fallback;
-}
+const DEFAULT_XAI_MODEL = 'grok-4-fast';
+const XAI_BASE_URL = 'https://api.x.ai/v1';
 
 const FILE_KEYS = [
   'financials',
@@ -103,15 +48,65 @@ type UploadedFileDescriptor = {
   data?: string;
 };
 
-type UploadSummary = {
-  field: string;
-  name: string;
-  mimeType: string;
-  hasBinary: boolean;
+type XaiResponseTextPart = {
+  type: 'output_text';
+  text: string;
 };
+
+type XaiResponseOutputItem = {
+  type?: string;
+  content?: Array<XaiResponseTextPart | Record<string, unknown>>;
+};
+
+type XaiResponsesCreateResponse = {
+  output?: XaiResponseOutputItem[];
+};
+
+function normalizeRiskCategory(value: unknown, riskScore: number): 'Low' | 'Medium' | 'High' {
+  if (value === 'Low' || value === 'Medium' || value === 'High') return value;
+  if (riskScore <= 33) return 'Low';
+  if (riskScore <= 66) return 'Medium';
+  return 'High';
+}
+
+function normalizeRecommendedProcessor(value: unknown): string {
+  if (typeof value === 'string' && (ALLOWED_PROCESSORS as readonly string[]).includes(value)) {
+    return value;
+  }
+  return 'Nuvei';
+}
+
+function normalizeVerificationStatus(value: unknown): VerificationStatus {
+  if (value === 'Verified' || value === 'Discrepancies Found' || value === 'Unverified') {
+    return value;
+  }
+  return 'Unverified';
+}
+
+function nonEmptyString(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value : fallback;
+}
+
+export function resolveXaiApiKey(): string | undefined {
+  const direct = process.env.XAI_API_KEY?.trim();
+  if (direct) return direct;
+  const prefixed = Object.keys(process.env)
+    .filter((key) => key.endsWith('_XAI_API_KEY'))
+    .sort();
+  for (const key of prefixed) {
+    const value = process.env[key]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function resolveModelForXai(): string {
+  return process.env.XAI_MODEL?.trim() || process.env.AI_MODEL?.trim() || DEFAULT_XAI_MODEL;
+}
 
 function getAllUploadedFiles(finalData: MerchantData): UploadedFileDescriptor[] {
   const files: UploadedFileDescriptor[] = [];
+
   for (const key of FILE_KEYS) {
     const fileData = finalData[key as keyof MerchantData] as
       | { mimeType?: string; data?: string; name?: string }
@@ -129,7 +124,6 @@ function getAllUploadedFiles(finalData: MerchantData): UploadedFileDescriptor[] 
   }
 
   finalData.additionalDocuments?.forEach((file, index) => {
-    if (!file) return;
     files.push({
       field: `additionalDocument${index + 1}`,
       name: typeof file.name === 'string' && file.name.trim() ? file.name.trim() : `additional-document-${index + 1}`,
@@ -144,21 +138,8 @@ function getAllUploadedFiles(finalData: MerchantData): UploadedFileDescriptor[] 
   return files;
 }
 
-function getUploadSummaries(finalData: MerchantData): UploadSummary[] {
-  const summaries: UploadSummary[] = [];
-  for (const fileData of getAllUploadedFiles(finalData)) {
-    summaries.push({
-      field: fileData.field,
-      name: fileData.name,
-      mimeType: fileData.mimeType,
-      hasBinary: typeof fileData.data === 'string' && fileData.data.trim().length > 0,
-    });
-  }
-  return summaries;
-}
-
 function buildUploadInventoryText(finalData: MerchantData): string {
-  const uploads = getUploadSummaries(finalData);
+  const uploads = getAllUploadedFiles(finalData);
   if (!uploads.length) {
     return 'No uploaded supporting documents were included in this request.';
   }
@@ -166,7 +147,7 @@ function buildUploadInventoryText(finalData: MerchantData): string {
   return uploads
     .map(
       (upload) =>
-        `- ${upload.field}: ${upload.name} (${upload.mimeType})${upload.hasBinary ? ' [content attached]' : ' [metadata only]'}`
+        `- ${upload.field}: ${upload.name} (${upload.mimeType})${upload.data?.trim() ? ' [content attached]' : ' [metadata only]'}`
     )
     .join('\n');
 }
@@ -175,7 +156,7 @@ function buildPromptText(finalData: MerchantData): string {
   return `You are an expert payment processing underwriter. Analyze the following merchant profile and any provided documents.
 
 Merchant Profile:
-${JSON.stringify(Object.fromEntries(Object.entries(finalData).filter(([k, v]) => v && typeof v !== 'object')), null, 2)}
+${JSON.stringify(Object.fromEntries(Object.entries(finalData).filter(([key, value]) => value && typeof value !== 'object')), null, 2)}
 
 Uploaded Documents:
 ${buildUploadInventoryText(finalData)}
@@ -183,267 +164,212 @@ ${buildUploadInventoryText(finalData)}
 Based on the profile and the provided documents (if any), perform a comprehensive risk assessment.
 1. Calculate a numerical "riskScore" from 0 to 100 (0 = lowest risk, 100 = highest risk). Use a baseline of 20. Add points for high-risk industries (+30), cross-border processing (+15), high volume >$250k (+15), lack of financial documents (+10), lack of ID (+10). Deduct points if documents are provided and look legitimate (-10 per valid document type).
 2. Categorize the risk into "riskCategory" (0-33: Low, 34-66: Medium, 67-100: High).
-3. Provide 2-3 specific "riskFactors" explaining the score (e.g., "High average ticket size increases chargeback exposure", "Regulated industry requires specialized underwriting", "Verified financial documents reduce risk"). Be specific to the data provided.
+3. Provide 2-3 specific "riskFactors" explaining the score.
 4. Recommend a payment processor from this list: Stripe, Adyen, Nuvei, HighRiskPay.
 5. Provide a brief reason for your recommendation.
-6. If any documents were uploaded (e.g., Financial Statements, ID, Business Licenses, Proof of Address), use the provided PDF text extracts and any attached images to extract key information, then summarize it clearly in the "documentSummary" field. Format the summary with clear bullet points separated by newlines. If no documents are provided or readable, return "No document information extracted".
-7. VERIFICATION AUDIT: Cross-reference the self-reported Merchant Profile data (like legalName, ownerName, address) against the information extracted from the uploaded documents.
-   - Compare names, addresses, and business details.
-   - Output "verificationStatus": "Verified" (if data matches), "Discrepancies Found" (if there are mismatches), or "Unverified" (if not enough documents to verify).
-   - Output an array of "verificationNotes" explaining the audit results.
+6. Summarize uploaded files in "documentSummary" with clear bullets separated by newlines. If you cannot read them, say so plainly.
+7. Cross-check profile fields against the uploaded documents and return "verificationStatus" and "verificationNotes".
 
-Return the result as structured fields matching the required schema exactly.`;
+Return only valid JSON matching the required schema.`;
 }
 
-/**
- * xAI API key resolution (server-only; never use VITE_* or client env):
- * 1) `XAI_API_KEY` if set
- * 2) Else the first non-empty env var whose name ends with `_XAI_API_KEY` (sorted by name).
- *    Vercel’s xAI integration injects names like `AI123456789_XAI_API_KEY` — no code change needed.
- */
-export function resolveXaiApiKey(): string | undefined {
-  const direct = process.env.XAI_API_KEY?.trim();
-  if (direct) return direct;
-  const prefixed = Object.keys(process.env)
-    .filter((k) => k.endsWith('_XAI_API_KEY'))
-    .sort();
-  for (const k of prefixed) {
-    const v = process.env[k]?.trim();
-    if (v) return v;
-  }
-  return undefined;
+function isPdfFile(mimeType: string, filename?: string): boolean {
+  const mime = mimeType.toLowerCase();
+  return mime === 'application/pdf' || mime === 'application/x-pdf' || filename?.toLowerCase().endsWith('.pdf') === true;
 }
 
-function isPdfFile(mime: string, filename?: string): boolean {
-  const m = mime.toLowerCase();
-  if (m === 'application/pdf' || m === 'application/x-pdf') return true;
-  if (filename?.toLowerCase().endsWith('.pdf')) return true;
-  return false;
+function isImageFile(mimeType: string): boolean {
+  return mimeType.toLowerCase().startsWith('image/');
 }
 
-// AI SDK v5 parts: ImagePart / FilePart use `mediaType` (not `mimeType`).
-type UserContentPart =
-  | { type: 'text'; text: string }
-  | { type: 'image'; image: Uint8Array; mediaType?: string };
-
-/**
- * Build multimodal user content conservatively:
- * - text always
- * - images when present
- * - no raw PDF/file parts by default
- */
-function buildUserContent(finalData: MerchantData, opts?: { omitImages?: boolean }): UserContentPart[] {
-  const promptText = buildPromptText(finalData);
-  const content: UserContentPart[] = [{ type: 'text', text: promptText }];
-
-  for (const fileData of getAllUploadedFiles(finalData)) {
-    if (!fileData?.data) continue;
-    const filename = typeof fileData.name === 'string' && fileData.name.trim() ? fileData.name.trim() : undefined;
-    const nameLo = filename?.toLowerCase() ?? '';
-    const mime =
-      (fileData.mimeType && fileData.mimeType.trim()) ||
-      (nameLo.endsWith('.pdf') ? 'application/pdf' : '') ||
-      (/\.(png|jpe?g|gif|webp)$/i.test(nameLo) ? 'image/jpeg' : '');
-    if (!mime) continue;
-    let bytes: Uint8Array;
-    try {
-      bytes = Uint8Array.from(Buffer.from(fileData.data.replace(/^data:[^;]+;base64,/, ''), 'base64'));
-    } catch {
-      continue;
-    }
-    if (isPdfFile(mime, filename)) {
-      continue;
-    }
-    if (!opts?.omitImages && mime.startsWith('image/')) {
-      content.push({ type: 'image', image: bytes, mediaType: mime });
-    }
-  }
-  return content;
+function decodeBase64DataUrl(data: string): Uint8Array {
+  return Uint8Array.from(Buffer.from(data.replace(/^data:[^;]+;base64,/, ''), 'base64'));
 }
 
-async function buildPdfTextAppendixForXai(finalData: MerchantData): Promise<string> {
-  const sections: string[] = [];
-  for (const fileData of getAllUploadedFiles(finalData)) {
-    if (!fileData?.data) continue;
-    const name = typeof fileData.name === 'string' ? fileData.name : '';
-    const mimeGuess = (fileData.mimeType && fileData.mimeType.trim()) || '';
-    if (!isPdfFile(mimeGuess, name)) continue;
-    try {
-      const raw = fileData.data.replace(/^data:[^;]+;base64,/, '');
-      const bytes = Uint8Array.from(Buffer.from(raw, 'base64'));
-      const { text, totalPages } = await extractText(bytes, { mergePages: true });
-      let body = typeof text === 'string' ? text.trim() : '';
-      if (!body) {
-        body =
-          '(No text layer in this PDF — it may be a scan. Consider XAI_MODEL with a vision-capable workflow or upload images.)';
-      } else if (body.length > MAX_PDF_TEXT_CHARS) {
-        body = body.slice(0, MAX_PDF_TEXT_CHARS) + '\n\n[PDF text truncated for length]';
-      }
-      sections.push(
-        `\n\n--- PDF "${name || fileData.field}" (${fileData.field}, ~${totalPages} page(s)) — extracted text ---\n${body}\n`
-      );
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      sections.push(`\n\n--- PDF "${name || fileData.field}" (${fileData.field}) — extraction failed ---\n${msg}\n`);
-    }
-  }
-  return sections.join('');
-}
-
-function resolveModelForXai(): string {
-  return (
-    (typeof process.env.XAI_MODEL === 'string' && process.env.XAI_MODEL.trim()) ||
-    (typeof process.env.AI_MODEL === 'string' && process.env.AI_MODEL.trim()) ||
-    DEFAULT_XAI_MODEL
-  );
-}
-
-function serializeErrorPayload(value: unknown, depth = 0): unknown {
-  if (depth > 3) return '[max-depth]';
-  if (value == null) return value;
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return value;
-  }
-  if (value instanceof Error) {
-    return {
-      name: value.name,
-      message: value.message,
-      stack: value.stack,
-      cause: serializeErrorPayload((value as Error & { cause?: unknown }).cause, depth + 1),
-    };
-  }
-  if (Array.isArray(value)) {
-    return value.slice(0, 8).map((item) => serializeErrorPayload(item, depth + 1));
-  }
-  if (typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    const out: Record<string, unknown> = {};
-    for (const key of ['name', 'message', 'cause', 'status', 'statusCode', 'responseBody', 'body', 'error']) {
-      if (key in record) {
-        out[key] = serializeErrorPayload(record[key], depth + 1);
-      }
-    }
-    if (Object.keys(out).length) return out;
-  }
-  return String(value);
-}
-
-function describeAiError(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    const extra = serializeErrorPayload(error);
-    if (typeof extra === 'object' && extra && 'statusCode' in (extra as Record<string, unknown>)) {
-      return `${error.message} (${JSON.stringify(extra)})`;
-    }
-    return error.message;
-  }
-  const serialized = serializeErrorPayload(error);
-  return typeof serialized === 'string' ? serialized : JSON.stringify(serialized);
-}
-
-function countImageParts(content: UserContentPart[]): number {
-  return content.filter((part) => part.type === 'image').length;
-}
-
-function mergePdfAppendixIntoFirstText(content: UserContentPart[], pdfAppendix: string): void {
-  if (!pdfAppendix) return;
-  const head = content[0];
-  if (head?.type !== 'text') return;
-  content[0] = {
-    type: 'text',
-    text:
-      head.text +
-      `\n\nThe following is text extracted from uploaded PDFs (supplement; use with the attached PDFs if present):\n${pdfAppendix}`,
+function createUnderwritingJsonSchema() {
+  return {
+    name: 'underwriting_result',
+    strict: true,
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        riskScore: { type: 'number' },
+        riskCategory: { type: 'string', enum: ['Low', 'Medium', 'High'] },
+        riskFactors: { type: 'array', items: { type: 'string' } },
+        recommendedProcessor: { type: 'string', enum: [...ALLOWED_PROCESSORS] },
+        reason: { type: 'string' },
+        documentSummary: { type: 'string' },
+        verificationStatus: {
+          type: 'string',
+          enum: ['Verified', 'Discrepancies Found', 'Unverified'],
+        },
+        verificationNotes: { type: 'array', items: { type: 'string' } },
+      },
+      required: [
+        'riskScore',
+        'riskCategory',
+        'riskFactors',
+        'recommendedProcessor',
+        'reason',
+        'documentSummary',
+        'verificationStatus',
+        'verificationNotes',
+      ],
+    },
   };
+}
+
+async function xaiFetch(path: string, apiKey: string, init: RequestInit): Promise<Response> {
+  return fetch(`${XAI_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      ...(init.headers ?? {}),
+    },
+  });
+}
+
+async function uploadFileToXai(file: UploadedFileDescriptor, apiKey: string): Promise<string> {
+  if (!file.data) {
+    throw new Error(`Cannot upload ${file.name}: missing file bytes.`);
+  }
+
+  const bytes = decodeBase64DataUrl(file.data);
+  const formData = new FormData();
+  formData.append('purpose', 'assistants');
+  formData.append('file', new Blob([bytes], { type: file.mimeType }), file.name);
+
+  const response = await xaiFetch('/files', apiKey, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`xAI file upload failed (${response.status}): ${text.slice(0, 400)}`);
+  }
+
+  const payload = JSON.parse(text) as { id?: string };
+  if (!payload.id) {
+    throw new Error(`xAI file upload succeeded but no file id was returned: ${text.slice(0, 400)}`);
+  }
+
+  return payload.id;
+}
+
+async function deleteXaiFile(fileId: string, apiKey: string): Promise<void> {
+  try {
+    await xaiFetch(`/files/${fileId}`, apiKey, { method: 'DELETE' });
+  } catch {
+    // Best-effort cleanup only.
+  }
+}
+
+function extractResponseText(payload: XaiResponsesCreateResponse): string {
+  const texts: string[] = [];
+  for (const item of payload.output ?? []) {
+    for (const part of item.content ?? []) {
+      if (part.type === 'output_text' && typeof part.text === 'string') {
+        texts.push(part.text);
+      }
+    }
+  }
+  return texts.join('\n').trim();
+}
+
+function describeUnknownError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return typeof error === 'string' ? error : JSON.stringify(error);
 }
 
 export async function runUnderwriting(finalData: MerchantData): Promise<UnderwritingApiResult> {
-  const abortSignal =
-    typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-      ? AbortSignal.timeout(45_000)
-      : undefined;
-
-  const xaiKey = resolveXaiApiKey();
-  if (!xaiKey) {
+  const apiKey = resolveXaiApiKey();
+  if (!apiKey) {
     throw new Error('Missing XAI_API_KEY or an environment variable ending in _XAI_API_KEY.');
   }
 
-  const xaiProvider = createXai({ apiKey: xaiKey });
-  const modelId = resolveModelForXai();
+  const model = resolveModelForXai();
+  const uploadedFiles = getAllUploadedFiles(finalData);
+  const uploadedFileIds: string[] = [];
 
-  let object;
-  const pdfAppendix = await buildPdfTextAppendixForXai(finalData);
   try {
-    let content = buildUserContent(finalData);
-    mergePdfAppendixIntoFirstText(content, pdfAppendix);
-    console.log(
-      '[underwrite] xai',
-      modelId,
-      'mode:responses-text+images',
-      'contentParts:',
-      content.length,
-      'imageParts:',
-      countImageParts(content),
-      'pdfAppendixChars:',
-      pdfAppendix.length
-    );
-    try {
-      const result = await generateObject({
-        model: xaiProvider.responses(modelId),
-        schema: underwritingSchema,
-        messages: [{ role: 'user', content }],
-        abortSignal,
-      });
-      object = result.object;
-    } catch (imageErr) {
-      if (countImageParts(content) === 0) {
-        throw imageErr;
+    const userContent: Array<Record<string, unknown>> = [
+      {
+        type: 'input_text',
+        text: buildPromptText(finalData),
+      },
+    ];
+
+    for (const file of uploadedFiles) {
+      if (!file.data?.trim()) continue;
+      if (isImageFile(file.mimeType)) {
+        userContent.push({
+          type: 'input_image',
+          image_url: file.data,
+        });
+        continue;
       }
-      console.warn('[underwrite] multimodal request failed; retrying without images:', describeAiError(imageErr));
-      const fallback = buildUserContent(finalData, { omitImages: true });
-      mergePdfAppendixIntoFirstText(fallback, pdfAppendix);
-      console.log(
-        '[underwrite] xai',
-        modelId,
-        'mode:responses-text-only',
-        'contentParts:',
-        fallback.length,
-        'imageParts:',
-        countImageParts(fallback),
-        'pdfAppendixChars:',
-        pdfAppendix.length
-      );
-      const result = await generateObject({
-        model: xaiProvider.responses(modelId),
-        schema: underwritingSchema,
-        messages: [{ role: 'user', content: fallback }],
-        abortSignal,
-      });
-      object = result.object;
+
+      if (isPdfFile(file.mimeType, file.name) || file.mimeType === 'text/plain') {
+        const fileId = await uploadFileToXai(file, apiKey);
+        uploadedFileIds.push(fileId);
+        userContent.push({
+          type: 'input_file',
+          file_id: fileId,
+        });
+      }
     }
-  } catch (aiError) {
-    console.error('[underwrite] generateObject error:', describeAiError(aiError));
-    throw new Error(describeAiError(aiError));
+
+    const response = await xaiFetch('/responses', apiKey, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        store: false,
+        input: [
+          {
+            role: 'user',
+            content: userContent,
+          },
+        ],
+        text: {
+          format: {
+            type: 'json_schema',
+            json_schema: createUnderwritingJsonSchema(),
+          },
+        },
+      }),
+    });
+
+    const rawText = await response.text();
+    if (!response.ok) {
+      throw new Error(`xAI responses request failed (${response.status}): ${rawText.slice(0, 800)}`);
+    }
+
+    const payload = JSON.parse(rawText) as XaiResponsesCreateResponse;
+    const responseText = extractResponseText(payload);
+    if (!responseText) {
+      throw new Error(`xAI responses request succeeded but no output_text was returned: ${rawText.slice(0, 800)}`);
+    }
+
+    const parsed = underwritingSchema.parse(JSON.parse(responseText));
+    return {
+      riskScore: parsed.riskScore,
+      riskCategory: normalizeRiskCategory(parsed.riskCategory, parsed.riskScore),
+      riskFactors: parsed.riskFactors,
+      recommendedProcessor: normalizeRecommendedProcessor(parsed.recommendedProcessor),
+      reason: nonEmptyString(parsed.reason, 'No reason provided by the model.'),
+      documentSummary: nonEmptyString(parsed.documentSummary, 'No document information extracted.'),
+      verificationStatus: normalizeVerificationStatus(parsed.verificationStatus),
+      verificationNotes: parsed.verificationNotes,
+    };
+  } catch (error) {
+    console.error('[underwrite] xAI REST error:', describeUnknownError(error));
+    throw new Error(describeUnknownError(error));
+  } finally {
+    await Promise.all(uploadedFileIds.map((fileId) => deleteXaiFile(fileId, apiKey)));
   }
-
-  const riskScore =
-    typeof object.riskScore === 'number' && Number.isFinite(object.riskScore) ? object.riskScore : 50;
-
-  const riskFactors = Array.isArray(object.riskFactors)
-    ? object.riskFactors.filter((n): n is string => typeof n === 'string')
-    : [];
-
-  const verificationNotes = Array.isArray(object.verificationNotes)
-    ? object.verificationNotes.filter((n): n is string => typeof n === 'string')
-    : [];
-
-  return {
-    riskScore,
-    riskCategory: normalizeRiskCategory(object.riskCategory, riskScore),
-    riskFactors,
-    recommendedProcessor: normalizeRecommendedProcessor(object.recommendedProcessor),
-    reason: nonEmptyString(object.reason, 'No reason provided by the model.'),
-    documentSummary: nonEmptyString(object.documentSummary, 'No document information extracted.'),
-    verificationStatus: normalizeVerificationStatus(object.verificationStatus),
-    verificationNotes,
-  };
 }

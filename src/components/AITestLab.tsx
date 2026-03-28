@@ -160,9 +160,18 @@ export function AITestLab() {
         });
       }
 
-      const payload = (await response.json().catch(() => ({}))) as TestResult;
+      const rawText = await response.text();
+      let payload = {} as TestResult;
+      if (rawText) {
+        try {
+          payload = JSON.parse(rawText) as TestResult;
+        } catch {
+          payload = {};
+        }
+      }
       if (!response.ok) {
-        throw new Error(payload.error || `Request failed (${response.status})`);
+        const detail = payload.error || rawText.trim().slice(0, 400);
+        throw new Error(detail || `Request failed (${response.status})`);
       }
 
       setResult(payload);

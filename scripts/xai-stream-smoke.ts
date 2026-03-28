@@ -1,15 +1,4 @@
-/**
- * Local check: dotenv + @ai-sdk/xai + ai `streamText` (aligned with Vercel env pull workflow).
- * Docs often use:
- *   import { xai } from "@ai-sdk/xai";
- *   streamText({ model: xai.responses("grok-4-fast"), prompt: "..." })
- * We use createXai + resolveXaiApiKey() so *_XAI_API_KEY from integrations works too.
- *
- *   npm run smoke:xai
- */
 import dotenv from 'dotenv';
-import { createXai } from '@ai-sdk/xai';
-import { streamText } from 'ai';
 import { resolveXaiApiKey } from '../server/runUnderwriting';
 
 dotenv.config({ path: '.env.local' });
@@ -21,20 +10,25 @@ if (!apiKey) {
   process.exit(1);
 }
 
-const modelId =
-  process.env.XAI_MODEL?.trim() ||
-  process.env.AI_MODEL?.trim() ||
-  'grok-4-fast-non-reasoning';
+const modelId = process.env.XAI_MODEL?.trim() || process.env.AI_MODEL?.trim() || 'grok-4-fast';
 
-const xaiProvider = createXai({ apiKey });
-
-const result = streamText({
-  model: xaiProvider.responses(modelId),
-  prompt: 'In one sentence, confirm you are running and name your model.',
+const response = await fetch('https://api.x.ai/v1/responses', {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    model: modelId,
+    store: false,
+    input: 'In one sentence, confirm you are running and name your model.',
+  }),
 });
 
-process.stdout.write(`[${modelId}] `);
-for await (const textPart of result.textStream) {
-  process.stdout.write(textPart);
+const text = await response.text();
+if (!response.ok) {
+  console.error(`xAI smoke test failed (${response.status}): ${text}`);
+  process.exit(1);
 }
-process.stdout.write('\n');
+
+process.stdout.write(`[${modelId}] ${text}\n`);

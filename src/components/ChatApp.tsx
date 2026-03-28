@@ -798,7 +798,8 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
         });
       }
 
-      const payload = (await apiRes.json().catch(() => ({}))) as {
+      const rawText = await apiRes.text();
+      let payload = {} as {
         riskScore?: number;
         riskCategory?: string;
         riskFactors?: string[];
@@ -809,9 +810,17 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
         verificationNotes?: string[];
         error?: string;
       };
+      if (rawText) {
+        try {
+          payload = JSON.parse(rawText) as typeof payload;
+        } catch {
+          payload = {};
+        }
+      }
 
       if (!apiRes.ok) {
-        throw new Error(payload.error || `Request failed (${apiRes.status})`);
+        const detail = payload.error || rawText.trim().slice(0, 400);
+        throw new Error(detail || `Request failed (${apiRes.status})`);
       }
 
       const vStatus = payload.verificationStatus;

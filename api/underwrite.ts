@@ -17,7 +17,7 @@ function parseBody(raw: unknown): { merchantData?: MerchantData } {
   return raw as { merchantData?: MerchantData };
 }
 
-async function handleUnderwrite(request: Request): Promise<Response> {
+export async function POST(request: Request): Promise<Response> {
   if (request.method !== 'POST') {
     return json(
       { error: 'Method not allowed' },
@@ -65,6 +65,4 @@ async function handleUnderwrite(request: Request): Promise<Response> {
   }
 }
 
-export default {
-  fetch: handleUnderwrite,
-};
+export default POST;
