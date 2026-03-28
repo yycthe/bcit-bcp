@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { MerchantData, FileData } from '@/src/types';
 import { getFallbackUnderwriting } from '@/src/lib/underwritingFallback';
 
-type QuestionId = Exclude<keyof MerchantData, 'additionalDocuments'> | 'done' | 'companyDetailsForm' | 'contactAddressForm' | 'businessOperationsForm' | 'ownerDetailsForm' | 'bankAccountForm' | 'subscriptionForm' | 'retailForm';
+type QuestionId = Exclude<keyof MerchantData, 'additionalDocuments'> | 'done' | 'companyDetailsForm' | 'contactAddressForm' | 'businessOperationsForm' | 'ownerDetailsForm' | 'bankAccountForm' | 'subscriptionForm' | 'retailForm' | 'highRiskForm' | 'cryptoForm' | 'gamingForm' | 'servicesForm';
 
 interface QuestionDef {
   id: QuestionId;
@@ -19,6 +19,177 @@ interface QuestionDef {
   options?: { label: string; value: string }[];
   fields?: { id: keyof MerchantData; label: string; type: 'text' | 'email' | 'number' | 'date' }[];
 }
+
+// Dynamic question generator based on context
+const getQuestionText = (qId: QuestionId, data: MerchantData): string => {
+  const businessName = data.legalName || 'your business';
+  const industry = data.industry;
+  const volume = data.monthlyVolume;
+  
+  const contextualTexts: Partial<Record<QuestionId, () => string>> = {
+    businessType: () => "Hi there! I'm here to help you get set up with MerchantWerx. First, what type of business structure are you operating?",
+    
+    country: () => {
+      const typeLabels: Record<string, string> = {
+        'sole_proprietorship': 'sole proprietorship',
+        'llc': 'LLC',
+        'corporation': 'corporation',
+        'partnership': 'partnership'
+      };
+      return `Great choice! As a ${typeLabels[data.businessType] || 'business'}, where are you legally registered?`;
+    },
+    
+    industry: () => {
+      if (data.country === 'CA') {
+        return "Perfect, Canadian businesses are easy to work with. What industry are you in?";
+      } else if (data.country === 'US') {
+        return "US-based, got it. What industry does your business operate in?";
+      } else {
+        return "Thanks for that info. What industry are you in? This helps us find the right payment processors for you.";
+      }
+    },
+    
+    monthlyVolume: () => {
+      const industrySpecific: Record<string, string> = {
+        'retail': "E-commerce can have varying volumes. What's your estimated monthly processing volume?",
+        'software': "SaaS businesses often have predictable recurring revenue. What's your expected monthly volume?",
+        'services': "Professional services billing can vary. What's your typical monthly processing volume?",
+        'gaming': "Gaming revenues can fluctuate. What's your average monthly processing volume?",
+        'crypto': "Crypto transactions can be high-volume. What's your estimated monthly processing volume?",
+        'high_risk': "Understanding your volume helps us match you with the right high-risk processor. What's your monthly volume?"
+      };
+      return industrySpecific[industry] || "What is your estimated monthly processing volume?";
+    },
+    
+    monthlyTransactions: () => {
+      if (volume === '>250k') {
+        return "With that volume, transaction count matters for pricing. How many transactions per month?";
+      } else if (volume === '<10k') {
+        return "Even at lower volumes, we want to get you the best rates. Roughly how many transactions monthly?";
+      }
+      return "And roughly how many individual transactions do you process per month?";
+    },
+    
+    companyDetailsForm: () => {
+      if (data.businessType === 'sole_proprietorship') {
+        return "Let's get your business details. As a sole proprietor, some of these may overlap with your personal info.";
+      }
+      return "Now let's capture your company's core details.";
+    },
+    
+    contactAddressForm: () => "Where is your business located and how can we best reach you?",
+    
+    ownerDetailsForm: () => {
+      if (data.businessType === 'corporation') {
+        return "We need details about the primary beneficial owner (25%+ ownership).";
+      } else if (data.businessType === 'partnership') {
+        return "Please provide details for the managing partner.";
+      }
+      return "Please provide details about yourself as the business owner.";
+    },
+    
+    businessOperationsForm: () => {
+      if (['crypto', 'gaming', 'high_risk'].includes(industry)) {
+        return "Given your industry, we need detailed transaction information for proper risk assessment.";
+      }
+      return "Tell us about your typical transaction profile.";
+    },
+    
+    bankAccountForm: () => {
+      if (data.country !== 'CA' && data.country !== 'US') {
+        return "For international settlements, please provide your bank details. We support most major currencies.";
+      }
+      return "Where should we send your funds? Please provide your settlement account details.";
+    },
+    
+    // Industry-specific forms
+    subscriptionForm: () => "Since you run a SaaS/subscription business, we need some additional details about your billing model.",
+    
+    retailForm: () => "For e-commerce, shipping and returns are important. Please tell us about your fulfillment process.",
+    
+    cryptoForm: () => "Crypto businesses have specific compliance requirements. Please provide these additional details.",
+    
+    gamingForm: () => "Gaming has unique regulatory considerations. Please provide these additional details.",
+    
+    servicesForm: () => "For professional services, understanding your billing helps with risk assessment.",
+    
+    highRiskForm: () => "High-risk industries require additional due diligence. Please provide these compliance details.",
+    
+    // Document uploads - contextual
+    idUpload: () => {
+      if (data.country === 'US') {
+        return "Please upload a valid US government-issued ID (Driver's License or Passport).";
+      } else if (data.country === 'CA') {
+        return "Please upload a valid Canadian government ID (Driver's License, Passport, or Provincial ID).";
+      }
+      return "Please upload a valid government-issued ID for the primary business owner.";
+    },
+    
+    registrationCertificate: () => {
+      if (data.businessType === 'corporation') {
+        return "Please upload your Certificate of Incorporation or Articles of Incorporation.";
+      } else if (data.businessType === 'llc') {
+        return "Please upload your Articles of Organization or Operating Agreement.";
+      } else if (data.businessType === 'partnership') {
+        return "Please upload your Partnership Agreement.";
+      }
+      return "Please upload your business registration document.";
+    },
+    
+    financials: () => {
+      if (volume === '>250k' || volume === '50k-250k') {
+        return "Given your volume, please upload your latest financial statements (P&L, Balance Sheet). This helps secure better rates.";
+      } else if (['crypto', 'gaming', 'high_risk'].includes(industry)) {
+        return "For high-risk industries, financial documentation is required. Please upload recent financial statements.";
+      }
+      return "Please upload your latest financial statements if available. This can help with your application.";
+    },
+    
+    bankStatement: () => {
+      if (['crypto', 'gaming', 'high_risk'].includes(industry)) {
+        return "Please upload 3-6 months of bank statements showing business transaction history.";
+      }
+      return "Please upload a recent bank statement (at least 3 months of activity).";
+    },
+    
+    proofOfAddress: () => {
+      if (data.country !== 'CA' && data.country !== 'US') {
+        return "For international businesses, please provide proof of your business address (utility bill, bank statement, or lease agreement).";
+      }
+      return "Please upload proof of business address (utility bill, bank statement, etc.).";
+    },
+    
+    complianceDocument: () => {
+      if (industry === 'crypto') {
+        return "Please upload any crypto/money transmitter licenses or registrations.";
+      } else if (industry === 'gaming') {
+        return "Please upload any gaming licenses or regulatory approvals.";
+      }
+      return "Please upload any relevant compliance or licensing documents for your industry.";
+    },
+    
+    proofOfFunds: () => "Please upload proof of source of funds/income (investment documents, contracts, etc.).",
+    
+    enhancedVerification: () => {
+      if (data.country === 'EU') {
+        return "For EU businesses, please upload an additional form of ID or recent proof of address dated within 3 months.";
+      }
+      return "For international businesses, we require a secondary form of ID or recent proof of address.";
+    },
+    
+    complianceDetails: () => {
+      if (industry === 'crypto') {
+        return "Please describe your AML/KYC procedures and any regulatory licenses you hold.";
+      } else if (industry === 'gaming') {
+        return "Please describe your responsible gaming measures and any gambling licenses.";
+      }
+      return "Since you're in a regulated industry, please briefly describe your compliance program.";
+    },
+  };
+  
+  const getter = contextualTexts[qId];
+  return getter ? getter() : QUESTIONS[qId]?.text || '';
+};
 
 const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
   businessType: {
@@ -37,8 +208,8 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
     text: "Great. Where is your business legally located?",
     type: 'dropdown',
     options: [
-      { label: 'United States', value: 'US' },
       { label: 'Canada', value: 'CA' },
+      { label: 'United States', value: 'US' },
       { label: 'United Kingdom', value: 'UK' },
       { label: 'European Union', value: 'EU' },
       { label: 'Other', value: 'Other' },
@@ -106,7 +277,7 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
   },
   financials: {
     id: 'financials',
-    text: "To proceed with your application, please upload your latest financial statements (e.g., P&L, Balance Sheet).",
+    text: "Please upload your latest financial statements.",
     type: 'upload'
   },
   idUpload: {
@@ -116,11 +287,11 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
   },
   enhancedVerification: {
     id: 'enhancedVerification',
-    text: "Since you are located outside of Canada, we require a secondary form of ID or proof of address.",
+    text: "Please upload a secondary form of ID or proof of address.",
     type: 'upload'
   },
   
-  // New Form Questions
+  // Core Forms
   companyDetailsForm: {
     id: 'companyDetailsForm',
     text: "Please provide your company's core details.",
@@ -149,7 +320,7 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
   },
   businessOperationsForm: {
     id: 'businessOperationsForm',
-    text: "Tell us a bit about your transaction profile.",
+    text: "Tell us about your transaction profile.",
     type: 'form',
     fields: [
       { id: 'avgTxnCount', label: 'Average Monthly Transactions', type: 'number' },
@@ -176,7 +347,7 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
   },
   bankAccountForm: {
     id: 'bankAccountForm',
-    text: "Where should we send your funds? Please provide your settlement account details.",
+    text: "Please provide your settlement account details.",
     type: 'form',
     fields: [
       { id: 'bankName', label: 'Bank Name', type: 'text' },
@@ -186,30 +357,79 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
       { id: 'settlementCurrency', label: 'Settlement Currency', type: 'text' }
     ]
   },
+  
+  // Industry-specific forms
   subscriptionForm: {
     id: 'subscriptionForm',
-    text: "Since you run a subscription business, please provide these details.",
+    text: "Please provide details about your subscription business.",
     type: 'form',
     fields: [
-      { id: 'recurringBillingDetails', label: 'Recurring Billing Details', type: 'text' },
-      { id: 'refundPolicy', label: 'Cancellation / Refund Policy', type: 'text' }
+      { id: 'recurringBillingDetails', label: 'Billing Frequency (monthly/annual)', type: 'text' },
+      { id: 'trialPeriod', label: 'Trial Period (if any)', type: 'text' },
+      { id: 'refundPolicy', label: 'Cancellation / Refund Policy', type: 'text' },
+      { id: 'churnRate', label: 'Estimated Monthly Churn Rate (%)', type: 'text' }
     ]
   },
   retailForm: {
     id: 'retailForm',
-    text: "Since you sell physical goods, please provide these details.",
+    text: "Please provide e-commerce fulfillment details.",
     type: 'form',
     fields: [
-      { id: 'deliveryMethod', label: 'Delivery Method', type: 'text' },
+      { id: 'deliveryMethod', label: 'Delivery Method (drop-ship, in-house, etc.)', type: 'text' },
+      { id: 'avgDeliveryTime', label: 'Average Delivery Time', type: 'text' },
       { id: 'shippingPolicy', label: 'Shipping Policy', type: 'text' },
-      { id: 'refundPolicy', label: 'Return Policy', type: 'text' }
+      { id: 'refundPolicy', label: 'Return/Refund Policy', type: 'text' }
+    ]
+  },
+  cryptoForm: {
+    id: 'cryptoForm',
+    text: "Please provide crypto/Web3 compliance details.",
+    type: 'form',
+    fields: [
+      { id: 'cryptoServices', label: 'Services Offered (exchange, wallet, NFT, etc.)', type: 'text' },
+      { id: 'amlKycProcedures', label: 'AML/KYC Procedures', type: 'text' },
+      { id: 'cryptoLicenses', label: 'Licenses Held (MSB, MTL, etc.)', type: 'text' },
+      { id: 'custodyArrangement', label: 'Custody Arrangement', type: 'text' }
+    ]
+  },
+  gamingForm: {
+    id: 'gamingForm',
+    text: "Please provide gaming compliance details.",
+    type: 'form',
+    fields: [
+      { id: 'gamingType', label: 'Type of Gaming (skill, chance, esports, etc.)', type: 'text' },
+      { id: 'gamingLicenses', label: 'Gaming Licenses Held', type: 'text' },
+      { id: 'responsibleGaming', label: 'Responsible Gaming Measures', type: 'text' },
+      { id: 'ageVerification', label: 'Age Verification Methods', type: 'text' }
+    ]
+  },
+  servicesForm: {
+    id: 'servicesForm',
+    text: "Please provide details about your services business.",
+    type: 'form',
+    fields: [
+      { id: 'serviceType', label: 'Type of Services', type: 'text' },
+      { id: 'billingModel', label: 'Billing Model (hourly, project, retainer)', type: 'text' },
+      { id: 'contractLength', label: 'Typical Contract Length', type: 'text' },
+      { id: 'refundPolicy', label: 'Refund/Dispute Policy', type: 'text' }
+    ]
+  },
+  highRiskForm: {
+    id: 'highRiskForm',
+    text: "Please provide compliance details for your business.",
+    type: 'form',
+    fields: [
+      { id: 'businessDescription', label: 'Detailed Business Description', type: 'text' },
+      { id: 'regulatoryStatus', label: 'Regulatory Status/Licenses', type: 'text' },
+      { id: 'chargebackHistory', label: 'Historical Chargeback Rate (%)', type: 'text' },
+      { id: 'previousProcessors', label: 'Previous Payment Processors', type: 'text' }
     ]
   },
 
-  // New Document Uploads
+  // Document Uploads
   proofOfAddress: {
     id: 'proofOfAddress',
-    text: "Please upload a proof of address (utility bill, bank statement, etc.).",
+    text: "Please upload proof of business address.",
     type: 'upload'
   },
   registrationCertificate: {
@@ -224,17 +444,17 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
   },
   proofOfFunds: {
     id: 'proofOfFunds',
-    text: "Please upload proof of source of funds/income.",
+    text: "Please upload proof of source of funds.",
     type: 'upload'
   },
   bankStatement: {
     id: 'bankStatement',
-    text: "Could you please upload a recent bank statement (showing at least 3 months of activity)?",
+    text: "Please upload recent bank statements.",
     type: 'upload'
   },
   complianceDocument: {
     id: 'complianceDocument',
-    text: "Please upload any relevant compliance or licensing documents.",
+    text: "Please upload compliance/licensing documents.",
     type: 'upload'
   },
 
@@ -245,42 +465,73 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
   }
 };
 
+// Smart question flow based on context
 const getNextQuestion = (currentId: QuestionId, data: MerchantData): QuestionId => {
   const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(data.industry);
   const isSubscription = data.industry === 'software';
   const isPhysicalGoods = data.industry === 'retail';
+  const isServices = data.industry === 'services';
+  const isCrypto = data.industry === 'crypto';
+  const isGaming = data.industry === 'gaming';
+  const isInternational = data.country !== 'CA' && data.country !== 'US';
+  const isHighVolume = data.monthlyVolume === '>250k' || data.monthlyVolume === '50k-250k';
 
-  // Define the full sequence of possible follow-up questions after 'monthlyTransactions'
-  const followUpSequence: QuestionId[] = [
-    'companyDetailsForm',
-    'contactAddressForm',
-    'ownerDetailsForm',
-    'businessOperationsForm',
-    'bankAccountForm'
-  ];
+  // Build dynamic sequence based on merchant profile
+  const followUpSequence: QuestionId[] = [];
+  
+  // Core forms - always needed
+  followUpSequence.push('companyDetailsForm');
+  followUpSequence.push('contactAddressForm');
+  followUpSequence.push('ownerDetailsForm');
+  followUpSequence.push('businessOperationsForm');
+  followUpSequence.push('bankAccountForm');
 
+  // Industry-specific forms - add only the relevant one
   if (isSubscription) followUpSequence.push('subscriptionForm');
   if (isPhysicalGoods) followUpSequence.push('retailForm');
-  if (isHighRisk) followUpSequence.push('complianceDetails');
+  if (isCrypto) followUpSequence.push('cryptoForm');
+  if (isGaming) followUpSequence.push('gamingForm');
+  if (isServices) followUpSequence.push('servicesForm');
+  if (data.industry === 'high_risk') followUpSequence.push('highRiskForm');
 
-  // Document sequence
+  // Compliance text for high-risk
+  if (isHighRisk && !isCrypto && !isGaming) {
+    followUpSequence.push('complianceDetails');
+  }
+
+  // Document sequence - prioritized by importance
   followUpSequence.push('idUpload');
   followUpSequence.push('registrationCertificate');
-  followUpSequence.push('proofOfAddress');
-  followUpSequence.push('bankStatement'); // Always ask
-  followUpSequence.push('financials'); // Always ask
+  
+  // Address proof for international or high-risk
+  if (isInternational || isHighRisk) {
+    followUpSequence.push('proofOfAddress');
+  }
+  
+  // Bank statements - always for high volume or high risk
+  if (isHighVolume || isHighRisk) {
+    followUpSequence.push('bankStatement');
+  }
+  
+  // Financials - required for high volume or high risk
+  if (isHighVolume || isHighRisk) {
+    followUpSequence.push('financials');
+  }
 
+  // Additional docs for high-risk
   if (isHighRisk) {
     followUpSequence.push('complianceDocument');
     followUpSequence.push('proofOfFunds');
   }
 
-  if (data.country !== 'CA') {
+  // Enhanced verification for international
+  if (isInternational) {
     followUpSequence.push('enhancedVerification');
   }
 
   followUpSequence.push('done');
 
+  // Main question flow
   switch (currentId) {
     case 'businessType': return 'country';
     case 'country': return 'industry';
@@ -330,7 +581,6 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
       setCurrentQuestion(editSection as QuestionId);
       setEditSection(null);
       
-      // Check if it's a branching question
       const branchingQuestions = ['businessType', 'country', 'industry', 'monthlyVolume', 'monthlyTransactions'];
       setIsEditing(!branchingQuestions.includes(editSection));
       
@@ -357,7 +607,6 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
   const initialized = useRef(false);
 
   useEffect(() => {
-    // Initial message
     if (!initialized.current && messages.length === 0) {
       initialized.current = true;
       askQuestion('businessType');
@@ -370,12 +619,14 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
     setIsTyping(true);
     setTimeout(() => {
       setIsTyping(false);
+      // Use contextual text based on current data
+      const contextualText = getQuestionText(qId, data);
       setMessages(prev => [
-        ...prev.map(m => ({ ...m, isActionable: false })), // Disable previous actions
+        ...prev.map(m => ({ ...m, isActionable: false })),
         {
           id: Math.random().toString(36).substring(2, 15),
           sender: 'system',
-          content: qDef.text,
+          content: contextualText || qDef.text,
           isActionable: true,
           questionId: qId
         }
@@ -386,7 +637,6 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
   const handleAnswer = (value: any, displayValue?: string) => {
     if (!currentQuestion || currentQuestion === 'done') return;
 
-    // Save data
     let newData = { ...data };
     if (typeof value === 'object' && !value.mimeType && !Array.isArray(value)) {
        newData = { ...newData, ...value };
@@ -395,7 +645,6 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
     }
     setData(newData);
 
-    // Add user message
     setMessages(prev => [
       ...prev.map(m => ({ ...m, isActionable: false })),
       {
@@ -407,7 +656,6 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
 
     setInputValue('');
 
-    // Determine next question
     let nextQ: QuestionId;
     if (isEditing) {
       setIsEditing(false);
@@ -427,12 +675,19 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
 
   const finishFlow = async (finalData: MerchantData) => {
     setIsTyping(true);
+    
+    // Contextual finishing message
+    const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(finalData.industry);
+    const finishMessage = isHighRisk 
+      ? "All done! Given your industry, I'm performing enhanced due diligence. This may take 20-30 seconds..."
+      : "All done! I'm analyzing your profile and documents now. This might take 10-20 seconds...";
+    
     setMessages(prev => [
       ...prev,
       {
         id: Math.random().toString(36).substring(2, 15),
         sender: 'system',
-        content: "All done! I'm analyzing your profile and documents now. This might take 10-20 seconds if you uploaded files, please bear with me...",
+        content: finishMessage,
       }
     ]);
 
@@ -578,16 +833,22 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
               </Button>
             </div>
           )}
-          <div className="flex flex-wrap gap-2 p-4 border-t bg-white">
+          <div className="flex flex-wrap gap-2 p-4 border-t bg-white justify-center">
             {qDef.options?.map(opt => (
-              <Button 
-                key={opt.value} 
-                variant="outline" 
-                onClick={() => handleAnswer(opt.value, opt.label)}
-                className="rounded-full"
+              <motion.div
+                key={opt.value}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
               >
-                {opt.label}
-              </Button>
+                <Button
+                  variant="outline"
+                  className="hover:bg-emerald-50 hover:border-emerald-500"
+                  onClick={() => handleAnswer(opt.value, opt.label)}
+                >
+                  {opt.label}
+                </Button>
+              </motion.div>
             ))}
           </div>
         </div>
@@ -613,25 +874,27 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
               </Button>
             </div>
           )}
-          <div className="flex gap-2 p-4 border-t bg-white items-center">
-            <Select 
-              value={inputValue} 
+          <div className="flex gap-2 p-4 border-t bg-white max-w-md mx-auto">
+            <Select
+              value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               className="flex-1"
             >
-              <option value="" disabled>Select an option...</option>
+              <option value="">Select an option...</option>
               {qDef.options?.map(opt => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </Select>
-            <Button 
-              disabled={!inputValue} 
+            <Button
               onClick={() => {
-                const label = qDef.options?.find(o => o.value === inputValue)?.label;
-                handleAnswer(inputValue, label);
+                if (inputValue) {
+                  const opt = qDef.options?.find(o => o.value === inputValue);
+                  handleAnswer(inputValue, opt?.label);
+                }
               }}
+              disabled={!inputValue}
             >
-              <Send className="w-4 h-4" />
+              <Send className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -657,78 +920,54 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
               </Button>
             </div>
           )}
-          <div className="flex gap-2 p-4 border-t bg-white items-center justify-center">
-            <label className="flex items-center justify-center w-full max-w-sm h-12 px-4 transition bg-white border-2 border-dashed rounded-md appearance-none cursor-pointer hover:border-primary focus:outline-none">
-            <span className="flex items-center space-x-2">
-              <Upload className="w-5 h-5 text-muted-foreground" />
-              <span className="font-medium text-muted-foreground">
-                Drop files to Attach, or browse
-              </span>
-            </span>
-            <input 
-              type="file" 
-              accept="image/*,application/pdf"
-              name="file_upload" 
-              className="hidden" 
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  if (file.size > 4 * 1024 * 1024) {
-                    toast.error("File is too large. Please upload a file smaller than 4MB.");
-                    e.target.value = '';
-                    return;
-                  }
-                  
-                  let mimeType = file.type;
-                  if (!mimeType) {
-                    if (file.name.toLowerCase().endsWith('.pdf')) mimeType = 'application/pdf';
-                    else if (file.name.toLowerCase().endsWith('.jpg') || file.name.toLowerCase().endsWith('.jpeg')) mimeType = 'image/jpeg';
-                    else if (file.name.toLowerCase().endsWith('.png')) mimeType = 'image/png';
-                  }
-                  
-                  const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
-                  if (!validTypes.includes(mimeType)) {
-                     toast.error("Unsupported file type. Please upload a PDF, JPEG, PNG, or WebP.");
-                     e.target.value = '';
-                     return;
-                  }
-
-                  setIsTyping(true);
-                  
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    const base64Data = (reader.result as string).split(',')[1];
-                    const fileData: FileData = {
-                      id: Math.random().toString(36).substring(2, 15),
-                      name: file.name,
-                      mimeType: mimeType,
-                      data: base64Data,
-                      uploadDate: new Date().toISOString(),
-                      documentType: currentQuestion,
-                      status: 'Uploaded',
-                      linkedRequirement: qDef.text
-                    };
-                    
-                    setDocuments(prev => [...prev, fileData]);
-                    
-                    toast.success(`File ${file.name} uploaded successfully`);
-                    setIsTyping(false);
-                    handleAnswer(fileData, `Uploaded: ${file.name}`);
-                  };
-                  reader.onerror = () => {
-                    toast.error("Failed to read file.");
-                    setIsTyping(false);
-                  };
-                  reader.readAsDataURL(file);
-                }
-              }}
-            />
-          </label>
+          <div className="p-4 border-t bg-white">
+            <div className="max-w-md mx-auto">
+              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  <Upload className="w-8 h-8 mb-2 text-slate-400" />
+                  <p className="text-sm text-slate-500">Click to upload or drag and drop</p>
+                  <p className="text-xs text-slate-400">PDF, PNG, JPG up to 10MB</p>
+                </div>
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.png,.jpg,.jpeg"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        const base64 = reader.result as string;
+                        const fileData: FileData = {
+                          name: file.name,
+                          mimeType: file.type,
+                          data: base64
+                        };
+                        setDocuments(prev => [...prev, fileData]);
+                        handleAnswer(fileData, `Uploaded: ${file.name}`);
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                />
+              </label>
+              <div className="mt-3 flex justify-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleAnswer(null, 'Skipped')}
+                  className="text-slate-500"
+                >
+                  Skip this document
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       );
     }
 
+    // Text input
     return (
       <div className="relative">
         {isEditing && (
@@ -747,81 +986,96 @@ export function ChatApp({ data, setData, setAiRecommendation, setIsFinished, isF
             </Button>
           </div>
         )}
-        <div className="flex gap-2 p-4 border-t bg-white items-center">
-          <Input 
-            value={inputValue} 
+        <form 
+          className="flex gap-2 p-4 border-t bg-white"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (inputValue.trim()) {
+              handleAnswer(inputValue.trim());
+            }
+          }}
+        >
+          <Input
+            value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="Type your answer..."
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && inputValue.trim()) {
-                handleAnswer(inputValue.trim());
-              }
-            }}
             className="flex-1"
           />
-          <Button 
-            disabled={!inputValue.trim()} 
-            onClick={() => handleAnswer(inputValue.trim())}
-          >
-            <Send className="w-4 h-4" />
+          <Button type="submit" disabled={!inputValue.trim()}>
+            <Send className="h-4 w-4" />
           </Button>
-        </div>
+        </form>
       </div>
     );
   };
 
+  const getIcon = (qId?: QuestionId) => {
+    if (!qId) return <Zap className="w-5 h-5" />;
+    if (qId === 'businessType' || qId === 'companyDetailsForm') return <Building2 className="w-5 h-5" />;
+    if (qId === 'country' || qId === 'contactAddressForm') return <Globe className="w-5 h-5" />;
+    if (qId === 'industry') return <Activity className="w-5 h-5" />;
+    if (qId.includes('upload') || qId.includes('Upload') || qId === 'financials' || qId === 'bankStatement' || qId === 'proofOfAddress' || qId === 'registrationCertificate' || qId === 'complianceDocument' || qId === 'proofOfFunds' || qId === 'taxDocument' || qId === 'enhancedVerification') return <FileText className="w-5 h-5" />;
+    if (qId === 'complianceDetails' || qId.includes('compliance') || qId.includes('Compliance')) return <ShieldCheck className="w-5 h-5" />;
+    return <Zap className="w-5 h-5" />;
+  };
+
   return (
-    <div className="flex flex-col h-full bg-slate-50 border-x shadow-sm">
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        <AnimatePresence initial={false}>
+    <div className="flex flex-col h-full bg-gradient-to-b from-slate-50 to-white">
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <AnimatePresence>
           {messages.map((msg) => (
             <motion.div
               key={msg.id}
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
               className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div className={`flex gap-3 max-w-[85%] ${msg.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                  msg.sender === 'user' ? 'bg-primary text-primary-foreground' : 'bg-blue-100 text-blue-600'
-                }`}>
-                  {msg.sender === 'user' ? 'U' : 'M'}
-                </div>
-                <div className={`px-4 py-3 rounded-2xl text-sm ${
+              <div className={`flex gap-3 max-w-[80%] ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                   msg.sender === 'user' 
-                    ? 'bg-primary text-primary-foreground rounded-tr-sm' 
-                    : 'bg-white border text-slate-800 rounded-tl-sm shadow-sm'
+                    ? 'bg-emerald-500 text-white' 
+                    : 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'
                 }`}>
-                  {msg.content}
+                  {msg.sender === 'user' ? '?' : getIcon(msg.questionId)}
+                </div>
+                <div className={`rounded-2xl px-4 py-3 ${
+                  msg.sender === 'user'
+                    ? 'bg-emerald-500 text-white'
+                    : 'bg-white border border-slate-200 shadow-sm'
+                }`}>
+                  <p className="text-sm leading-relaxed">{msg.content}</p>
                 </div>
               </div>
             </motion.div>
           ))}
-          
-          {isTyping && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="flex justify-start"
-            >
-              <div className="flex gap-3 max-w-[85%] flex-row">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-blue-100 text-blue-600">
-                  M
-                </div>
-                <div className="px-4 py-4 rounded-2xl bg-white border text-slate-800 rounded-tl-sm shadow-sm flex items-center gap-1">
-                  <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                </div>
-              </div>
-            </motion.div>
-          )}
         </AnimatePresence>
-        
+
+        {/* Typing indicator */}
+        {isTyping && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex gap-3"
+          >
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+              <Zap className="w-4 h-4 text-white" />
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
+              <div className="flex gap-1">
+                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Input Area */}
       {renderInputArea()}
     </div>
   );
