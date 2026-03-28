@@ -67,6 +67,36 @@ export interface MerchantData {
   recurringBillingDetails?: string;
   refundPolicy?: string;
   shippingPolicy?: string;
+  
+  // Subscription-specific
+  trialPeriod?: string;
+  churnRate?: string;
+  
+  // Retail-specific
+  avgDeliveryTime?: string;
+  
+  // Crypto-specific
+  cryptoServices?: string;
+  amlKycProcedures?: string;
+  cryptoLicenses?: string;
+  custodyArrangement?: string;
+  
+  // Gaming-specific
+  gamingType?: string;
+  gamingLicenses?: string;
+  responsibleGaming?: string;
+  ageVerification?: string;
+  
+  // Services-specific
+  serviceType?: string;
+  billingModel?: string;
+  contractLength?: string;
+  
+  // High-risk specific
+  businessDescription?: string;
+  regulatoryStatus?: string;
+  chargebackHistory?: string;
+  previousProcessors?: string;
 
   // 6. Business Owners
   ownershipPercentage: string;
@@ -142,6 +172,25 @@ export const initialMerchantData: MerchantData = {
   recurringBillingDetails: '',
   refundPolicy: '',
   shippingPolicy: '',
+  
+  trialPeriod: '',
+  churnRate: '',
+  avgDeliveryTime: '',
+  cryptoServices: '',
+  amlKycProcedures: '',
+  cryptoLicenses: '',
+  custodyArrangement: '',
+  gamingType: '',
+  gamingLicenses: '',
+  responsibleGaming: '',
+  ageVerification: '',
+  serviceType: '',
+  billingModel: '',
+  contractLength: '',
+  businessDescription: '',
+  regulatoryStatus: '',
+  chargebackHistory: '',
+  previousProcessors: '',
 
   ownershipPercentage: '',
   ownerRole: '',

@@ -110,7 +110,7 @@ export async function runUnderwriting(
   type UserContentPart =
     | { type: 'text'; text: string }
     | { type: 'image'; image: Uint8Array; mimeType?: string }
-    | { type: 'file'; data: Uint8Array; mediaType: string };
+    | { type: 'file'; data: Uint8Array; mimeType: string };
 
   const content: UserContentPart[] = [{ type: 'text', text: promptText }];
 
@@ -127,7 +127,7 @@ export async function runUnderwriting(
     if (mime.startsWith('image/')) {
       content.push({ type: 'image', image: bytes, mimeType: mime });
     } else {
-      content.push({ type: 'file', data: bytes, mediaType: mime });
+      content.push({ type: 'file', data: bytes, mimeType: mime });
     }
   }
 
