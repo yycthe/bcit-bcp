@@ -167,7 +167,7 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
 
   const topFactors = riskFactors.slice(0, 4);
   const reasonParts = [
-    `Local fallback scored this merchant at ${riskScore}/100 using intake answers, document coverage, and submission-check issues.`,
+    `Local fallback scored this merchant at ${riskScore}/100 using intake answers, document coverage, and KYC / KYB review issues.`,
   ];
   if (topFactors.length > 0) {
     reasonParts.push(`Key drivers: ${topFactors.join('; ')}.`);
@@ -198,7 +198,7 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
 
   const verificationNotes =
     verificationStatus === 'Verified'
-      ? ['Local submission checks passed and all expected supporting uploads were present.']
+      ? ['Local KYC / KYB checks passed and all expected supporting uploads were present.']
       : [
           ...verification.issues.slice(0, 5).map((issue) => issue.reason),
           ...(missingDocuments.length > 0 ? [`Missing required uploads: ${missingDocuments.join(', ')}.`] : []),

@@ -5,7 +5,7 @@ BCIT **Business Consulting Project** — a **MerchantWerx** onboarding demo for 
 ## Features
 
 - **Merchant portal** — Application flow, agreements, status, and AI underwriting integration.
-- **Admin portal** — Review submitted applications and run a local submission check with no external identity API.
+- **Admin portal** — Review submitted applications and run a local KYC / KYB review with no external identity API.
 - **AI underwriting** — direct **xAI REST API** on Vercel (`XAI_API_KEY` or Vercel’s `*_XAI_API_KEY`; default **`grok-4-1-fast-non-reasoning`**, override with `XAI_MODEL`).
 
 ## Stack

@@ -227,9 +227,9 @@ export function MerchantPortal({
           <div className="shrink-0 border-b border-rose-200 bg-rose-50 px-4 py-3 flex gap-3 items-start">
             <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-rose-900">Application needs updates</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-rose-900">KYC / KYB needs updates</p>
               <p className="text-sm text-rose-950/90 mt-1">
-                A local submission check found follow-up items. Use the buttons to jump to the exact Intake step.
+                A local KYC / KYB review found follow-up items. Use the buttons to jump to the exact Intake step.
               </p>
               <ul className="mt-3 space-y-2">
                 {verificationIssues.map((item) => (
@@ -253,7 +253,7 @@ export function MerchantPortal({
                 ))}
               </ul>
             </div>
-            <Button type="button" variant="ghost" size="sm" className="shrink-0 text-rose-900" onClick={onClearVerificationIssues} aria-label="Dismiss submission alerts">
+            <Button type="button" variant="ghost" size="sm" className="shrink-0 text-rose-900" onClick={onClearVerificationIssues} aria-label="Dismiss KYC and KYB alerts">
               <X className="w-4 h-4" />
             </Button>
           </div>

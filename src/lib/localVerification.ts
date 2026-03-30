@@ -150,8 +150,8 @@ export function runLocalVerificationCheck(merchantData: MerchantData): Verificat
     issues,
     summary:
       issues.length === 0
-        ? 'Submission check passed. No follow-up items were found.'
-        : `Submission check found ${issues.length} follow-up item${issues.length === 1 ? '' : 's'}.`,
+        ? 'KYC / KYB review passed. No follow-up items were found.'
+        : `KYC / KYB review found ${issues.length} follow-up item${issues.length === 1 ? '' : 's'}.`,
     checkedAt,
   };
 }

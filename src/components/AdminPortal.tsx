@@ -65,7 +65,7 @@ export function AdminPortal({
       const result = runLocalVerificationCheck(merchantData);
       setLastVerification(result);
       setVerificationIssues(result.issues);
-      toast.success('Submission check complete', {
+      toast.success('KYC / KYB review complete', {
         description: result.summary,
       });
     } finally {
@@ -265,10 +265,10 @@ export function AdminPortal({
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-violet-600" />
-                    Submission check
+                    KYC / KYB review
                   </CardTitle>
                   <p className="text-xs text-slate-600 font-normal mt-1">
-                    Runs a local rules pass across the intake answers and uploaded documents. No external API is involved.
+                    Runs a local KYC / KYB-style rules pass across the intake answers and uploaded documents. No external API is involved.
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -280,7 +280,7 @@ export function AdminPortal({
                       disabled={verificationLoading}
                       onClick={runVerification}
                     >
-                      Run submission check
+                      Run KYC / KYB
                     </Button>
                   </div>
                   {lastVerification && (
