@@ -9,6 +9,7 @@ import type { VerificationIssue } from './lib/localVerification';
 import { ArrowRightLeft, FlaskConical } from 'lucide-react';
 
 export default function App() {
+  const showAiTestLab = import.meta.env.DEV || import.meta.env.VITE_ENABLE_AI_TEST_LAB === 'true';
   const [viewMode, setViewMode] = useState<'merchant' | 'admin' | 'ai-lab'>('merchant');
   const [appStatus, setAppStatus] = useState<ApplicationStatus>('draft');
   const [merchantData, setMerchantData] = useState<MerchantData>(demoMerchantData);
@@ -17,6 +18,7 @@ export default function App() {
   /** Shown to merchant while under review (set from Admin). */
   const [merchantNoticeFromAdmin, setMerchantNoticeFromAdmin] = useState('');
   const [verificationIssues, setVerificationIssues] = useState<VerificationIssue[]>([]);
+  const effectiveViewMode = !showAiTestLab && viewMode === 'ai-lab' ? 'merchant' : viewMode;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col">
@@ -47,20 +49,24 @@ export default function App() {
             >
               Admin Portal
             </button>
-            <ArrowRightLeft className="w-4 h-4 text-slate-500" />
-            <button
-              onClick={() => setViewMode('ai-lab')}
-              className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'ai-lab' ? 'bg-amber-500 text-slate-950' : 'text-slate-300 hover:text-white'}`}
-            >
-              <FlaskConical className="w-4 h-4" />
-              AI Test Lab
-            </button>
+            {showAiTestLab ? (
+              <>
+                <ArrowRightLeft className="w-4 h-4 text-slate-500" />
+                <button
+                  onClick={() => setViewMode('ai-lab')}
+                  className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${effectiveViewMode === 'ai-lab' ? 'bg-amber-500 text-slate-950' : 'text-slate-300 hover:text-white'}`}
+                >
+                  <FlaskConical className="w-4 h-4" />
+                  AI Test Lab
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
       </header>
 
       <main className="flex-1 overflow-hidden">
-        {viewMode === 'merchant' ? (
+        {effectiveViewMode === 'merchant' ? (
           <MerchantPortal
             appStatus={appStatus}
             setAppStatus={setAppStatus}
@@ -75,7 +81,7 @@ export default function App() {
             verificationIssues={verificationIssues}
             onClearVerificationIssues={() => setVerificationIssues([])}
           />
-        ) : viewMode === 'admin' ? (
+        ) : effectiveViewMode === 'admin' ? (
           <AdminPortal
             appStatus={appStatus}
             setAppStatus={setAppStatus}

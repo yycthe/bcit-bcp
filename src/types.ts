@@ -9,6 +9,7 @@ export interface FileData {
   name: string;
   mimeType: string;
   data: string; // base64 encoded string
+  contentEncoding?: 'gzip';
   uploadDate?: string;
   documentType?: string;
   status?: 'Uploaded' | 'Extracting' | 'Verified' | 'Needs review' | 'Mismatch' | 'Missing';

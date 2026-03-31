@@ -9,6 +9,7 @@ import { Badge } from '@/src/components/ui/badge';
 import { toast } from 'sonner';
 import { MerchantData, FileData } from '@/src/types';
 import { getFallbackUnderwriting } from '@/src/lib/underwritingFallback';
+import { prepareFileForUpload } from '@/src/lib/uploadPreparation';
 import {
   MERCHANT_FILE_QUESTION_KEYS,
   MERCHANT_DOCUMENT_LABELS,
@@ -42,16 +43,6 @@ function isFileUploadAnswer(value: unknown): value is FileData {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const o = value as Record<string, unknown>;
   return typeof o.data === 'string' && o.data.startsWith('data:') && typeof o.name === 'string';
-}
-
-function inferMimeFromFileName(fileName: string, browserMime: string): string {
-  const t = browserMime.trim();
-  if (t) return t;
-  const lo = fileName.toLowerCase();
-  if (lo.endsWith('.pdf')) return 'application/pdf';
-  if (/\.jpe?g$/i.test(lo)) return 'image/jpeg';
-  if (lo.endsWith('.png')) return 'image/png';
-  return 'application/octet-stream';
 }
 
 const VERCEL_FUNCTION_BODY_SOFT_LIMIT_BYTES = 4_000_000;
@@ -1428,7 +1419,7 @@ export function ChatApp({
                 <div className="flex flex-col items-center justify-center pt-5 pb-6">
                   <Upload className="w-8 h-8 mb-2 text-slate-400" />
                   <p className="text-sm text-slate-500">Click to upload or drag and drop</p>
-                  <p className="text-xs text-slate-400">PDF, PNG, JPG up to 10MB</p>
+                  <p className="text-xs text-slate-400">PDF, PNG, JPG up to 10MB. Large images and PDFs are optimized before upload when possible.</p>
                 </div>
                 <input
                   type="file"
@@ -1437,19 +1428,23 @@ export function ChatApp({
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      const reader = new FileReader();
-                      reader.onload = () => {
-                        const base64 = reader.result as string;
-                        const fileData: FileData = {
-                          name: file.name,
-                          mimeType: inferMimeFromFileName(file.name, file.type),
-                          data: base64
-                        };
-                        setDocuments(prev => [...prev, fileData]);
-                        handleAnswer(fileData, `Uploaded: ${file.name}`);
-                      };
-                      reader.readAsDataURL(file);
+                      try {
+                        const prepared = await prepareFileForUpload(file);
+                        prepared.notices.forEach((notice) => {
+                          if (notice.level === 'warning') {
+                            toast.warning(notice.message);
+                          } else {
+                            toast.success(notice.message);
+                          }
+                        });
+                        setDocuments(prev => [...prev, prepared.fileData]);
+                        handleAnswer(prepared.fileData, `Uploaded: ${prepared.fileData.name}`);
+                      } catch (error) {
+                        const message = error instanceof Error ? error.message : `Failed to prepare ${file.name}`;
+                        toast.error(message);
+                      }
                     }
+                    e.target.value = '';
                   }}
                 />
               </label>

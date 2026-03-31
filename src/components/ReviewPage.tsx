@@ -8,13 +8,25 @@ import type { MerchantView } from './MerchantPortal';
 import { CheckCircle2, AlertCircle, Edit2, Eye, FileWarning } from 'lucide-react';
 import { toast } from 'sonner';
 
-function openUploadedFileInNewTab(doc: FileData) {
+async function openUploadedFileInNewTab(doc: FileData) {
   try {
     const raw = doc.data.replace(/^data:[^;]+;base64,/, '');
     const binary = atob(raw);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const blob = new Blob([bytes], { type: doc.mimeType || 'application/octet-stream' });
+    let finalBytes = bytes;
+
+    if (doc.contentEncoding === 'gzip') {
+      if (typeof DecompressionStream === 'undefined') {
+        toast.error('This browser cannot preview compressed uploads. Please re-upload or use a newer browser.');
+        return;
+      }
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+      const decompressed = await new Response(stream).arrayBuffer();
+      finalBytes = new Uint8Array(decompressed);
+    }
+
+    const blob = new Blob([finalBytes], { type: doc.mimeType || 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const win = window.open(url, '_blank', 'noopener,noreferrer');
     if (!win) {
@@ -229,7 +241,9 @@ export function ReviewPage({ data, documents, setCurrentView, onEdit, onSubmit }
                       variant="outline"
                       size="sm"
                       className="h-8 gap-1"
-                      onClick={() => openUploadedFileInNewTab(doc)}
+                      onClick={() => {
+                        void openUploadedFileInNewTab(doc);
+                      }}
                     >
                       <Eye className="w-3.5 h-3.5" />
                       View

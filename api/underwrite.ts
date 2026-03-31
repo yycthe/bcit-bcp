@@ -1,3 +1,5 @@
+import { gunzipSync } from 'node:zlib';
+
 export const runtime = 'nodejs';
 
 type VerificationStatus = 'Verified' | 'Discrepancies Found' | 'Unverified';
@@ -19,6 +21,7 @@ type MerchantFile = {
   name?: string;
   mimeType?: string;
   data?: string;
+  contentEncoding?: string;
   uploadDate?: string;
   documentType?: string;
   status?: string;
@@ -36,6 +39,7 @@ type UploadedFileDescriptor = {
   name: string;
   mimeType: string;
   data?: string;
+  contentEncoding?: string;
   uploadDate?: string;
   documentType?: string;
   status?: string;
@@ -64,11 +68,18 @@ type XaiResponsesCreateResponse = {
   output?: XaiResponseOutputItem[];
 };
 
+type RateLimitEntry = {
+  count: number;
+  resetAt: number;
+};
+
 const XAI_BASE_URL = 'https://api.x.ai/v1';
 const DEFAULT_XAI_MODEL = 'grok-4-1-fast-non-reasoning';
 const ALLOWED_PROCESSORS: Processor[] = ['Stripe', 'Adyen', 'Nuvei', 'HighRiskPay'];
 const XAI_UPLOAD_TIMEOUT_MS = 15_000;
 const XAI_RESPONSE_TIMEOUT_MS = 35_000;
+const DEFAULT_UNDERWRITE_RATE_LIMIT_MAX = 1;
+const DEFAULT_UNDERWRITE_RATE_LIMIT_WINDOW_SECONDS = 60;
 const MAX_BINARY_ATTACHMENTS = 2;
 const MAX_BINARY_TOTAL_BYTES = 6_000_000;
 const MAX_INLINE_IMAGE_BYTES = 4_000_000;
@@ -259,14 +270,227 @@ const INTAKE_SECTIONS: IntakeSectionDefinition[] = [
   },
 ];
 
-function jsonResponse(body: unknown, status = 200): Response {
+function jsonResponse(body: unknown, status = 200, extraHeaders?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
+      ...(extraHeaders ?? {}),
     },
   });
+}
+
+function toPublicErrorMessage(message: string): string {
+  if (message.includes('Missing XAI_API_KEY') || message.includes('_XAI_API_KEY')) {
+    return 'AI service is not configured on the server.';
+  }
+
+  return 'AI underwriting request failed. Please try again.';
+}
+
+function toServerLogErrorMessage(message: string): string {
+  if (!message.startsWith('xAI ')) {
+    return message;
+  }
+
+  const firstColon = message.indexOf(':');
+  return firstColon === -1 ? message : message.slice(0, firstColon);
+}
+
+function normalizePositiveInteger(raw: string | undefined, fallback: number): number {
+  const value = Number(raw?.trim());
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function resolveAllowedOrigins(requestOrigin?: string): Set<string> {
+  const allowed = new Set<string>();
+  if (requestOrigin) {
+    allowed.add(requestOrigin);
+  }
+
+  const candidates = [process.env.APP_URL, process.env.UNDERWRITE_ALLOWED_ORIGINS]
+    .filter(Boolean)
+    .flatMap((value) => String(value).split(','))
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      allowed.add(new URL(candidate).origin);
+    } catch {
+      // Ignore malformed origin configuration instead of crashing the route.
+    }
+  }
+
+  return allowed;
+}
+
+function isLocalOrigin(origin: string): boolean {
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
+function validateOrigin(request: Request): string | undefined {
+  const requestOrigin = (() => {
+    try {
+      return new URL(request.url).origin;
+    } catch {
+      return undefined;
+    }
+  })();
+
+  const allowedOrigins = resolveAllowedOrigins(requestOrigin);
+  const originHeader = request.headers.get('origin')?.trim();
+  const refererHeader = request.headers.get('referer')?.trim();
+  const secFetchSiteHeader = request.headers.get('sec-fetch-site')?.trim();
+  const secFetchSite = secFetchSiteHeader ? secFetchSiteHeader.toLowerCase() : undefined;
+
+  if (secFetchSite && !['same-origin', 'same-site', 'none'].includes(secFetchSite)) {
+    return 'Cross-site requests are not allowed.';
+  }
+
+  if (originHeader) {
+    try {
+      if (!allowedOrigins.has(new URL(originHeader).origin)) {
+        return 'Request origin is not allowed.';
+      }
+    } catch {
+      return 'Request origin is invalid.';
+    }
+    return undefined;
+  }
+
+  if (refererHeader) {
+    try {
+      if (!allowedOrigins.has(new URL(refererHeader).origin)) {
+        return 'Request referer is not allowed.';
+      }
+    } catch {
+      return 'Request referer is invalid.';
+    }
+    return undefined;
+  }
+
+  if (requestOrigin && isLocalOrigin(requestOrigin)) {
+    return undefined;
+  }
+
+  return 'Missing origin for protected request.';
+}
+
+function getClientIp(request: Request): string | undefined {
+  const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+  if (forwarded) return forwarded;
+
+  const candidates = [
+    request.headers.get('x-real-ip'),
+    request.headers.get('cf-connecting-ip'),
+    request.headers.get('x-vercel-forwarded-for'),
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate?.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function getRateLimitStore(): Map<string, RateLimitEntry> {
+  const scopedGlobal = globalThis as typeof globalThis & {
+    __underwriteRateLimitStore?: Map<string, RateLimitEntry>;
+  };
+
+  if (!scopedGlobal.__underwriteRateLimitStore) {
+    scopedGlobal.__underwriteRateLimitStore = new Map<string, RateLimitEntry>();
+  }
+
+  return scopedGlobal.__underwriteRateLimitStore;
+}
+
+function enforceRateLimit(
+  ip: string
+): { ok: true; remaining: number; resetAt: number; limit: number } | { ok: false; retryAfterSeconds: number; resetAt: number; limit: number } {
+  const maxRequests = normalizePositiveInteger(process.env.UNDERWRITE_RATE_LIMIT_MAX, DEFAULT_UNDERWRITE_RATE_LIMIT_MAX);
+  const windowSeconds = normalizePositiveInteger(
+    process.env.UNDERWRITE_RATE_LIMIT_WINDOW_SECONDS,
+    DEFAULT_UNDERWRITE_RATE_LIMIT_WINDOW_SECONDS
+  );
+  const windowMs = windowSeconds * 1000;
+  const now = Date.now();
+  const store = getRateLimitStore();
+
+  for (const [key, value] of store) {
+    if (value.resetAt <= now) {
+      store.delete(key);
+    }
+  }
+
+  const current = store.get(ip);
+  if (!current || current.resetAt <= now) {
+    const resetAt = now + windowMs;
+    store.set(ip, { count: 1, resetAt });
+    return {
+      ok: true,
+      remaining: Math.max(maxRequests - 1, 0),
+      resetAt,
+      limit: maxRequests,
+    };
+  }
+
+  if (current.count >= maxRequests) {
+    return {
+      ok: false,
+      retryAfterSeconds: Math.max(Math.ceil((current.resetAt - now) / 1000), 1),
+      resetAt: current.resetAt,
+      limit: maxRequests,
+    };
+  }
+
+  current.count += 1;
+  store.set(ip, current);
+
+  return {
+    ok: true,
+    remaining: Math.max(maxRequests - current.count, 0),
+    resetAt: current.resetAt,
+    limit: maxRequests,
+  };
+}
+
+function protectUnderwriteRoute(request: Request): Response | undefined {
+  const originError = validateOrigin(request);
+  if (originError) {
+    console.warn('[underwrite] blocked request:', originError);
+    return jsonResponse({ error: 'Request blocked by API protection.' }, 403);
+  }
+
+  const ip = getClientIp(request);
+  if (!ip) {
+    return undefined;
+  }
+
+  const rateLimit = enforceRateLimit(ip);
+  if (!rateLimit.ok) {
+    console.warn('[underwrite] rate limit exceeded for client:', ip);
+    return jsonResponse(
+      { error: 'Too many underwriting requests. Please wait and try again.' },
+      429,
+      {
+        'Retry-After': String(rateLimit.retryAfterSeconds),
+        'X-RateLimit-Limit': String(rateLimit.limit),
+        'X-RateLimit-Reset': String(Math.ceil(rateLimit.resetAt / 1000)),
+      }
+    );
+  }
+
+  return undefined;
 }
 
 function normalizeString(value: unknown, fallback = ''): string {
@@ -369,6 +593,7 @@ function getUploadedFiles(merchantData: MerchantDataLike): UploadedFileDescripto
       name: normalizeString(file.name, key),
       mimeType: normalizeString(file.mimeType, 'application/octet-stream'),
       data: typeof file.data === 'string' ? file.data : undefined,
+      contentEncoding: normalizeString(file.contentEncoding),
       uploadDate: normalizeString(file.uploadDate),
       documentType: normalizeString(file.documentType),
       status: normalizeString(file.status),
@@ -389,6 +614,7 @@ function getUploadedFiles(merchantData: MerchantDataLike): UploadedFileDescripto
       name: normalizeString(file.name, `additional-document-${index + 1}`),
       mimeType: normalizeString(file.mimeType, 'application/octet-stream'),
       data: typeof file.data === 'string' ? file.data : undefined,
+      contentEncoding: normalizeString(file.contentEncoding),
       uploadDate: normalizeString(file.uploadDate),
       documentType: normalizeString(file.documentType),
       status: normalizeString(file.status),
@@ -443,6 +669,14 @@ function isPdfFile(mimeType: string, fileName: string): boolean {
 function decodeBase64DataUrl(data: string): Uint8Array {
   const base64 = data.replace(/^data:[^;]+;base64,/, '');
   return Uint8Array.from(Buffer.from(base64, 'base64'));
+}
+
+function decodeUploadBytes(upload: UploadedFileDescriptor): Uint8Array {
+  const bytes = decodeBase64DataUrl(upload.data ?? '');
+  if (upload.contentEncoding === 'gzip') {
+    return Uint8Array.from(gunzipSync(bytes));
+  }
+  return bytes;
 }
 
 function prettifyFieldLabel(key: string): string {
@@ -967,7 +1201,7 @@ async function uploadFileToXai(file: UploadedFileDescriptor, apiKey: string): Pr
     throw new Error(`Cannot upload ${file.name}: missing file bytes.`);
   }
 
-  const bytes = decodeBase64DataUrl(file.data);
+  const bytes = decodeUploadBytes(file);
   const formData = new FormData();
   formData.append('purpose', 'assistants');
   formData.append('file', new Blob([bytes], { type: file.mimeType }), file.name);
@@ -1126,6 +1360,11 @@ async function runUnderwriting(merchantData: MerchantDataLike): Promise<Underwri
 
 export async function POST(request: Request): Promise<Response> {
   try {
+    const protectionResponse = protectUnderwriteRoute(request);
+    if (protectionResponse) {
+      return protectionResponse;
+    }
+
     const body = (await request.json()) as { merchantData?: MerchantDataLike };
     if (!isPlainObject(body) || !isPlainObject(body.merchantData)) {
       return jsonResponse({ error: 'Request body must include a merchantData object.' }, 400);
@@ -1141,14 +1380,14 @@ export async function POST(request: Request): Promise<Response> {
         throw error;
       }
 
-      console.warn('[underwrite] primary attempt failed, retrying metadata-only:', firstMessage);
+      console.warn('[underwrite] primary attempt failed, retrying metadata-only:', toServerLogErrorMessage(firstMessage));
       const retriedResult = await runUnderwriting(stripBinaryMerchantData(body.merchantData));
       return jsonResponse(retriedResult, 200);
     }
   } catch (error) {
     const message = describeError(error);
-    console.error('[underwrite] request failed:', message);
-    return jsonResponse({ error: message }, 500);
+    console.error('[underwrite] request failed:', toServerLogErrorMessage(message));
+    return jsonResponse({ error: toPublicErrorMessage(message) }, 500);
   }
 }
 

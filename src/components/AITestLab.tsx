@@ -7,6 +7,7 @@ import { Input } from '@/src/components/ui/input';
 import { Badge } from '@/src/components/ui/badge';
 import { FormattedSummary } from '@/src/components/ui/formatted-summary';
 import { FileData, MerchantData, initialMerchantData } from '@/src/types';
+import { prepareFileForUpload } from '@/src/lib/uploadPreparation';
 
 type TestResult = {
   riskScore?: number;
@@ -21,16 +22,6 @@ type TestResult = {
 };
 
 const VERCEL_FUNCTION_BODY_SOFT_LIMIT_BYTES = 4_000_000;
-
-function inferMimeFromFileName(fileName: string, browserMime: string): string {
-  const t = browserMime.trim();
-  if (t) return t;
-  const lo = fileName.toLowerCase();
-  if (lo.endsWith('.pdf')) return 'application/pdf';
-  if (/\.jpe?g$/i.test(lo)) return 'image/jpeg';
-  if (lo.endsWith('.png')) return 'image/png';
-  return 'application/octet-stream';
-}
 
 function estimateJsonBytes(value: unknown): number {
   const json = JSON.stringify(value);
@@ -101,25 +92,22 @@ export function AITestLab() {
     const selected = Array.from(event.target.files ?? []);
     if (!selected.length) return;
 
-    const nextFiles = await Promise.all(
-      selected.map(
-        (file) =>
-          new Promise<FileData>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              resolve({
-                name: file.name,
-                mimeType: inferMimeFromFileName(file.name, file.type),
-                data: reader.result as string,
-              });
-            };
-            reader.onerror = () => reject(reader.error ?? new Error(`Failed to read ${file.name}`));
-            reader.readAsDataURL(file);
-          })
-      )
-    );
-
-    setFiles((prev) => [...prev, ...nextFiles]);
+    try {
+      const preparedFiles = await Promise.all(selected.map((file) => prepareFileForUpload(file)));
+      preparedFiles.forEach((prepared) => {
+        prepared.notices.forEach((notice) => {
+          if (notice.level === 'warning') {
+            toast.warning(notice.message);
+          } else {
+            toast.success(notice.message);
+          }
+        });
+      });
+      setFiles((prev) => [...prev, ...preparedFiles.map((prepared) => prepared.fileData)]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to prepare one of the uploaded files.';
+      toast.error(message);
+    }
     event.target.value = '';
   }
 
@@ -243,7 +231,7 @@ export function AITestLab() {
                     </div>
                     <div>
                       <p className="font-medium text-slate-900">Upload files</p>
-                      <p className="text-sm text-slate-600">Supports multiple PDFs and images in one test run.</p>
+                      <p className="text-sm text-slate-600">Supports multiple PDFs and images in one test run. Large files are optimized before upload when possible.</p>
                     </div>
                   </div>
 
