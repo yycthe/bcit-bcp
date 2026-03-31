@@ -27,9 +27,9 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-blue-600 rounded-md flex items-center justify-center text-white font-bold text-xl">
-              M
+              B
             </div>
-            <span className="font-bold text-xl tracking-tight">MerchantWerx</span>
+            <span className="font-bold text-xl tracking-tight">BCIT BCP</span>
             <span className="ml-2 px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold uppercase tracking-wider">Demo Env</span>
           </div>
           

@@ -1,6 +1,6 @@
 # BCIT BCP
 
-BCIT **Business Consulting Project** — a **MerchantWerx** onboarding demo for payment processing: intake, documents, AI-assisted risk assessment, and admin review.
+BCIT **Business Consulting Project** — a **BCIT BCP** onboarding demo for payment processing: intake, documents, AI-assisted risk assessment, and admin review.
 
 ## Features
 

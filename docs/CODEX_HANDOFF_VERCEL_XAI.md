@@ -6,7 +6,7 @@
 
 ## 1. 项目是什么
 
-- **BCIT BCP / MerchantWerx onboarding 演示**：商户入驻问卷、上传文件、**AI 核保**（结构化 JSON）、管理端查看。
+- **BCIT BCP onboarding 演示**：商户入驻问卷、上传文件、**AI 核保**（结构化 JSON）、管理端查看。
 - **技术栈**：React 19 + TypeScript + **Vite 6**（`npm run build` → 输出 **`dist/`**）+ Tailwind 4 + xAI REST（直连 Files / Responses）+ Vercel Serverless API。
 
 ---
