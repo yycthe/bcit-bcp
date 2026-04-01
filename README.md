@@ -60,8 +60,6 @@ See `.env.example`. Summary:
 | `AI_MODEL` | Optional fallback if `XAI_MODEL` is unset. |
 | `APP_URL` | Optional; base URL when deployed. |
 | `UNDERWRITE_ALLOWED_ORIGINS` | Optional comma-separated allowlist for browser origins that may call `/api/underwrite`. |
-| `UNDERWRITE_RATE_LIMIT_MAX` | Optional per-IP limit for `/api/underwrite`. Default `1`. |
-| `UNDERWRITE_RATE_LIMIT_WINDOW_SECONDS` | Optional rate-limit window size in seconds. Default `60` (1 minute). |
 
 **PDFs:** Underwriting now uses xAI's official file upload + Responses path for document-backed analysis. Uploaded images are still sent as multimodal image inputs.
 
@@ -93,7 +91,7 @@ Local **`npm run dev`**: underwriting calls **`POST /api/underwrite`** (Vite dev
 3. Redeploy after changing env vars.
 4. If underwriting requests include large PDFs/images, expect the app to fall back to metadata-only mode unless you move uploads to storage first.
 5. If you want to tune speed vs reasoning, set **`XAI_MODEL`** explicitly. xAI currently documents Grok 4 family structured-output and file support, including models such as **`grok-4-1-fast-non-reasoning`** and **`grok-4-fast-reasoning`**.
-6. `/api/underwrite` now blocks cross-site browser requests and applies a simple per-IP rate limit. Set **`APP_URL`** and, if needed, **`UNDERWRITE_ALLOWED_ORIGINS`** to match your live domains.
+6. `/api/underwrite` blocks cross-site browser requests. Set **`APP_URL`** and, if needed, **`UNDERWRITE_ALLOWED_ORIGINS`** to match your live domains.
 
 ## Run locally
 
