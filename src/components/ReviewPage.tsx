@@ -210,7 +210,9 @@ export function ReviewPage({ data, documents, setCurrentView, onEdit, onSubmit }
           { label: 'Privacy Policy', value: data.websitePrivacyPolicy },
           { label: 'Terms', value: data.websiteTerms },
           { label: 'Refund Policy', value: data.websiteRefundPolicy },
+          { label: 'Shipping Policy', value: data.websiteShippingPolicy },
           { label: 'Contact Info', value: data.websiteContactInfo },
+          { label: 'Currency Display', value: data.websiteCurrencyDisplay },
           { label: 'SSL', value: data.websiteSsl },
           { label: 'Stores Cards', value: data.storesCardNumbers },
         ])}

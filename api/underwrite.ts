@@ -12,6 +12,11 @@ type UnderwritingApiResult = {
   riskFactors: string[];
   recommendedProcessor: Processor;
   reason: string;
+  merchantSummary: string;
+  missingItems: string[];
+  readinessDecision: string;
+  processorFitSuggestion: string;
+  websiteReviewSummary: string;
   documentSummary: string;
   verificationStatus: VerificationStatus;
   verificationNotes: string[];
@@ -111,6 +116,8 @@ const CRITICAL_INTAKE_FIELDS = [
   'websitePrivacyPolicy',
   'websiteTerms',
   'websiteRefundPolicy',
+  'websiteShippingPolicy',
+  'websiteCurrencyDisplay',
 ] as const;
 const UPLOAD_FIELD_LABELS: Record<string, string> = {
   financials: 'Recent processing statements / financial statements',
@@ -231,7 +238,9 @@ const FIELD_LABELS: Record<string, string> = {
   websitePrivacyPolicy: 'Website Privacy Policy present',
   websiteTerms: 'Website Terms present',
   websiteRefundPolicy: 'Website refund policy present',
+  websiteShippingPolicy: 'Website shipping policy present',
   websiteContactInfo: 'Website customer service contact present',
+  websiteCurrencyDisplay: 'Website transaction currency display present',
   websiteSsl: 'Website SSL / encrypted payment page',
   storesCardNumbers: 'Stores card numbers',
   thirdPartyCardApps: 'Third-party cardholder-data apps',
@@ -371,7 +380,9 @@ const INTAKE_SECTIONS: IntakeSectionDefinition[] = [
       'websitePrivacyPolicy',
       'websiteTerms',
       'websiteRefundPolicy',
+      'websiteShippingPolicy',
       'websiteContactInfo',
+      'websiteCurrencyDisplay',
       'websiteSsl',
       'storesCardNumbers',
       'thirdPartyCardApps',
@@ -603,6 +614,11 @@ function parseUnderwritingResult(raw: unknown): UnderwritingApiResult {
     riskFactors: normalizeStringArray(data.riskFactors),
     recommendedProcessor: normalizeProcessor(data.recommendedProcessor),
     reason: normalizeString(data.reason, 'No reason provided by the model.'),
+    merchantSummary: normalizeString(data.merchantSummary, 'No merchant summary provided by the model.'),
+    missingItems: normalizeStringArray(data.missingItems),
+    readinessDecision: normalizeString(data.readinessDecision, 'No readiness decision provided by the model.'),
+    processorFitSuggestion: normalizeString(data.processorFitSuggestion, 'No processor fit suggestion provided by the model.'),
+    websiteReviewSummary: normalizeString(data.websiteReviewSummary, 'No website review summary provided by the model.'),
     documentSummary: normalizeString(data.documentSummary, 'No document information extracted.'),
     verificationStatus: normalizeVerificationStatus(data.verificationStatus),
     verificationNotes: normalizeStringArray(data.verificationNotes),
@@ -1072,7 +1088,13 @@ function buildRuleBasedBaselineText(merchantData: MerchantDataLike): string {
   if (!hasProvidedText(merchantData.personaInvitePlan)) {
     ruleFindings.push('Persona/KYC/KYB trigger plan is missing');
   }
-  if (!hasProvidedText(merchantData.websitePrivacyPolicy) || !hasProvidedText(merchantData.websiteTerms) || !hasProvidedText(merchantData.websiteRefundPolicy)) {
+  if (
+    !hasProvidedText(merchantData.websitePrivacyPolicy) ||
+    !hasProvidedText(merchantData.websiteTerms) ||
+    !hasProvidedText(merchantData.websiteRefundPolicy) ||
+    !hasProvidedText(merchantData.websiteShippingPolicy) ||
+    !hasProvidedText(merchantData.websiteCurrencyDisplay)
+  ) {
     ruleFindings.push('Website compliance basics are incomplete');
   }
   if (hasMitigatingCompliance && (isHighRisk || hasCrossBorderExposure)) {
@@ -1237,7 +1259,9 @@ async function buildWebsiteReviewText(merchantData: MerchantDataLike): Promise<s
     `- Privacy Policy declared: ${normalizeString(merchantData.websitePrivacyPolicy) || 'unknown'}`,
     `- Terms declared: ${normalizeString(merchantData.websiteTerms) || 'unknown'}`,
     `- Return / Refund Policy declared: ${normalizeString(merchantData.websiteRefundPolicy) || 'unknown'}`,
+    `- Shipping Policy declared if applicable: ${normalizeString(merchantData.websiteShippingPolicy) || 'unknown'}`,
     `- Customer service contact declared visible: ${normalizeString(merchantData.websiteContactInfo) || 'unknown'}`,
+    `- Transaction currency display declared if applicable: ${normalizeString(merchantData.websiteCurrencyDisplay) || 'unknown'}`,
     `- SSL / encrypted payment declared: ${normalizeString(merchantData.websiteSsl) || 'unknown'}`,
     `- Stores card numbers: ${normalizeString(merchantData.storesCardNumbers) || 'unknown'}`,
     `- Third-party cardholder-data apps: ${normalizeString(merchantData.thirdPartyCardApps) || 'none disclosed'}`,
@@ -1314,14 +1338,18 @@ Tasks:
 1. Start from the rules-based screening baseline, then adjust the score using your own underwriting judgment from the full merchant context, Persona/KYC/KYB routing or results, website review, document readiness, and uploaded evidence.
 2. Return a numerical riskScore from 0 to 100.
 3. Return riskCategory as Low, Medium, or High.
-4. Return 2-5 riskFactors.
-5. Recommend one processor from Nuvei, Payroc / Peoples, Chase.
-6. Explain the recommendation in reason, citing the intake facts, Persona/KYC/KYB status, website signals, completeness gaps, document evidence, and why your final score did or did not differ from the baseline.
-7. Summarize what the uploaded files appear to contain in documentSummary. If only metadata was available, say that clearly.
-8. Cross-check merchant profile, intake completeness, document metadata, and documents against each other and return verificationStatus and verificationNotes.
-9. Treat missing critical intake fields, missing expected documents, low-confidence uploads, extraction mismatches, recurring billing exposure, prior processor issues, and regulated-industry answers as real scoring signals.
-10. Do not return Verified if material intake gaps, Persona/KYC/KYB gaps, website compliance gaps, or expected-document gaps remain unresolved.
-11. Make a readiness decision in the reason: ready for processor matching, hold for manual review, or missing items needed.
+4. Return merchantSummary covering legal entity, business model, ownership structure, signer, processing history, sales profile, website readiness, document readiness, and Persona verification status.
+5. Return 2-5 riskFactors.
+6. Return missingItems as concrete follow-up items that block matching or submission.
+7. Return readinessDecision as one clear decision: Ready for matching, Hold for manual review, or Missing items needed.
+8. Recommend one processor from Nuvei, Payroc / Peoples, Chase.
+9. Return processorFitSuggestion explaining likely fit for Nuvei, Payroc / Peoples, and Chase, not just the chosen one.
+10. Explain the recommendation in reason, citing the intake facts, Persona/KYC/KYB status, website signals, completeness gaps, document evidence, and why your final score did or did not differ from the baseline.
+11. Summarize structured website legitimacy and compliance review in websiteReviewSummary, including reachability, business consistency, privacy policy, terms, refund policy, contact info, shipping policy if applicable, currency display if applicable, and risk observations.
+12. Summarize what the uploaded files appear to contain in documentSummary. If only metadata was available, say that clearly.
+13. Cross-check merchant profile, intake completeness, document metadata, and documents against each other and return verificationStatus and verificationNotes.
+14. Treat missing critical intake fields, missing expected documents, low-confidence uploads, extraction mismatches, recurring billing exposure, prior processor issues, and regulated-industry answers as real scoring signals.
+15. Do not return Verified if material intake gaps, Persona/KYC/KYB gaps, website compliance gaps, or expected-document gaps remain unresolved.
 
 Return JSON only with exactly these keys:
 {
@@ -1330,6 +1358,11 @@ Return JSON only with exactly these keys:
   "riskFactors": string[],
   "recommendedProcessor": "Nuvei" | "Payroc / Peoples" | "Chase",
   "reason": string,
+  "merchantSummary": string,
+  "missingItems": string[],
+  "readinessDecision": string,
+  "processorFitSuggestion": string,
+  "websiteReviewSummary": string,
   "documentSummary": string,
   "verificationStatus": "Verified" | "Discrepancies Found" | "Unverified",
   "verificationNotes": string[]

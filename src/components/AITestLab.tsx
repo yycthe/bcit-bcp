@@ -15,6 +15,11 @@ type TestResult = {
   riskFactors?: string[];
   recommendedProcessor?: string;
   reason?: string;
+  merchantSummary?: string;
+  missingItems?: string[];
+  readinessDecision?: string;
+  processorFitSuggestion?: string;
+  websiteReviewSummary?: string;
   documentSummary?: string;
   verificationStatus?: string;
   verificationNotes?: string[];
@@ -47,8 +52,20 @@ function buildMerchantData(files: FileData[], notes: string, scenarioName: strin
     monthlyVolume: '10k-50k',
     monthlyTransactions: '100-1k',
     legalName: scenarioName || 'AI Test Upload',
+    legalBusinessEmail: 'test@example.com',
+    productsServices: notes || 'Uploaded-document test scenario',
+    beneficialOwners: 'AI Test Owner, 100%, Owner, test@example.com',
+    authorizedSignerName: 'AI Test Owner',
+    authorizedSignerEmail: 'test@example.com',
     ownerName: 'AI Test User',
     website: 'https://example.com',
+    avgTicketSize: '100',
+    highestTicketAmount: '500',
+    websitePrivacyPolicy: 'Unknown',
+    websiteTerms: 'Unknown',
+    websiteRefundPolicy: 'Unknown',
+    websiteShippingPolicy: 'Unknown',
+    websiteCurrencyDisplay: 'Unknown',
     businessDescription: notes,
     complianceDetails: notes,
     additionalDocuments: files,
@@ -326,6 +343,41 @@ export function AITestLab() {
                         <FormattedSummary
                           text={result.reason}
                           emptyText="No recommendation reason returned."
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-semibold text-slate-900">Merchant Summary</h3>
+                        <FormattedSummary
+                          text={result.merchantSummary}
+                          emptyText="No merchant summary returned."
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-semibold text-slate-900">Readiness Decision</h3>
+                        <FormattedSummary
+                          text={[
+                            result.readinessDecision,
+                            ...(result.missingItems ?? []).map((item) => `Missing item: ${item}`),
+                          ].filter(Boolean).join('\n')}
+                          emptyText="No readiness decision returned."
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-semibold text-slate-900">Website Review</h3>
+                        <FormattedSummary
+                          text={result.websiteReviewSummary}
+                          emptyText="No website review summary returned."
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-semibold text-slate-900">Processor Fit</h3>
+                        <FormattedSummary
+                          text={result.processorFitSuggestion}
+                          emptyText="No processor fit comparison returned."
                         />
                       </div>
 

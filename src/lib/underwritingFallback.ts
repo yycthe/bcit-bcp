@@ -9,6 +9,11 @@ export type UnderwritingDisplayResult = {
   riskFactors: string[];
   recommendedProcessor: string;
   reason: string;
+  merchantSummary: string;
+  missingItems: string[];
+  readinessDecision: string;
+  processorFitSuggestion: string;
+  websiteReviewSummary: string;
   documentSummary: string;
   verificationStatus: 'Verified' | 'Discrepancies Found' | 'Unverified';
   verificationNotes: string[];
@@ -213,6 +218,31 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
     reasonParts.push('Compliance and regulatory details were provided and slightly reduced the fallback score.');
   }
   const reason = reasonParts.join(' ');
+  const missingItems = [
+    ...verification.issues.map((issue) => issue.reason),
+    ...missingDocuments.map((label) => `Missing required upload: ${label}`),
+  ];
+  const readinessDecision =
+    verification.status === 'clear' && missingDocuments.length === 0
+      ? 'Ready for matching'
+      : hasAdverseHistory || isHighRiskIndustry
+        ? 'Hold for manual review'
+        : 'Missing items needed';
+  const merchantSummary = [
+    `Legal entity: ${finalData.legalName || 'not supplied'}`,
+    `Business model: ${finalData.productsServices || finalData.businessDescription || finalData.businessCategory || 'not supplied'}`,
+    `Ownership / signer: ${finalData.beneficialOwners || finalData.ownerName || 'not supplied'}; signer ${finalData.authorizedSignerName || 'not supplied'}`,
+    `Processing history: ${finalData.currentOrPreviousProcessor || finalData.previousProcessors || 'not supplied'}`,
+    `Sales profile: ${finalData.monthlyVolume || 'unknown'} monthly volume, ${finalData.avgTicketSize || 'unknown'} average ticket, ${finalData.transactionChannelSplit || 'channel split not supplied'}`,
+    `Persona/KYC/KYB status: ${finalData.personaVerificationSummary || 'not attached'}`,
+  ].join('\n');
+  const processorFitSuggestion = [
+    `Nuvei: good fit for standard Canadian merchant setup when KYC/KYB and documents are clean.`,
+    `Payroc / Peoples: stronger fit when risk, adverse history, or manual underwriting follow-up is present.`,
+    `Chase: stronger fit for larger, card-not-present, advance-payment, or structured ownership cases.`,
+    `Selected fallback recommendation: ${recommendedProcessor}.`,
+  ].join('\n');
+  const websiteReviewSummary = buildWebsiteSignalSummary(finalData);
 
   const expectedDocs = checklist.length;
   const presentDocs = checklist.filter((item) => item.present).length;
@@ -246,6 +276,11 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
     riskFactors: riskFactors.length > 0 ? riskFactors.slice(0, 5) : ['Standard processing profile'],
     recommendedProcessor,
     reason,
+    merchantSummary,
+    missingItems,
+    readinessDecision,
+    processorFitSuggestion,
+    websiteReviewSummary,
     documentSummary,
     verificationStatus,
     verificationNotes,

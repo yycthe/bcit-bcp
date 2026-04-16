@@ -33,7 +33,21 @@ export function AIUnderwriting({ data, aiRecommendation, documents, documentChec
     );
   }
 
-  const { riskScore, riskCategory, riskFactors, recommendedProcessor, reason, documentSummary, verificationStatus = 'Unverified', verificationNotes = [] } = aiRecommendation;
+  const {
+    riskScore,
+    riskCategory,
+    riskFactors = [],
+    recommendedProcessor,
+    reason,
+    merchantSummary,
+    missingItems = [],
+    readinessDecision,
+    processorFitSuggestion,
+    websiteReviewSummary,
+    documentSummary,
+    verificationStatus = 'Unverified',
+    verificationNotes = [],
+  } = aiRecommendation;
 
   // Calculate estimated average ticket size
   const getAvgTicketSize = (vol: string, trans: string) => {
@@ -144,6 +158,25 @@ export function AIUnderwriting({ data, aiRecommendation, documents, documentChec
                 </div>
 
                 <div className="space-y-4 mt-8">
+                  <h4 className="font-semibold text-slate-900 border-b pb-2">AI Readiness Decision</h4>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-sm font-semibold text-slate-900">{readinessDecision || 'No readiness decision returned.'}</p>
+                    {missingItems.length > 0 ? (
+                      <ul className="mt-3 space-y-2">
+                        {missingItems.map((item: string, idx: number) => (
+                          <li key={`${item}-${idx}`} className="flex items-start gap-2 text-sm text-slate-700">
+                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-sm text-slate-500">No blocking missing items returned.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4 mt-8">
                   <h4 className="font-semibold text-slate-900 border-b pb-2 flex items-center gap-2">
                     <FileSearch className="w-5 h-5 text-slate-500" />
                     Cross-Reference Audit
@@ -209,6 +242,18 @@ export function AIUnderwriting({ data, aiRecommendation, documents, documentChec
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader className="pb-3 border-b">
+              <CardTitle className="text-base">Structured Merchant Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              <FormattedSummary
+                text={merchantSummary}
+                emptyText="No structured merchant summary returned."
+              />
+            </CardContent>
+          </Card>
+
           <Card className="border-violet-100 bg-violet-50/60">
             <CardHeader className="pb-3 border-b border-violet-100">
               <CardTitle className="text-base text-violet-950 flex items-center gap-2">
@@ -228,8 +273,16 @@ export function AIUnderwriting({ data, aiRecommendation, documents, documentChec
               <div className="border-t border-violet-100 pt-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Website review signals</p>
                 <FormattedSummary
-                  text={data.websiteReviewSummary}
+                  text={websiteReviewSummary || data.websiteReviewSummary}
                   emptyText="No website review signals attached."
+                  tone="slate"
+                />
+              </div>
+              <div className="border-t border-violet-100 pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Processor fit suggestion</p>
+                <FormattedSummary
+                  text={processorFitSuggestion}
+                  emptyText="No processor fit comparison returned."
                   tone="slate"
                 />
               </div>

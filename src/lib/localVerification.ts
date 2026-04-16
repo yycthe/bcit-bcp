@@ -98,10 +98,16 @@ export function runLocalVerificationCheck(merchantData: MerchantData): Verificat
     });
   }
 
-  if (!hasText(merchantData.websitePrivacyPolicy) || !hasText(merchantData.websiteTerms) || !hasText(merchantData.websiteRefundPolicy)) {
+  if (
+    !hasText(merchantData.websitePrivacyPolicy) ||
+    !hasText(merchantData.websiteTerms) ||
+    !hasText(merchantData.websiteRefundPolicy) ||
+    !hasText(merchantData.websiteShippingPolicy) ||
+    !hasText(merchantData.websiteCurrencyDisplay)
+  ) {
     pushUnique(issues, {
       id: 'website-compliance',
-      reason: 'Website compliance basics are incomplete: privacy policy, terms, and refund policy should be confirmed.',
+      reason: 'Website compliance basics are incomplete: privacy policy, terms, refund policy, shipping policy, and currency display should be confirmed where applicable.',
       target: {
         kind: 'intake',
         questionId: 'websiteComplianceForm',

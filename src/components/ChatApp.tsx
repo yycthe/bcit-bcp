@@ -342,7 +342,9 @@ function getFieldPlaceholder(fieldId: keyof MerchantData, data: MerchantData): s
     websitePrivacyPolicy: 'Yes / No / Not sure',
     websiteTerms: 'Yes / No / Not sure',
     websiteRefundPolicy: 'Yes / No / Not sure',
+    websiteShippingPolicy: 'Yes / No / Not applicable / Not sure',
     websiteContactInfo: 'Yes / No / Not sure',
+    websiteCurrencyDisplay: 'Yes / No / Not applicable / Not sure',
     websiteSsl: 'Yes / No / Not sure',
     storesCardNumbers: 'Yes / No',
     thirdPartyCardApps: 'Stripe, Shopify, WooCommerce, etc.',
@@ -804,7 +806,9 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
       { id: 'websitePrivacyPolicy', label: 'Does your website include a Privacy Policy?', type: 'text' },
       { id: 'websiteTerms', label: 'Does your website include Terms and Conditions / Terms of Use?', type: 'text' },
       { id: 'websiteRefundPolicy', label: 'Does your website include a Return / Refund Policy?', type: 'text' },
+      { id: 'websiteShippingPolicy', label: 'Does your website include a Shipping Policy if applicable?', type: 'text' },
       { id: 'websiteContactInfo', label: 'Does your website include customer service contact information?', type: 'text' },
+      { id: 'websiteCurrencyDisplay', label: 'Does your website display transaction currency if applicable?', type: 'text' },
       { id: 'websiteSsl', label: 'Is your payment page encrypted with SSL or better?', type: 'text' },
       { id: 'storesCardNumbers', label: 'Do you store credit card numbers?', type: 'text' },
       { id: 'thirdPartyCardApps', label: 'Do you use any third-party applications to process, transmit, or store cardholder data? If yes, list them.', type: 'textarea', required: false },
@@ -1402,6 +1406,11 @@ export function ChatApp({
         riskFactors?: string[];
         recommendedProcessor?: string;
         reason?: string;
+        merchantSummary?: string;
+        missingItems?: string[];
+        readinessDecision?: string;
+        processorFitSuggestion?: string;
+        websiteReviewSummary?: string;
         documentSummary?: string;
         verificationStatus?: string;
         verificationNotes?: string[];
@@ -1435,6 +1444,11 @@ export function ChatApp({
         riskFactors: payload.riskFactors ?? [],
         recommendedProcessor: payload.recommendedProcessor ?? '',
         reason: payload.reason ?? '',
+        merchantSummary: payload.merchantSummary ?? '',
+        missingItems: payload.missingItems ?? [],
+        readinessDecision: payload.readinessDecision ?? '',
+        processorFitSuggestion: payload.processorFitSuggestion ?? '',
+        websiteReviewSummary: payload.websiteReviewSummary ?? '',
         documentSummary: payload.documentSummary ?? '',
         verificationStatus,
         verificationNotes,

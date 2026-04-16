@@ -165,7 +165,9 @@ export interface MerchantData {
   websitePrivacyPolicy: string;
   websiteTerms: string;
   websiteRefundPolicy: string;
+  websiteShippingPolicy: string;
   websiteContactInfo: string;
+  websiteCurrencyDisplay: string;
   websiteSsl: string;
   storesCardNumbers: string;
   thirdPartyCardApps: string;
@@ -320,7 +322,9 @@ export const initialMerchantData: MerchantData = {
   websitePrivacyPolicy: '',
   websiteTerms: '',
   websiteRefundPolicy: '',
+  websiteShippingPolicy: '',
   websiteContactInfo: '',
+  websiteCurrencyDisplay: '',
   websiteSsl: '',
   storesCardNumbers: '',
   thirdPartyCardApps: '',
