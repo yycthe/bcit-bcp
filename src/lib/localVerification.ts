@@ -1,5 +1,5 @@
 import type { MerchantData } from '@/src/types';
-import { decidePersonaInvites } from '@/src/lib/onboardingWorkflow';
+import { evaluateStrictPersonaTriggers } from '@/src/lib/intake/personaTriggerRules';
 import {
   MERCHANT_DOCUMENT_LABELS,
   getExpectedMerchantDocumentKeys,
@@ -48,7 +48,7 @@ export function runLocalVerificationCheck(merchantData: MerchantData): Verificat
   const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(merchantData.industry);
   const isInternational = merchantData.country !== 'CA' && merchantData.country !== 'US' && merchantData.country !== '';
   const isHighVolume = merchantData.monthlyVolume === '>250k' || merchantData.monthlyVolume === '50k-250k';
-  const personaDecision = decidePersonaInvites(merchantData);
+  const personaDecision = evaluateStrictPersonaTriggers(merchantData);
 
   if (!hasText(merchantData.legalName) || !hasText(merchantData.website) || !hasText(merchantData.legalBusinessEmail)) {
     pushUnique(issues, {
@@ -86,10 +86,10 @@ export function runLocalVerificationCheck(merchantData: MerchantData): Verificat
     });
   }
 
-  if (personaDecision.action === 'none') {
+  if (personaDecision.personaNotReady) {
     pushUnique(issues, {
       id: 'persona-routing',
-      reason: 'KYC / KYB invite routing is not ready because entity, owner, or signer information is incomplete.',
+      reason: `KYC / KYB invite routing is not ready yet. Missing: ${personaDecision.missingReadinessItems.join(', ')}.`,
       target: {
         kind: 'intake',
         questionId: 'ownershipControlForm',
@@ -102,12 +102,12 @@ export function runLocalVerificationCheck(merchantData: MerchantData): Verificat
     !hasText(merchantData.websitePrivacyPolicy) ||
     !hasText(merchantData.websiteTerms) ||
     !hasText(merchantData.websiteRefundPolicy) ||
-    !hasText(merchantData.websiteShippingPolicy) ||
-    !hasText(merchantData.websiteCurrencyDisplay)
+    !hasText(merchantData.websiteContactInfo) ||
+    !hasText(merchantData.websiteSsl)
   ) {
     pushUnique(issues, {
       id: 'website-compliance',
-      reason: 'Website compliance basics are incomplete: privacy policy, terms, refund policy, shipping policy, and currency display should be confirmed where applicable.',
+      reason: 'Website compliance basics are incomplete: privacy policy, terms, refund policy, customer-service contact info, and SSL should be confirmed where applicable.',
       target: {
         kind: 'intake',
         questionId: 'websiteComplianceForm',
@@ -124,6 +124,66 @@ export function runLocalVerificationCheck(merchantData: MerchantData): Verificat
         kind: 'intake',
         questionId: 'documentReadinessForm',
         whereLabel: 'Intake Assistant → Common intake → Document readiness',
+      },
+    });
+  }
+
+  if (personaDecision.flags.missing_core_business_registration_info) {
+    pushUnique(issues, {
+      id: 'missing-business-registration',
+      reason: 'Business registration / corporation / GST-HST information is missing from the common intake.',
+      target: {
+        kind: 'intake',
+        questionId: 'legalBusinessForm',
+        whereLabel: 'Intake Assistant → Common intake → Legal business information',
+      },
+    });
+  }
+
+  if (personaDecision.flags.insufficient_business_description) {
+    pushUnique(issues, {
+      id: 'insufficient-business-description',
+      reason: 'Business description is too short or vague for strict common intake review.',
+      target: {
+        kind: 'intake',
+        questionId: 'legalBusinessForm',
+        whereLabel: 'Intake Assistant → Common intake → Legal business information',
+      },
+    });
+  }
+
+  if (personaDecision.flags.later_clarification_required) {
+    pushUnique(issues, {
+      id: 'channel-split-clarification',
+      reason: 'The channel split (card present / e-commerce / MOTO) still needs clarification to total 100%.',
+      target: {
+        kind: 'intake',
+        questionId: 'salesProfileForm',
+        whereLabel: 'Intake Assistant → Common intake → Sales profile',
+      },
+    });
+  }
+
+  if (personaDecision.flags.website_gap) {
+    pushUnique(issues, {
+      id: 'website-gap',
+      reason: 'The business appears digital / recurring / e-commerce, but no usable website URL is on file.',
+      target: {
+        kind: 'intake',
+        questionId: 'legalBusinessForm',
+        whereLabel: 'Intake Assistant → Common intake → Legal business information',
+      },
+    });
+  }
+
+  if (personaDecision.flags.recurring_inconsistency) {
+    pushUnique(issues, {
+      id: 'recurring-inconsistency',
+      reason: 'Recurring billing was marked No, but recurring transaction percentage is greater than zero.',
+      target: {
+        kind: 'intake',
+        questionId: 'salesProfileForm',
+        whereLabel: 'Intake Assistant → Common intake → Sales profile',
       },
     });
   }

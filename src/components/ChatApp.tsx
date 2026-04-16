@@ -20,6 +20,11 @@ import {
   normalizeProcessorFit,
 } from '@/src/lib/onboardingWorkflow';
 import {
+  COMMON_INTAKE_FORM_SEQUENCE,
+  getCommonIntakeFormSpec,
+} from '@/src/lib/intake/commonQuestionBank';
+import { evaluateStrictPersonaTriggers } from '@/src/lib/intake/personaTriggerRules';
+import {
   MERCHANT_FILE_QUESTION_KEYS,
   MERCHANT_DOCUMENT_LABELS,
   getMissingDocumentKeys,
@@ -158,13 +163,7 @@ function buildQuestionSequence(data: MerchantData): QuestionId[] {
     'industry',
     'monthlyVolume',
     'monthlyTransactions',
-    'legalBusinessForm',
-    'businessModelForm',
-    'ownershipControlForm',
-    'processingHistoryForm',
-    'salesProfileForm',
-    'websiteComplianceForm',
-    'documentReadinessForm',
+    ...COMMON_INTAKE_FORM_SEQUENCE,
     'personaDecisionGate',
     ...uploadSequence,
   ];
@@ -172,6 +171,27 @@ function buildQuestionSequence(data: MerchantData): QuestionId[] {
   sequence.push('done');
   return sequence;
 }
+
+const COMMON_FORM_QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = Object.fromEntries(
+  COMMON_INTAKE_FORM_SEQUENCE.map((formId) => {
+    const spec = getCommonIntakeFormSpec(formId);
+    return [
+      formId,
+      {
+        id: formId,
+        text: spec.title,
+        type: 'form',
+        fields: spec.fields.map((field) => ({
+          id: field.id,
+          label: `Q${field.questionNumber}. ${field.label}`,
+          type: field.type,
+          required: field.required,
+          options: field.options,
+        })),
+      } satisfies QuestionDef,
+    ];
+  })
+) as Partial<Record<QuestionId, QuestionDef>>;
 
 function getQuestionStage(questionId: QuestionId): string {
   if (
@@ -643,192 +663,7 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
       { label: '> 10,000', value: '>10k' },
     ]
   },
-  legalBusinessForm: {
-    id: 'legalBusinessForm',
-    text: 'Legal business information',
-    type: 'form',
-    fields: [
-      { id: 'legalName', label: 'What is your legal business name?', type: 'text' },
-      { id: 'dbaName', label: 'Do you operate under a DBA, operating name, or trade name? If yes, what is it?', type: 'text', required: false },
-      { id: 'taxId', label: 'What is your Tax ID / EIN / Business Number?', type: 'text' },
-      { id: 'businessRegistrationNumber', label: 'What is your business registration / corporation / GST/HST number?', type: 'text' },
-      { id: 'establishedDate', label: 'When was the business established or incorporated?', type: 'text' },
-      { id: 'timeInBusiness', label: 'How long has the business been operating?', type: 'text' },
-      { id: 'staffSize', label: 'How many employees do you have?', type: 'text' },
-      { id: 'legalBusinessAddress', label: 'What is your legal business address?', type: 'text' },
-      { id: 'operatingAddressDifferent', label: 'Is your operating address different from your legal address?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'operatingAddress', label: 'If yes, what is your operating address?', type: 'text', required: false },
-      { id: 'businessPhone', label: 'What is your business phone number?', type: 'text' },
-      { id: 'legalBusinessEmail', label: 'What is your legal business email?', type: 'email' },
-      { id: 'website', label: 'What is your website URL?', type: 'text' },
-    ],
-  },
-  businessModelForm: {
-    id: 'businessModelForm',
-    text: 'Business model',
-    type: 'form',
-    fields: [
-      { id: 'productsServices', label: 'What products or services do you sell?', type: 'textarea' },
-      { id: 'businessDescription', label: 'Please describe your business in detail.', type: 'textarea' },
-      {
-        id: 'businessCategory',
-        label: 'What type of merchant are you?',
-        type: 'select',
-        options: [
-          { label: 'Retail', value: 'Retail' },
-          { label: 'E-commerce', value: 'E-commerce' },
-          { label: 'MOTO / keyed', value: 'MOTO / keyed' },
-          { label: 'Restaurant', value: 'Restaurant' },
-          { label: 'Service', value: 'Service' },
-          { label: 'Other', value: 'Other' },
-        ],
-      },
-      {
-        id: 'goodsOrServicesType',
-        label: 'Do you sell physical goods, digital goods, services, or a mix?',
-        type: 'select',
-        options: [
-          { label: 'Physical goods', value: 'Physical goods' },
-          { label: 'Digital goods', value: 'Digital goods' },
-          { label: 'Services', value: 'Services' },
-          { label: 'Mix', value: 'Mix' },
-        ],
-      },
-      {
-        id: 'customerType',
-        label: 'Are your customers B2B, B2C, or both?',
-        type: 'select',
-        options: [
-          { label: 'B2B', value: 'B2B' },
-          { label: 'B2C', value: 'B2C' },
-          { label: 'Both', value: 'Both' },
-        ],
-      },
-      { id: 'advancePayment', label: 'Is payment taken in advance before fulfillment?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'advancePaymentPercent', label: 'If yes, approximately what percentage of sales is paid in advance?', type: 'select', required: false, options: PERCENT_RANGE_OPTIONS },
-      { id: 'recurringBilling', label: 'Do you offer recurring billing or subscriptions?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'recurringSalesPercent', label: 'If yes, approximately what percentage of sales is recurring?', type: 'select', required: false, options: PERCENT_RANGE_OPTIONS },
-      {
-        id: 'fulfillmentTimeline',
-        label: 'How long does it usually take customers to receive the product or service?',
-        type: 'select',
-        options: [
-          { label: 'Same day / instant', value: 'Same day / instant' },
-          { label: '1-3 days', value: '1-3 days' },
-          { label: '4-7 days', value: '4-7 days' },
-          { label: '8-30 days', value: '8-30 days' },
-          { label: 'Over 30 days', value: 'Over 30 days' },
-        ],
-      },
-    ],
-  },
-  ownershipControlForm: {
-    id: 'ownershipControlForm',
-    text: 'Ownership and control',
-    type: 'form',
-    fields: [
-      { id: 'beneficialOwners', label: 'Please list all beneficial owners with 25% or more ownership: full legal name, ownership %, title / role, email.', type: 'textarea' },
-      { id: 'parentOwned', label: 'Is the business owned by another company or parent entity?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'parentCompanyName', label: 'If yes, what is the parent company name?', type: 'text', required: false },
-      { id: 'nonOwnerController', label: 'Is there anyone with significant managerial control who is not an owner?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'nonOwnerControllerDetails', label: 'If yes, provide their name, title, and email.', type: 'text', required: false },
-      { id: 'authorizedSignerName', label: 'Who is the authorized signer for this application? Name.', type: 'text' },
-      { id: 'authorizedSignerTitle', label: 'Authorized signer title.', type: 'text' },
-      { id: 'authorizedSignerEmail', label: 'Authorized signer email.', type: 'email' },
-      { id: 'signerIsOwner', label: 'Is the signer one of the owners listed above?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'ownerName', label: 'Primary owner / principal full legal name.', type: 'text' },
-      { id: 'ownerEmail', label: 'Primary owner email.', type: 'email' },
-      { id: 'ownerRole', label: 'Primary owner role / title.', type: 'text' },
-      { id: 'ownershipPercentage', label: 'Primary owner ownership percentage.', type: 'number' },
-      { id: 'ownerCountryOfResidence', label: 'Primary owner country of residence.', type: 'text' },
-      { id: 'bankName', label: 'What bank do you use for business deposits?', type: 'text' },
-      { id: 'accountHolderName', label: 'Account holder name on the bank account.', type: 'text' },
-      { id: 'settlementCurrency', label: 'What settlement currency do you need?', type: 'text' },
-    ],
-  },
-  processingHistoryForm: {
-    id: 'processingHistoryForm',
-    text: 'Processing history',
-    type: 'form',
-    fields: [
-      { id: 'currentlyProcessesCards', label: 'Do you currently process card payments?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'currentOrPreviousProcessor', label: 'Who is your current or previous processor?', type: 'text', required: false },
-      { id: 'processorExitReason', label: 'Why are you leaving your current / previous processor?', type: 'textarea', required: false },
-      { id: 'priorTermination', label: 'Has the business or any owner ever had a merchant account or processing agreement terminated?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'priorTerminationExplanation', label: 'If yes, please explain.', type: 'textarea', required: false },
-      { id: 'bankruptcyHistory', label: 'Has the business or any owner ever filed for bankruptcy?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'bankruptcyExplanation', label: 'If yes, please explain.', type: 'textarea', required: false },
-      { id: 'riskProgramHistory', label: 'Has the business or any owner ever been identified in a Visa / Mastercard risk program?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'riskProgramExplanation', label: 'If yes, please explain.', type: 'textarea', required: false },
-    ],
-  },
-  salesProfileForm: {
-    id: 'salesProfileForm',
-    text: 'Sales profile',
-    type: 'form',
-    fields: [
-      { id: 'avgTicketSize', label: 'What is your average transaction amount?', type: 'number' },
-      { id: 'highestTicketAmount', label: 'What is your highest transaction amount?', type: 'number' },
-      { id: 'transactionChannelSplit', label: 'What percentage of your transactions are card present, e-commerce, and MOTO / keyed?', type: 'text' },
-      {
-        id: 'paymentTypesWanted',
-        label: 'Which payment types do you want to accept?',
-        type: 'select',
-        options: [
-          { label: 'Visa / Mastercard only', value: 'Visa / Mastercard' },
-          { label: 'Visa / Mastercard / Amex', value: 'Visa / Mastercard / Amex' },
-          { label: 'Cards + Interac', value: 'Cards + Interac' },
-          { label: 'Cards + ACH / bank debit', value: 'Cards + ACH / bank debit' },
-          { label: 'Full mix', value: 'Visa / Mastercard / Amex / Interac / ACH' },
-        ],
-      },
-      { id: 'recurringTransactionsPercent', label: 'What percentage of your transactions are recurring?', type: 'select', options: PERCENT_RANGE_OPTIONS },
-      { id: 'foreignCardsPercent', label: 'What percentage of your transactions involve foreign cards?', type: 'select', options: PERCENT_RANGE_OPTIONS },
-      {
-        id: 'processingCurrencies',
-        label: 'Which processing currencies do you need?',
-        type: 'select',
-        options: [
-          { label: 'CAD only', value: 'CAD' },
-          { label: 'USD only', value: 'USD' },
-          { label: 'CAD + USD', value: 'CAD, USD' },
-          { label: 'CAD + USD + other', value: 'CAD, USD, other' },
-        ],
-      },
-    ],
-  },
-  websiteComplianceForm: {
-    id: 'websiteComplianceForm',
-    text: 'Website / security / PCI basics',
-    type: 'form',
-    fields: [
-      { id: 'websitePrivacyPolicy', label: 'Does your website include a Privacy Policy?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'websiteTerms', label: 'Does your website include Terms and Conditions / Terms of Use?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'websiteRefundPolicy', label: 'Does your website include a Return / Refund Policy?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'websiteShippingPolicy', label: 'Does your website include a Shipping Policy if applicable?', type: 'select', options: YES_NO_NA_OPTIONS },
-      { id: 'websiteContactInfo', label: 'Does your website include customer service contact information?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'websiteCurrencyDisplay', label: 'Does your website display transaction currency if applicable?', type: 'select', options: YES_NO_NA_OPTIONS },
-      { id: 'websiteSsl', label: 'Is your payment page encrypted with SSL or better?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'storesCardNumbers', label: 'Do you store credit card numbers?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'thirdPartyCardApps', label: 'Do you use any third-party applications to process, transmit, or store cardholder data? If yes, list them.', type: 'textarea', required: false },
-      { id: 'dataBreachHistory', label: 'Have you experienced a data breach or card data compromise in the past?', type: 'select', options: YES_NO_OPTIONS },
-      { id: 'regulatedBusiness', label: 'Is your business an MSB or another regulated business?', type: 'select', options: YES_NO_OPTIONS },
-    ],
-  },
-  documentReadinessForm: {
-    id: 'documentReadinessForm',
-    text: 'Document readiness',
-    type: 'form',
-    fields: [
-      { id: 'canProvideRegistration', label: 'Can you provide Business Registration or Articles of Incorporation?', type: 'select', options: READINESS_OPTIONS },
-      { id: 'canProvideVoidCheque', label: 'Can you provide a Void Cheque or Bank Letter?', type: 'select', options: READINESS_OPTIONS },
-      { id: 'canProvideBankStatements', label: 'Can you provide 2 recent official business bank statements?', type: 'select', options: READINESS_OPTIONS },
-      { id: 'canProvideProofOfAddress', label: 'Can you provide proof of business address?', type: 'select', options: READINESS_OPTIONS },
-      { id: 'canProvideProofOfOwnership', label: 'Can you provide proof of ownership?', type: 'select', options: READINESS_OPTIONS },
-      { id: 'canProvideOwnerIds', label: 'Can each 25%+ owner and signer provide government-issued photo ID?', type: 'select', options: READINESS_OPTIONS },
-      { id: 'canProvideProcessingStatements', label: 'If you currently process payments, can you provide 3 recent processing statements?', type: 'select', options: READINESS_OPTIONS },
-    ],
-  },
+  ...COMMON_FORM_QUESTIONS,
   personaDecisionGate: {
     id: 'personaDecisionGate',
     text: 'Persona trigger decision',
@@ -1284,13 +1119,26 @@ export function ChatApp({
     if (!qDef) return null;
 
     if (qDef.type === 'system') {
-      const decision = decidePersonaInvites(data);
+      const decision = evaluateStrictPersonaTriggers(data);
       return (
         <div className="border-t bg-white px-4 py-5">
           <div className="mx-auto max-w-2xl rounded-2xl border border-violet-200 bg-violet-50/70 p-5 shadow-sm">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-700">Phase 2</p>
-            <h3 className="mt-1 text-base font-semibold text-slate-950">KYC / KYB invite decision</h3>
+            <h3 className="mt-1 text-base font-semibold text-slate-950">Strict KYC / KYB invite decision</h3>
             <p className="mt-2 text-sm leading-6 text-slate-700">{decision.summary}</p>
+            {decision.missingReadinessItems.length > 0 ? (
+              <div className="mt-3 rounded-lg border border-violet-200 bg-white p-3 text-sm text-slate-700">
+                <p className="font-medium text-slate-900">Still missing before full Persona readiness</p>
+                <ul className="mt-2 space-y-1">
+                  {decision.missingReadinessItems.map((item) => (
+                    <li key={item} className="flex gap-2">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {decision.reasons.length > 0 ? (
               <ul className="mt-3 space-y-2 text-sm text-slate-600">
                 {decision.reasons.map((reason) => (
@@ -1302,7 +1150,7 @@ export function ChatApp({
               </ul>
             ) : null}
             <div className="mt-4 rounded-lg border border-violet-200 bg-white p-3 text-xs leading-5 text-slate-600">
-              No external Persona API is called here. The plan is attached to the merchant profile, and actual verification results can be added before AI underwriting when available.
+              This routing follows the strict common-question rules. No external Persona API is called here; the plan is attached to the merchant profile, and actual verification results can be added before AI underwriting when available.
             </div>
             <div className="mt-4 flex justify-end">
               <Button

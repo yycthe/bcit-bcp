@@ -1,6 +1,9 @@
 import type { MerchantData } from '@/src/types';
-
-export type PersonaInviteAction = 'none' | 'kyb' | 'kyc' | 'both' | 'kyb_first';
+import {
+  buildStrictPersonaSummary,
+  evaluateStrictPersonaTriggers,
+  type PersonaInviteAction,
+} from '@/src/lib/intake/personaTriggerRules';
 export type ProcessorFit = 'Nuvei' | 'Payroc / Peoples' | 'Chase';
 
 export type PersonaInviteDecision = {
@@ -20,109 +23,34 @@ type ProcessorQuestionSet = {
   }>;
 };
 
-const BUSINESS_ENTITY_TYPES = new Set([
-  'corporation',
-  'partnership',
-  'llc',
-  'limited_liability',
-  'non_profit',
-  'government',
-  'parent_owned',
-]);
-
 function hasText(value: unknown): boolean {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function yes(value: unknown): boolean {
-  return typeof value === 'string' && ['yes', 'y', 'true'].includes(value.trim().toLowerCase());
-}
-
-function splitPeople(value: string): string[] {
-  return value
-    .split(/\n|;/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function namedRecipient(name: string, email?: string): string {
-  return hasText(email) ? `${name} <${email}>` : name;
-}
-
 export function decidePersonaInvites(data: MerchantData): PersonaInviteDecision {
-  const reasons: string[] = [];
+  const decision = evaluateStrictPersonaTriggers(data);
   const kybRecipients: string[] = [];
-  const kycRecipients: string[] = [];
-  const holdKycRecipients: string[] = [];
-  const isBusinessEntity = BUSINESS_ENTITY_TYPES.has(data.businessType);
-  const ownerRows = splitPeople(data.beneficialOwners);
-  const signerName = data.authorizedSignerName || data.ownerName;
-  const signerEmail = data.authorizedSignerEmail || data.ownerEmail;
-  const hasSigner = hasText(signerName);
-  const hasOwnerList = ownerRows.length > 0 || hasText(data.ownerName);
-  const ownershipAmbiguous =
-    yes(data.parentOwned) ||
-    data.businessType === 'parent_owned' ||
-    !hasOwnerList ||
-    (yes(data.nonOwnerController) && !hasText(data.nonOwnerControllerDetails));
-
-  if (hasText(data.legalName) && isBusinessEntity) {
-    kybRecipients.push(namedRecipient(signerName || data.legalName, signerEmail || data.legalBusinessEmail || data.generalEmail));
-    reasons.push('Business identity is present and the entity type expects KYB verification.');
+  const signerName = data.authorizedSignerName || data.legalName || 'Business';
+  const signerEmail = data.authorizedSignerEmail || data.legalBusinessEmail || data.generalEmail;
+  if (decision.kybRequired) {
+    kybRecipients.push(hasText(signerEmail) ? `${signerName} <${signerEmail}>` : signerName);
   }
-
-  if (ownerRows.length > 0) {
-    kycRecipients.push(...ownerRows);
-    reasons.push('One or more 25%+ beneficial owners were supplied.');
-  } else if (hasText(data.ownerName)) {
-    kycRecipients.push(namedRecipient(data.ownerName, data.ownerEmail));
-    reasons.push('Primary owner details were supplied.');
-  }
-
-  if (hasSigner) {
-    const signerRecipient = namedRecipient(signerName, signerEmail);
-    if (!kycRecipients.includes(signerRecipient)) {
-      kycRecipients.push(signerRecipient);
-    }
-    reasons.push('Authorized signer is identified and should be validated.');
-  }
-
-  if (yes(data.nonOwnerController) && hasText(data.nonOwnerControllerDetails)) {
-    kycRecipients.push(data.nonOwnerControllerDetails);
-    reasons.push('A non-owner controller was disclosed.');
-  }
-
-  if (ownershipAmbiguous && kybRecipients.length > 0) {
-    holdKycRecipients.push(...kycRecipients);
-    kycRecipients.length = 0;
-    reasons.push('Ownership or control is ambiguous, so KYB should settle first before final KYC targeting.');
-  }
-
-  let action: PersonaInviteAction = 'none';
-  if (kybRecipients.length > 0 && kycRecipients.length > 0) action = 'both';
-  else if (kybRecipients.length > 0 && holdKycRecipients.length > 0) action = 'kyb_first';
-  else if (kybRecipients.length > 0) action = 'kyb';
-  else if (kycRecipients.length > 0) action = 'kyc';
-
-  const summary =
-    action === 'none'
-      ? 'Persona trigger decision: hold. Need legal business identity, signer, or owner/control details before sending invites.'
-      : `Persona trigger decision: ${action.replace('_', ' ')}. KYB recipients: ${kybRecipients.join(', ') || 'none'}. KYC recipients: ${kycRecipients.join(', ') || 'none'}. Held KYC: ${holdKycRecipients.join(', ') || 'none'}.`;
 
   return {
-    action,
+    action: decision.action,
     kybRecipients,
-    kycRecipients,
-    holdKycRecipients,
-    reasons,
-    summary,
+    kycRecipients: decision.kycRecipients.map((recipient) =>
+      hasText(recipient.email) ? `${recipient.name} <${recipient.email}>` : recipient.name
+    ),
+    holdKycRecipients: decision.heldKycRecipients.map((recipient) =>
+      hasText(recipient.email) ? `${recipient.name} <${recipient.email}>` : recipient.name
+    ),
+    reasons: decision.reasons,
+    summary: decision.summary,
   };
 }
 
 export function buildPersonaSummary(data: MerchantData): string {
-  const decision = decidePersonaInvites(data);
-  const reasonText = decision.reasons.length > 0 ? ` Reasons: ${decision.reasons.join(' ')}` : '';
-
   const resultParts: string[] = [];
   if (hasText(data.personaKybStatus)) resultParts.push(`KYB status: ${data.personaKybStatus}`);
   if (hasText(data.personaKycStatuses)) resultParts.push(`KYC status per person: ${data.personaKycStatuses}`);
@@ -133,7 +61,7 @@ export function buildPersonaSummary(data: MerchantData): string {
       ? ` Persona results: ${resultParts.join('. ')}.`
       : ' Verification result capture: KYB/KYC passed, failed, pending, mismatches, and incomplete checks should be attached here when available.';
 
-  return `${decision.summary}${reasonText}${resultsText}`;
+  return `${buildStrictPersonaSummary(data)}${resultsText}`;
 }
 
 export function buildWebsiteSignalSummary(data: MerchantData): string {
