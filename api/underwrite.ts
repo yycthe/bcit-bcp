@@ -656,11 +656,13 @@ function normalizeStringArray(value: unknown): string[] {
 
 function normalizeStringRecord(value: unknown): Record<string, string> {
   if (!isPlainObject(value)) return {};
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([, entryValue]) => typeof entryValue === 'string' && entryValue.trim().length > 0)
-      .map(([entryKey, entryValue]) => [entryKey, entryValue.trim()])
-  );
+  const entries: Array<[string, string]> = [];
+  for (const [entryKey, entryValue] of Object.entries(value)) {
+    if (typeof entryValue === 'string' && entryValue.trim()) {
+      entries.push([entryKey, entryValue.trim()]);
+    }
+  }
+  return Object.fromEntries(entries);
 }
 
 function normalizeRiskScore(value: unknown): number {
@@ -1582,12 +1584,17 @@ function extractResponseText(payload: XaiResponsesCreateResponse): string {
       texts.push(item.text);
     }
 
-    if (typeof item.content === 'string' && item.content.trim()) {
-      texts.push(item.content);
+    const content = item.content;
+    if (typeof content === 'string' && content.trim()) {
+      texts.push(content);
       continue;
     }
 
-    for (const part of item.content ?? []) {
+    if (!Array.isArray(content)) {
+      continue;
+    }
+
+    for (const part of content) {
       if (typeof part.text === 'string' && part.text.trim()) {
         texts.push(part.text);
       }
