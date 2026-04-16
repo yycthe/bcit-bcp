@@ -4,7 +4,7 @@ import { ApplicationStatus, MerchantData, FileData } from '@/src/types';
 import { getMerchantDocumentChecklist, buildDefaultDocumentReminder } from '@/src/lib/documentChecklist';
 import { runLocalVerificationCheck, type VerificationCheckResult, type VerificationIssue } from '@/src/lib/localVerification';
 import { buildPersonaSummary } from '@/src/lib/onboardingWorkflow';
-import { ShieldCheck, LayoutDashboard, Search, Filter, Clock, CheckCircle2, FileWarning, Send, Trash2 } from 'lucide-react';
+import { ShieldCheck, LayoutDashboard, Search, Filter, Clock, CheckCircle2, FileWarning, Send, Trash2, Building } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { Badge } from '@/src/components/ui/badge';
 import { Button } from '@/src/components/ui/button';
@@ -299,6 +299,55 @@ export function AdminPortal({
                   </CardContent>
                 </Card>
               </div>
+            )}
+
+            {appStatus !== 'draft' && (
+              <Card className="mt-6 border-emerald-200 bg-emerald-50/40">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Building className="w-4 h-4 text-emerald-600" />
+                    Processor assignment
+                  </CardTitle>
+                  <p className="text-xs text-slate-600 font-normal mt-1">
+                    Select or override the payment processor for this merchant. The AI may suggest one, but the final choice is yours.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-end gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Payment processor</label>
+                      <select
+                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                        value={merchantData.matchedProcessor || ''}
+                        onChange={(e) => {
+                          const processor = e.target.value;
+                          setMerchantData((prev) => ({ ...prev, matchedProcessor: processor || undefined }));
+                          if (processor) {
+                            toast.success(`Processor set to ${processor}`);
+                          } else {
+                            toast.message('Processor assignment cleared');
+                          }
+                        }}
+                      >
+                        <option value="">— not assigned —</option>
+                        <option value="Nuvei">Nuvei</option>
+                        <option value="Payroc">Payroc / Peoples</option>
+                        <option value="Chase">Chase</option>
+                      </select>
+                    </div>
+                    {aiRecommendation?.recommendedProcessor && (
+                      <p className="text-xs text-slate-500 pb-2">
+                        AI suggested: <strong>{aiRecommendation.recommendedProcessor}</strong>
+                      </p>
+                    )}
+                  </div>
+                  {merchantData.matchedProcessor && (
+                    <p className="text-xs text-emerald-700 font-medium">
+                      Current assignment: {merchantData.matchedProcessor}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
             )}
 
             {appStatus !== 'draft' && (

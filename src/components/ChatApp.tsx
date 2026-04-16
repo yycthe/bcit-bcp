@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Badge } from '@/src/components/ui/badge';
 import { toast } from 'sonner';
 import { MerchantData, FileData } from '@/src/types';
-import { getFallbackUnderwriting } from '@/src/lib/underwritingFallback';
 import { runLocalVerificationCheck } from '@/src/lib/localVerification';
 import { prepareFileForUpload } from '@/src/lib/uploadPreparation';
 import {
@@ -110,63 +109,6 @@ function isFileUploadAnswer(value: unknown): value is FileData {
   return typeof o.data === 'string' && o.data.startsWith('data:') && typeof o.name === 'string';
 }
 
-const VERCEL_FUNCTION_BODY_SOFT_LIMIT_BYTES = 4_000_000;
-
-function estimateJsonBytes(value: unknown): number {
-  const json = JSON.stringify(value);
-  if (typeof TextEncoder !== 'undefined') {
-    return new TextEncoder().encode(json).length;
-  }
-  return json.length;
-}
-
-function stripBinaryFromFile(file: FileData | null): FileData | null {
-  if (!file) return null;
-  return {
-    ...file,
-    data: '',
-  };
-}
-
-function buildMetadataOnlyMerchantData(data: MerchantData): MerchantData {
-  return {
-    ...data,
-    financials: stripBinaryFromFile(data.financials),
-    idUpload: stripBinaryFromFile(data.idUpload),
-    enhancedVerification: stripBinaryFromFile(data.enhancedVerification),
-    proofOfAddress: stripBinaryFromFile(data.proofOfAddress),
-    registrationCertificate: stripBinaryFromFile(data.registrationCertificate),
-    taxDocument: stripBinaryFromFile(data.taxDocument),
-    proofOfFunds: stripBinaryFromFile(data.proofOfFunds),
-    bankStatement: stripBinaryFromFile(data.bankStatement),
-    complianceDocument: stripBinaryFromFile(data.complianceDocument),
-    additionalDocuments: data.additionalDocuments?.map((file) => ({
-      ...file,
-      data: '',
-    })),
-  };
-}
-
-function prepareUnderwritePayload(data: MerchantData): {
-  body: string;
-  metadataOnly: boolean;
-} {
-  const fullPayload = { merchantData: data };
-  if (estimateJsonBytes(fullPayload) <= VERCEL_FUNCTION_BODY_SOFT_LIMIT_BYTES) {
-    return {
-      body: JSON.stringify(fullPayload),
-      metadataOnly: false,
-    };
-  }
-
-  return {
-    body: JSON.stringify({
-      merchantData: buildMetadataOnlyMerchantData(data),
-    }),
-    metadataOnly: true,
-  };
-}
-
 const INDUSTRY_LABELS: Record<string, string> = {
   retail: 'Retail / E-commerce',
   software: 'Software / SaaS',
@@ -189,10 +131,6 @@ function getIndustryLabel(industry: string): string {
 
 function getVolumeLabel(volume: string): string {
   return VOLUME_LABELS[volume] || 'your expected volume';
-}
-
-function hasCompletedProcessorFollowUp(data: MerchantData): boolean {
-  return Boolean(data.processorSpecificAnswers?.trim() && data.processorReadyPackageSummary?.trim());
 }
 
 function buildQuestionSequence(data: MerchantData): QuestionId[] {
@@ -230,10 +168,6 @@ function buildQuestionSequence(data: MerchantData): QuestionId[] {
     'personaDecisionGate',
     ...uploadSequence,
   ];
-
-  if (data.matchedProcessor && !hasCompletedProcessorFollowUp(data)) {
-    sequence.push('processorSpecificFollowUpForm');
-  }
 
   sequence.push('done');
   return sequence;
@@ -1247,45 +1181,9 @@ export function ChatApp({
     }
   };
 
-  const openProcessorFollowUp = (finalData: MerchantData, recommendation: any) => {
-    const matchedProcessor = normalizeProcessorFit(recommendation?.recommendedProcessor);
-    const previousProcessor = finalData.matchedProcessor ? normalizeProcessorFit(finalData.matchedProcessor) : '';
-    const processorChanged = Boolean(previousProcessor && previousProcessor !== matchedProcessor);
-    const enrichedData = {
-      ...finalData,
-      matchedProcessor,
-      processorSpecificAnswers: processorChanged ? '' : finalData.processorSpecificAnswers,
-      processorReadyPackageSummary: '',
-      personaInvitePlan: finalData.personaInvitePlan || buildPersonaSummary(finalData),
-      personaVerificationSummary:
-        finalData.personaVerificationSummary ||
-        'Pending. Attach KYB/KYC pass, fail, pending, mismatch, and incomplete verification results when available.',
-      websiteReviewSummary: finalData.websiteReviewSummary || buildWebsiteSignalSummary(finalData),
-    };
-
-    setData(enrichedData);
-    setAiRecommendation({
-      ...recommendation,
-      recommendedProcessor: matchedProcessor,
-    });
-    setIsFinished(false);
-    setCurrentQuestion('processorSpecificFollowUpForm');
-    setMessages(prev => [
-      ...prev,
-      {
-        id: Math.random().toString(36).substring(2, 15),
-        sender: 'system',
-        content: `AI matched this case to ${matchedProcessor}. Final step: answer only the ${matchedProcessor}-specific follow-up items so the package is processor-ready.`,
-        isActionable: true,
-        questionId: 'processorSpecificFollowUpForm',
-      }
-    ]);
-  };
-
-  const finishFlow = async (finalData: MerchantData) => {
-    setIsTyping(true);
+  const finishFlow = (finalData: MerchantData) => {
     const localVerification = runLocalVerificationCheck(finalData);
-    const analysisData: MerchantData = {
+    const enrichedData: MerchantData = {
       ...finalData,
       personaInvitePlan: finalData.personaInvitePlan || buildPersonaSummary(finalData),
       personaVerificationSummary:
@@ -1295,133 +1193,19 @@ export function ChatApp({
           : `Local KYC / KYB result: pending follow-up. ${localVerification.summary}`),
       websiteReviewSummary: finalData.websiteReviewSummary || buildWebsiteSignalSummary(finalData),
     };
-    setData(analysisData);
-    
-    // Contextual finishing message
-    const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(analysisData.industry);
-    const finishMessage = isHighRisk 
-      ? "All done! Given your industry, I'm performing enhanced due diligence. This may take 20-30 seconds..."
-      : "All done! I'm analyzing your profile and documents now. This might take 10-20 seconds...";
-    
+    setData(enrichedData);
+
     setMessages(prev => [
       ...prev,
       {
         id: Math.random().toString(36).substring(2, 15),
         sender: 'system',
-        content: finishMessage,
+        content: 'Common intake complete! Please review your application on the next page, then submit for underwriting.',
       }
     ]);
 
-    try {
-      let prepared = prepareUnderwritePayload(analysisData);
-      if (prepared.metadataOnly) {
-        toast.warning('Large upload detected. Sending document metadata only so the Vercel API request stays under platform limits.');
-      }
-
-      let apiRes = await fetch('/api/underwrite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: prepared.body,
-      });
-
-      if (apiRes.status === 413 && !prepared.metadataOnly) {
-        prepared = prepareUnderwritePayload(buildMetadataOnlyMerchantData(analysisData));
-        toast.warning('Uploaded files were too large for a Vercel Function request. Retrying without binary document contents.');
-        apiRes = await fetch('/api/underwrite', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: prepared.body,
-        });
-      }
-
-      const rawText = await apiRes.text();
-      let payload = {} as {
-        riskScore?: number;
-        riskCategory?: string;
-        riskFactors?: string[];
-        recommendedProcessor?: string;
-        reason?: string;
-        merchantSummary?: string;
-        missingItems?: string[];
-        readinessDecision?: string;
-        processorFitSuggestion?: string;
-        websiteReviewSummary?: string;
-        documentSummary?: string;
-        verificationStatus?: string;
-        verificationNotes?: string[];
-        error?: string;
-      };
-      if (rawText) {
-        try {
-          payload = JSON.parse(rawText) as typeof payload;
-        } catch {
-          payload = {};
-        }
-      }
-
-      if (!apiRes.ok) {
-        const detail = payload.error || rawText.trim().slice(0, 400);
-        throw new Error(detail || `Request failed (${apiRes.status})`);
-      }
-
-      const vStatus = payload.verificationStatus;
-      const verificationStatus =
-        vStatus === 'Verified' || vStatus === 'Discrepancies Found' || vStatus === 'Unverified'
-          ? vStatus
-          : 'Unverified';
-      const verificationNotes = Array.isArray(payload.verificationNotes)
-        ? payload.verificationNotes.filter((n): n is string => typeof n === 'string')
-        : [];
-
-      const recommendation = {
-        riskScore: payload.riskScore ?? 50,
-        riskCategory: (payload.riskCategory as 'Low' | 'Medium' | 'High') || 'Medium',
-        riskFactors: payload.riskFactors ?? [],
-        recommendedProcessor: payload.recommendedProcessor ?? '',
-        reason: payload.reason ?? '',
-        merchantSummary: payload.merchantSummary ?? '',
-        missingItems: payload.missingItems ?? [],
-        readinessDecision: payload.readinessDecision ?? '',
-        processorFitSuggestion: payload.processorFitSuggestion ?? '',
-        websiteReviewSummary: payload.websiteReviewSummary ?? '',
-        documentSummary: payload.documentSummary ?? '',
-        verificationStatus,
-        verificationNotes,
-      };
-      const recommendedProcessor = normalizeProcessorFit(recommendation.recommendedProcessor);
-      const followUpAlreadyPackaged =
-        hasCompletedProcessorFollowUp(analysisData) &&
-        normalizeProcessorFit(analysisData.matchedProcessor) === recommendedProcessor;
-
-      if (!followUpAlreadyPackaged) {
-        openProcessorFollowUp(analysisData, recommendation);
-        return;
-      }
-      setAiRecommendation(recommendation);
-      setIsFinished(true);
-      onFinish();
-    } catch (error) {
-      console.error('[v0] AI Analysis failed:', error);
-      const errMsg = error instanceof Error ? error.message : String(error);
-      console.error('[v0] Error details:', errMsg);
-      const short = errMsg.length > 140 ? `${errMsg.slice(0, 140)}…` : errMsg;
-      toast.error(`Analysis failed: ${short} (using fallback)`);
-      const fallback = getFallbackUnderwriting(analysisData);
-      const fallbackProcessor = normalizeProcessorFit(fallback.recommendedProcessor);
-      const followUpAlreadyPackaged =
-        hasCompletedProcessorFollowUp(analysisData) &&
-        normalizeProcessorFit(analysisData.matchedProcessor) === fallbackProcessor;
-
-      if (!followUpAlreadyPackaged) {
-        openProcessorFollowUp(analysisData, fallback);
-        return;
-      }
-      setAiRecommendation(fallback);
-      setIsFinished(true);
-      onFinish();
-    } finally {
-      setIsTyping(false);
-    }
+    setIsFinished(true);
+    onFinish();
   };
 
   const handleGuidedContinue = () => {

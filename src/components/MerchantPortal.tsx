@@ -13,6 +13,7 @@ import {
 } from '@/src/lib/documentChecklist';
 import { getFallbackUnderwriting } from '@/src/lib/underwritingFallback';
 import { prepareFileForUpload } from '@/src/lib/uploadPreparation';
+import { normalizeProcessorFit, buildProcessorReadyPackageSummary, getProcessorQuestionPrompt } from '@/src/lib/onboardingWorkflow';
 import type { VerificationIssue } from '@/src/lib/localVerification';
 import { MessageSquare, FileCheck, Activity, PenTool, RotateCcw, Zap, X, AlertTriangle, ShieldAlert, Upload } from 'lucide-react';
 import { Button } from '@/src/components/ui/button';
@@ -171,6 +172,39 @@ export function MerchantPortal({
     setIsFinished(true);
     setCurrentView('status');
   };
+
+  // Trigger AI underwriting on submission (Phase 2 — runs async)
+  const triggerAiUnderwriting = useCallback(async (data: MerchantData) => {
+    const toastId = toast.loading('AI underwriting is analyzing your application...');
+    try {
+      const res = await fetch('/api/underwrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ merchantData: data }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const result = await res.json();
+      setAiRecommendation(result);
+      // Auto-set matched processor from AI recommendation
+      const processor = normalizeProcessorFit(result.recommendedProcessor);
+      setMerchantData(prev => ({ ...prev, matchedProcessor: processor }));
+      toast.success(`AI analysis complete — matched to ${processor}`, { id: toastId });
+    } catch {
+      const fallback = getFallbackUnderwriting(data);
+      setAiRecommendation(fallback);
+      const processor = normalizeProcessorFit(fallback.recommendedProcessor);
+      setMerchantData(prev => ({ ...prev, matchedProcessor: processor }));
+      toast.warning('xAI unavailable — used rule-based fallback', { id: toastId });
+    }
+  }, [setAiRecommendation, setMerchantData]);
+
+  // Open processor follow-up questions from Status page
+  const openProcessorFollowUp = useCallback(() => {
+    setGuidedTourOrder(null);
+    setIsFinished(false);
+    setEditSection('processorSpecificFollowUpForm');
+    setCurrentView('intake');
+  }, []);
 
   const resetDemoIntake = () => {
     setMerchantData(demoMerchantData);
@@ -383,6 +417,7 @@ export function MerchantPortal({
               onSubmit={() => {
                 setAppStatus('under_review');
                 setCurrentView('status');
+                triggerAiUnderwriting(merchantData);
               }}
             />
           </div>
@@ -397,6 +432,9 @@ export function MerchantPortal({
               missingDocuments={missingDocumentItems.map(({ key, label }) => ({ key, label }))}
               onStartGuidedUpload={appStatus === 'under_review' ? startGuidedUpload : undefined}
               onInlineUpload={appStatus === 'under_review' ? handleInlineUpload : undefined}
+              matchedProcessor={merchantData.matchedProcessor || ''}
+              processorFollowUpComplete={Boolean(merchantData.processorSpecificAnswers?.trim())}
+              onOpenProcessorFollowUp={appStatus === 'under_review' ? openProcessorFollowUp : undefined}
             />
           </div>
         )}

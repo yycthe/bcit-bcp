@@ -3,7 +3,7 @@ import { ApplicationStatus } from '@/src/types';
 import type { MerchantDocumentKey } from '@/src/lib/documentChecklist';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
-import { CheckCircle2, Clock, FileText, ArrowRight, AlertTriangle, X, Upload } from 'lucide-react';
+import { CheckCircle2, Clock, FileText, ArrowRight, AlertTriangle, X, Upload, Building } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export type MissingDocumentItem = { key: MerchantDocumentKey; label: string };
@@ -16,6 +16,9 @@ interface Props {
   missingDocuments?: MissingDocumentItem[];
   onStartGuidedUpload?: (startKey: MerchantDocumentKey) => void;
   onInlineUpload?: (key: MerchantDocumentKey) => void;
+  matchedProcessor?: string;
+  processorFollowUpComplete?: boolean;
+  onOpenProcessorFollowUp?: () => void;
 }
 
 function MissingDocsList({
@@ -56,6 +59,9 @@ export function MerchantStatus({
   missingDocuments = [],
   onStartGuidedUpload,
   onInlineUpload,
+  matchedProcessor,
+  processorFollowUpComplete,
+  onOpenProcessorFollowUp,
 }: Props) {
   const steps = [
     {
@@ -118,6 +124,41 @@ export function MerchantStatus({
           <p className="mt-1 text-slate-600">Upload the following documents directly:</p>
           <MissingDocsList items={missingDocuments} onUpload={onInlineUpload} />
         </div>
+      )}
+
+      {status === 'under_review' && matchedProcessor && onOpenProcessorFollowUp && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
+          <div className={`rounded-lg border p-4 text-left ${
+            processorFollowUpComplete
+              ? 'border-green-200 bg-green-50'
+              : 'border-blue-200 bg-blue-50'
+          }`}>
+            <div className="flex items-start gap-3">
+              <Building className={`w-5 h-5 shrink-0 mt-0.5 ${processorFollowUpComplete ? 'text-green-600' : 'text-blue-600'}`} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-slate-900">
+                  Processor matched: {matchedProcessor}
+                </p>
+                {processorFollowUpComplete ? (
+                  <p className="text-sm text-green-800 mt-1">Processor-specific follow-up complete.</p>
+                ) : (
+                  <>
+                    <p className="text-sm text-blue-900 mt-1">
+                      Please complete the {matchedProcessor}-specific follow-up questions so your package is processor-ready.
+                    </p>
+                    <Button
+                      type="button"
+                      className="mt-3 bg-blue-700 hover:bg-blue-800 gap-2"
+                      onClick={onOpenProcessorFollowUp}
+                    >
+                      Complete Follow-up <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </motion.div>
       )}
 
       <div className="space-y-8 relative before:absolute before:inset-0 before:ml-6 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
