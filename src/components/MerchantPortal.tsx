@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ChatApp } from './ChatApp';
 import { ReviewPage } from './ReviewPage';
 import { MerchantStatus } from './MerchantStatus';
@@ -12,8 +12,9 @@ import {
   type MerchantDocumentKey,
 } from '@/src/lib/documentChecklist';
 import { getFallbackUnderwriting } from '@/src/lib/underwritingFallback';
+import { prepareFileForUpload } from '@/src/lib/uploadPreparation';
 import type { VerificationIssue } from '@/src/lib/localVerification';
-import { MessageSquare, FileCheck, Activity, PenTool, RotateCcw, Zap, X, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { MessageSquare, FileCheck, Activity, PenTool, RotateCcw, Zap, X, AlertTriangle, ShieldAlert, Upload } from 'lucide-react';
 import { Button } from '@/src/components/ui/button';
 import { toast } from 'sonner';
 
@@ -53,6 +54,35 @@ export function MerchantPortal({
   const [editSection, setEditSection] = useState<string | null>(null);
   const [intakeSessionKey, setIntakeSessionKey] = useState(0);
   const [guidedTourOrder, setGuidedTourOrder] = useState<MerchantDocumentKey[] | null>(null);
+
+  // Inline document upload from Status page
+  const inlineUploadRef = useRef<HTMLInputElement>(null);
+  const inlineUploadTargetRef = useRef<MerchantDocumentKey | null>(null);
+
+  const handleInlineUpload = useCallback((key: MerchantDocumentKey) => {
+    inlineUploadTargetRef.current = key;
+    inlineUploadRef.current?.click();
+  }, []);
+
+  const onInlineFileSelected = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const key = inlineUploadTargetRef.current;
+    if (!file || !key) return;
+    try {
+      const prepared = await prepareFileForUpload(file);
+      prepared.notices.forEach((n) => {
+        if (n.level === 'warning') toast.warning(n.message);
+        else toast.success(n.message);
+      });
+      setMerchantData({ ...merchantData, [key]: { ...prepared.fileData, uploadDate: new Date().toISOString(), documentType: key } });
+      toast.success(`${file.name} uploaded`, { description: `Saved to ${getMissingDocumentLabels({ ...merchantData, [key]: prepared.fileData as any } as any).length === 0 ? 'profile — all documents complete!' : 'profile.'}` });
+    } catch (err) {
+      toast.error('Upload failed', { description: err instanceof Error ? err.message : 'Unknown error' });
+    } finally {
+      e.target.value = '';
+      inlineUploadTargetRef.current = null;
+    }
+  }, [merchantData, setMerchantData]);
 
   // Auto-navigate based on status changes
   useEffect(() => {
@@ -215,6 +245,9 @@ export function MerchantPortal({
         </div>
       </div>
 
+      {/* Hidden file input for inline uploads */}
+      <input ref={inlineUploadRef} type="file" className="hidden" accept="image/*,.pdf" onChange={onInlineFileSelected} />
+
       {/* Main Content Area */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         {appStatus === 'under_review' && (
@@ -241,14 +274,28 @@ export function MerchantPortal({
                       <span className="text-slate-800">{item.reason}</span>
                       <p className="text-xs text-slate-500 mt-1">{item.target.whereLabel}</p>
                     </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="shrink-0 bg-rose-700 hover:bg-rose-800"
-                      onClick={() => openRemediationTarget(item)}
-                    >
-                      Fix this
-                    </Button>
+                    <div className="flex gap-2 shrink-0">
+                      {item.target.kind === 'document' && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="bg-blue-700 hover:bg-blue-800 gap-1"
+                          onClick={() => handleInlineUpload(item.target.documentKey)}
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          Upload
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                        onClick={() => openRemediationTarget(item)}
+                      >
+                        Fix in Intake
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -266,17 +313,17 @@ export function MerchantPortal({
               <p className="text-sm text-amber-950 mt-1 whitespace-pre-wrap">{merchantNoticeFromAdmin}</p>
               {missingDocs.length > 0 && (
                 <>
-                  <p className="text-xs text-amber-900/80 mt-2">Still expected for your profile:</p>
+                  <p className="text-xs text-amber-900/80 mt-2">Still expected for your profile — click Upload to add directly:</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {missingDocumentItems.map(({ key, label }) => (
                       <Button
                         key={key}
                         type="button"
-                        variant="secondary"
                         size="sm"
-                        className="h-auto min-h-8 whitespace-normal py-1.5 text-left text-xs text-amber-950"
-                        onClick={() => startGuidedUpload(key)}
+                        className="h-auto min-h-8 whitespace-normal py-1.5 text-left text-xs bg-blue-700 hover:bg-blue-800 text-white gap-1"
+                        onClick={() => handleInlineUpload(key)}
                       >
+                        <Upload className="w-3 h-3 shrink-0" />
                         {label}
                       </Button>
                     ))}
@@ -337,6 +384,7 @@ export function MerchantPortal({
               onDismissNotice={onDismissMerchantNotice}
               missingDocuments={missingDocumentItems.map(({ key, label }) => ({ key, label }))}
               onStartGuidedUpload={appStatus === 'under_review' ? startGuidedUpload : undefined}
+              onInlineUpload={appStatus === 'under_review' ? handleInlineUpload : undefined}
             />
           </div>
         )}
