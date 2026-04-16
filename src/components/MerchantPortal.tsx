@@ -137,24 +137,6 @@ export function MerchantPortal({
     setCurrentView('intake');
   };
 
-  const openRemediationTarget = (item: VerificationIssue) => {
-    const { target } = item;
-    setGuidedTourOrder(null);
-    setIsFinished(false);
-    if (target.kind === 'document') {
-      const order = getMissingDocumentKeys(merchantData);
-      if (order.includes(target.documentKey)) {
-        setGuidedTourOrder(order);
-      }
-      setEditSection(target.documentKey);
-      setCurrentView('intake');
-      toast.message('Open the correct step', { description: target.whereLabel });
-      return;
-    }
-    setEditSection(target.questionId);
-    setCurrentView('intake');
-    toast.message('Update your application', { description: target.whereLabel });
-  };
 
   const endGuidedUpload = () => {
     setGuidedTourOrder(null);
@@ -306,8 +288,8 @@ export function MerchantPortal({
                       <span className="text-slate-800">{item.reason}</span>
                       <p className="text-xs text-slate-500 mt-1">{item.target.whereLabel}</p>
                     </div>
-                    <div className="flex gap-2 shrink-0">
-                      {item.target.kind === 'document' && (
+                    {item.target.kind === 'document' && (
+                      <div className="flex gap-2 shrink-0">
                         <Button
                           type="button"
                           size="sm"
@@ -317,17 +299,8 @@ export function MerchantPortal({
                           <Upload className="w-3.5 h-3.5" />
                           Upload
                         </Button>
-                      )}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="border-rose-300 text-rose-700 hover:bg-rose-50"
-                        onClick={() => openRemediationTarget(item)}
-                      >
-                        Fix in Intake
-                      </Button>
-                    </div>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
