@@ -9,7 +9,7 @@ import type { VerificationIssue } from './lib/localVerification';
 import { ArrowRightLeft, FlaskConical } from 'lucide-react';
 
 export default function App() {
-  const showAiTestLab = import.meta.env.DEV || import.meta.env.VITE_ENABLE_AI_TEST_LAB === 'true';
+  const showAiTestLab = true;
   const [viewMode, setViewMode] = useState<'merchant' | 'admin' | 'ai-lab'>('merchant');
   const [appStatus, setAppStatus] = useState<ApplicationStatus>('draft');
   const [merchantData, setMerchantData] = useState<MerchantData>(demoMerchantData);
