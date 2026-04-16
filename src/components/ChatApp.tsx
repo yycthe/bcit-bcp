@@ -954,7 +954,6 @@ type Message = {
 interface ChatAppProps {
   data: MerchantData;
   setData: React.Dispatch<React.SetStateAction<MerchantData>>;
-  setAiRecommendation: (rec: any) => void;
   setIsFinished: (val: boolean) => void;
   isFinished: boolean;
   documents: FileData[];
@@ -971,7 +970,6 @@ interface ChatAppProps {
 export function ChatApp({
   data,
   setData,
-  setAiRecommendation,
   setIsFinished,
   isFinished,
   documents,

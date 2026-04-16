@@ -11,7 +11,7 @@ import {
   getMissingDocumentKeys,
   type MerchantDocumentKey,
 } from '@/src/lib/documentChecklist';
-import { getFallbackUnderwriting } from '@/src/lib/underwritingFallback';
+import { getFallbackUnderwriting, type UnderwritingDisplayResult } from '@/src/lib/underwritingFallback';
 import { prepareFileForUpload } from '@/src/lib/uploadPreparation';
 import { normalizeProcessorFit, buildProcessorReadyPackageSummary, getProcessorQuestionPrompt } from '@/src/lib/onboardingWorkflow';
 import type { VerificationIssue } from '@/src/lib/localVerification';
@@ -28,8 +28,8 @@ interface Props {
   setMerchantData: (data: MerchantData) => void;
   documents: FileData[];
   setDocuments: (docs: FileData[]) => void;
-  aiRecommendation: any;
-  setAiRecommendation: (rec: any) => void;
+  underwritingResult: UnderwritingDisplayResult | null;
+  setUnderwritingResult: (res: UnderwritingDisplayResult | null) => void;
   merchantNoticeFromAdmin: string;
   onDismissMerchantNotice: () => void;
   verificationIssues: VerificationIssue[];
@@ -43,8 +43,8 @@ export function MerchantPortal({
   setMerchantData,
   documents,
   setDocuments,
-  aiRecommendation,
-  setAiRecommendation,
+  underwritingResult,
+  setUnderwritingResult,
   merchantNoticeFromAdmin,
   onDismissMerchantNotice,
   verificationIssues,
@@ -173,30 +173,16 @@ export function MerchantPortal({
     setCurrentView('status');
   };
 
-  // Trigger AI underwriting on submission (Phase 2 — runs async)
-  const triggerAiUnderwriting = useCallback(async (data: MerchantData) => {
-    const toastId = toast.loading('AI underwriting is analyzing your application...');
-    try {
-      const res = await fetch('/api/underwrite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ merchantData: data }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const result = await res.json();
-      setAiRecommendation(result);
-      // Auto-set matched processor from AI recommendation
-      const processor = normalizeProcessorFit(result.recommendedProcessor);
-      setMerchantData(prev => ({ ...prev, matchedProcessor: processor }));
-      toast.success(`AI analysis complete — matched to ${processor}`, { id: toastId });
-    } catch {
-      const fallback = getFallbackUnderwriting(data);
-      setAiRecommendation(fallback);
-      const processor = normalizeProcessorFit(fallback.recommendedProcessor);
-      setMerchantData(prev => ({ ...prev, matchedProcessor: processor }));
-      toast.warning('xAI unavailable — used rule-based fallback', { id: toastId });
-    }
-  }, [setAiRecommendation, setMerchantData]);
+  // Run rule-based underwriting on submission
+  const runUnderwritingOnSubmit = useCallback((data: MerchantData) => {
+    const result = getFallbackUnderwriting(data);
+    setUnderwritingResult(result);
+    const processor = normalizeProcessorFit(result.recommendedProcessor);
+    setMerchantData({ ...data, matchedProcessor: processor });
+    toast.success(`Underwriting complete — matched to ${processor}`, {
+      description: `Risk score: ${result.riskScore}/100`,
+    });
+  }, [setUnderwritingResult, setMerchantData]);
 
   // Open processor follow-up questions from Status page
   const openProcessorFollowUp = useCallback(() => {
@@ -209,7 +195,7 @@ export function MerchantPortal({
   const resetDemoIntake = () => {
     setMerchantData(demoMerchantData);
     setDocuments([]);
-    setAiRecommendation(null);
+    setUnderwritingResult(null);
     setAppStatus('draft');
     setIsFinished(false);
     setEditSection(null);
@@ -224,12 +210,12 @@ export function MerchantPortal({
   const jumpToReviewWithDemo = () => {
     setMerchantData({ ...demoMerchantData });
     setDocuments([]);
-    setAiRecommendation(getFallbackUnderwriting(demoMerchantData));
+    setUnderwritingResult(null);
     setGuidedTourOrder(null);
     onClearVerificationIssues();
     setIsFinished(true);
     setCurrentView('review');
-    toast.message('Demo shortcut', { description: 'Review opened with sample data and placeholder underwriting.' });
+    toast.message('Demo shortcut', { description: 'Review opened with sample data.' });
   };
 
   return (
@@ -244,9 +230,9 @@ export function MerchantPortal({
             const Icon = item.icon;
             const isActive = currentView === item.id;
             const status = getStatusBadge(item.id);
-            
+
             // Disable navigation to future steps
-            const isDisabled = 
+            const isDisabled =
               (item.id === 'review' && !isFinished) ||
               (item.id === 'status' && appStatus === 'draft') ||
               (item.id === 'agreement' && appStatus !== 'approved' && appStatus !== 'signed');
@@ -257,8 +243,8 @@ export function MerchantPortal({
                 onClick={() => !isDisabled && setCurrentView(item.id as MerchantView)}
                 disabled={isDisabled}
                 className={`w-full flex items-center justify-between p-3 rounded-lg text-left transition-colors ${
-                  isActive ? 'bg-blue-50 text-blue-700' : 
-                  isDisabled ? 'opacity-50 cursor-not-allowed text-slate-400' : 
+                  isActive ? 'bg-blue-50 text-blue-700' :
+                  isDisabled ? 'opacity-50 cursor-not-allowed text-slate-400' :
                   'hover:bg-slate-100 text-slate-700'
                 }`}
               >
@@ -391,7 +377,6 @@ export function MerchantPortal({
               setData={setMerchantData}
               documents={documents}
               setDocuments={setDocuments}
-              setAiRecommendation={setAiRecommendation}
               isFinished={isFinished}
               setIsFinished={setIsFinished}
               editSection={editSection}
@@ -405,9 +390,9 @@ export function MerchantPortal({
         )}
         {currentView === 'review' && (
           <div className="h-0 min-h-0 flex-1 min-w-0 overflow-x-hidden overflow-y-auto overscroll-y-contain">
-            <ReviewPage 
-              data={merchantData} 
-              documents={documents} 
+            <ReviewPage
+              data={merchantData}
+              documents={documents}
               setCurrentView={(view) => setCurrentView(view as MerchantView)}
               onEdit={(section) => {
                 setEditSection(section);
@@ -417,7 +402,7 @@ export function MerchantPortal({
               onSubmit={() => {
                 setAppStatus('under_review');
                 setCurrentView('status');
-                triggerAiUnderwriting(merchantData);
+                runUnderwritingOnSubmit(merchantData);
               }}
             />
           </div>
@@ -440,8 +425,8 @@ export function MerchantPortal({
         )}
         {currentView === 'agreement' && (
           <div className="h-0 min-h-0 flex-1 min-w-0 overflow-x-hidden overflow-y-auto overscroll-y-contain">
-            <AgreementPage 
-              data={merchantData} 
+            <AgreementPage
+              data={merchantData}
               onSign={() => setAppStatus('signed')}
             />
           </div>

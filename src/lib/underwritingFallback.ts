@@ -65,7 +65,7 @@ function countUploadedFiles(finalData: MerchantData): number {
   return slotCount + additionalCount;
 }
 
-/** Rule-based fallback when the server-side AI underwriting call fails or is unavailable. */
+/** Rule-based underwriting engine: scores risk, recommends processor, and audits documents. */
 export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDisplayResult {
   const checklist = getMerchantDocumentChecklist(finalData);
   const missingDocuments = getMissingDocumentLabels(finalData);
@@ -205,7 +205,7 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
 
   const topFactors = riskFactors.slice(0, 4);
   const reasonParts = [
-    `Local fallback scored this merchant at ${riskScore}/100 using intake answers, document coverage, and KYC / KYB review issues.`,
+    `Rule-based engine scored this merchant at ${riskScore}/100 using intake answers, document coverage, and KYC / KYB review issues.`,
     `Persona routing: ${personaDecision.action.replace('_', ' ')}.`,
   ];
   if (topFactors.length > 0) {
@@ -215,7 +215,7 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
     reasonParts.push(`Missing required uploads: ${missingDocuments.join(', ')}.`);
   }
   if (hasMitigatingCompliance && (isHighRiskIndustry || hasCrossBorderExposure)) {
-    reasonParts.push('Compliance and regulatory details were provided and slightly reduced the fallback score.');
+    reasonParts.push('Compliance and regulatory details were provided and slightly reduced the risk score.');
   }
   const reason = reasonParts.join(' ');
   const missingItems = [
@@ -240,7 +240,7 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
     `Nuvei: good fit for standard Canadian merchant setup when KYC/KYB and documents are clean.`,
     `Payroc / Peoples: stronger fit when risk, adverse history, or manual underwriting follow-up is present.`,
     `Chase: stronger fit for larger, card-not-present, advance-payment, or structured ownership cases.`,
-    `Selected fallback recommendation: ${recommendedProcessor}.`,
+    `Selected recommendation: ${recommendedProcessor}.`,
   ].join('\n');
   const websiteReviewSummary = buildWebsiteSignalSummary(finalData);
 
@@ -248,10 +248,10 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
   const presentDocs = checklist.filter((item) => item.present).length;
   const documentSummary =
     uploadedFiles === 0
-      ? 'No supporting documents were uploaded, so the fallback review relied on intake answers only.'
+      ? 'No supporting documents were uploaded, so the review relied on intake answers only.'
       : missingDocuments.length > 0
-        ? `Fallback review found ${uploadedFiles} uploaded file(s). Required checklist coverage is ${presentDocs}/${expectedDocs}; still missing: ${missingDocuments.join(', ')}.`
-        : `Fallback review found ${uploadedFiles} uploaded file(s), and all ${expectedDocs} expected checklist item(s) are currently on file.`;
+        ? `Review found ${uploadedFiles} uploaded file(s). Required checklist coverage is ${presentDocs}/${expectedDocs}; still missing: ${missingDocuments.join(', ')}.`
+        : `Review found ${uploadedFiles} uploaded file(s), and all ${expectedDocs} expected checklist item(s) are currently on file.`;
 
   const verificationStatus: 'Verified' | 'Discrepancies Found' | 'Unverified' =
     uploadedFiles === 0

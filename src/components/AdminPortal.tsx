@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { AIUnderwriting } from './AIUnderwriting';
 import { ApplicationStatus, MerchantData, FileData } from '@/src/types';
 import { getMerchantDocumentChecklist, buildDefaultDocumentReminder } from '@/src/lib/documentChecklist';
 import { runLocalVerificationCheck, type VerificationCheckResult, type VerificationIssue } from '@/src/lib/localVerification';
 import { buildPersonaSummary } from '@/src/lib/onboardingWorkflow';
-import { ShieldCheck, LayoutDashboard, Search, Filter, Clock, CheckCircle2, FileWarning, Send, Trash2, Building } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
+import { getFallbackUnderwriting, type UnderwritingDisplayResult } from '@/src/lib/underwritingFallback';
+import { FormattedSummary } from '@/src/components/ui/formatted-summary';
+import { ShieldCheck, LayoutDashboard, Search, Filter, Clock, CheckCircle2, FileWarning, Send, Trash2, Building, Activity, AlertCircle, Globe, FileText, FileSearch, ShieldAlert, RefreshCcw } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/src/components/ui/card';
 import { Badge } from '@/src/components/ui/badge';
 import { Button } from '@/src/components/ui/button';
 import { toast } from 'sonner';
+import { motion } from 'motion/react';
 
 interface Props {
   appStatus: ApplicationStatus;
@@ -16,8 +18,8 @@ interface Props {
   merchantData: MerchantData;
   setMerchantData: React.Dispatch<React.SetStateAction<MerchantData>>;
   documents: FileData[];
-  aiRecommendation: any;
-  setAiRecommendation: (rec: any) => void;
+  underwritingResult: UnderwritingDisplayResult | null;
+  setUnderwritingResult: (res: UnderwritingDisplayResult | null) => void;
   merchantNoticeFromAdmin: string;
   setMerchantNoticeFromAdmin: (msg: string) => void;
   setVerificationIssues: (items: VerificationIssue[]) => void;
@@ -29,8 +31,8 @@ export function AdminPortal({
   merchantData,
   setMerchantData,
   documents,
-  aiRecommendation,
-  setAiRecommendation,
+  underwritingResult,
+  setUnderwritingResult,
   merchantNoticeFromAdmin,
   setMerchantNoticeFromAdmin,
   setVerificationIssues,
@@ -89,6 +91,14 @@ export function AdminPortal({
     }
   };
 
+  const runRuleBasedUnderwriting = () => {
+    const result = getFallbackUnderwriting(merchantData);
+    setUnderwritingResult(result);
+    toast.success('Rule-based underwriting complete', {
+      description: `Risk score: ${result.riskScore}/100 — ${result.riskCategory}`,
+    });
+  };
+
   const savePersonaResults = () => {
     if (personaKybStatus && !['passed', 'failed', 'pending'].includes(personaKybStatus)) {
       toast.error('KYB status must be passed, failed, or pending.');
@@ -114,6 +124,34 @@ export function AdminPortal({
     toast.success('Persona verification results saved to merchant profile');
   };
 
+  const getScoreColor = (score: number) => {
+    if (score <= 33) return 'bg-green-500';
+    if (score <= 66) return 'bg-yellow-500';
+    return 'bg-red-500';
+  };
+
+  const getScoreTextColor = (score: number) => {
+    if (score <= 33) return 'text-green-700';
+    if (score <= 66) return 'text-yellow-700';
+    return 'text-red-700';
+  };
+
+  const getAvgTicketSize = (vol: string, trans: string) => {
+    if (!vol || !trans) return 'Unknown';
+    let volMid = 0;
+    if (vol === '<10k') volMid = 5000;
+    else if (vol === '10k-50k') volMid = 30000;
+    else if (vol === '50k-250k') volMid = 150000;
+    else if (vol === '>250k') volMid = 500000;
+    let transMid = 0;
+    if (trans === '<100') transMid = 50;
+    else if (trans === '100-1k') transMid = 500;
+    else if (trans === '1k-10k') transMid = 5000;
+    else if (trans === '>10k') transMid = 25000;
+    if (volMid && transMid) return `$${(volMid / transMid).toFixed(2)}`;
+    return 'Unknown';
+  };
+
   return (
     <div className="flex h-[calc(100vh-4rem)] bg-slate-50">
       {/* Sidebar */}
@@ -131,17 +169,17 @@ export function AdminPortal({
             <LayoutDashboard className={`w-5 h-5 ${currentView === 'queue' ? 'text-emerald-500' : 'text-slate-500'}`} />
             Application Queue
           </button>
-          
+
           <button
             onClick={() => setCurrentView('underwriting')}
             disabled={appStatus === 'draft'}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-              currentView === 'underwriting' ? 'bg-slate-800 text-white' : 
+              currentView === 'underwriting' ? 'bg-slate-800 text-white' :
               appStatus === 'draft' ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-800 hover:text-white'
             }`}
           >
             <ShieldCheck className={`w-5 h-5 ${currentView === 'underwriting' ? 'text-emerald-500' : 'text-slate-500'}`} />
-            AI Underwriting
+            Underwriting Report
           </button>
         </nav>
       </div>
@@ -202,16 +240,16 @@ export function AdminPortal({
                       </td>
                       <td className="px-6 py-4 capitalize">{merchantData.industry?.replace('_', ' ')}</td>
                       <td className="px-6 py-4">
-                        {aiRecommendation ? (
+                        {underwritingResult ? (
                           <div className="flex items-center gap-2">
                             <div className={`w-2 h-2 rounded-full ${
-                              aiRecommendation.riskScore <= 33 ? 'bg-green-500' :
-                              aiRecommendation.riskScore <= 66 ? 'bg-yellow-500' : 'bg-red-500'
+                              underwritingResult.riskScore <= 33 ? 'bg-green-500' :
+                              underwritingResult.riskScore <= 66 ? 'bg-yellow-500' : 'bg-red-500'
                             }`} />
-                            <span className="font-medium">{aiRecommendation.riskScore}/100</span>
+                            <span className="font-medium">{underwritingResult.riskScore}/100</span>
                           </div>
                         ) : (
-                          <span className="text-slate-400 italic">Pending AI</span>
+                          <span className="text-slate-400 italic">Not scored</span>
                         )}
                       </td>
                       <td className="px-6 py-4">
@@ -220,11 +258,11 @@ export function AdminPortal({
                         {appStatus === 'signed' && <Badge variant="success" className="bg-blue-100 text-blue-800 hover:bg-blue-100 flex w-fit items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Signed</Badge>}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button 
+                        <button
                           onClick={() => setCurrentView('underwriting')}
                           className="text-emerald-600 hover:text-emerald-700 font-medium text-sm"
                         >
-                          Review AI Report
+                          Review Report
                         </button>
                       </td>
                     </tr>
@@ -309,7 +347,7 @@ export function AdminPortal({
                     Processor assignment
                   </CardTitle>
                   <p className="text-xs text-slate-600 font-normal mt-1">
-                    Select or override the payment processor for this merchant. The AI may suggest one, but the final choice is yours.
+                    Select or override the payment processor for this merchant.
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -335,9 +373,9 @@ export function AdminPortal({
                         <option value="Chase">Chase</option>
                       </select>
                     </div>
-                    {aiRecommendation?.recommendedProcessor && (
+                    {underwritingResult?.recommendedProcessor && (
                       <p className="text-xs text-slate-500 pb-2">
-                        AI suggested: <strong>{aiRecommendation.recommendedProcessor}</strong>
+                        Rule-based suggestion: <strong>{underwritingResult.recommendedProcessor}</strong>
                       </p>
                     )}
                   </div>
@@ -355,10 +393,10 @@ export function AdminPortal({
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-blue-600" />
-                    Phase 3 — Persona verification results
+                    Persona verification results
                   </CardTitle>
                   <p className="text-xs text-slate-600 font-normal mt-1">
-                    Record the structured results returned by Persona after KYB / KYC invites are completed. These are attached to the merchant profile and included in AI underwriting.
+                    Record the structured results returned by Persona after KYB / KYC invites are completed.
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -418,7 +456,7 @@ export function AdminPortal({
                     KYC / KYB review
                   </CardTitle>
                   <p className="text-xs text-slate-600 font-normal mt-1">
-                    Runs a local KYC / KYB-style rules pass across the intake answers and uploaded documents. No external API is involved.
+                    Runs a local KYC / KYB-style rules pass across the intake answers and uploaded documents.
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -491,15 +529,264 @@ export function AdminPortal({
         )}
 
         {currentView === 'underwriting' && (
-          <AIUnderwriting
-            data={merchantData}
-            aiRecommendation={aiRecommendation}
-            setAiRecommendation={setAiRecommendation}
-            documents={documents}
-            documentChecklist={docChecklist}
-            isApproved={appStatus === 'approved' || appStatus === 'signed'}
-            onApprove={() => setAppStatus('approved')}
-          />
+          <div className="p-8 max-w-5xl mx-auto overflow-y-auto h-full space-y-8">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">Underwriting Report</h1>
+                <p className="text-slate-500">Rule-based risk analysis and processor recommendation.</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={runRuleBasedUnderwriting}
+              >
+                <RefreshCcw className="w-4 h-4" />
+                {underwritingResult ? 'Re-analyze' : 'Run Analysis'}
+              </Button>
+            </div>
+
+            {!underwritingResult ? (
+              <div className="flex flex-col items-center justify-center h-64 text-center">
+                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                  <Activity className="w-8 h-8 text-slate-400" />
+                </div>
+                <h2 className="text-xl font-semibold text-slate-800 mb-2">No Underwriting Data Yet</h2>
+                <p className="text-slate-500 max-w-md mb-4">
+                  Click "Run Analysis" above to generate a rule-based underwriting report from the merchant's intake data.
+                </p>
+                <Button onClick={runRuleBasedUnderwriting} className="gap-2">
+                  <Activity className="w-4 h-4" /> Run Analysis
+                </Button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Left Column: Risk & Recommendation */}
+                <div className="lg:col-span-2 space-y-6">
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+                    <Card className="border-primary shadow-md overflow-hidden">
+                      <div className="bg-slate-50 border-b p-6">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Recommended Processor</h3>
+                            <div className="flex items-center gap-3">
+                              {underwritingResult.recommendedProcessor === 'Nuvei' && <Building className="w-6 h-6 text-blue-500" />}
+                              {underwritingResult.recommendedProcessor === 'Payroc / Peoples' && <ShieldCheck className="w-6 h-6 text-emerald-600" />}
+                              {underwritingResult.recommendedProcessor === 'Chase' && <Globe className="w-6 h-6 text-sky-600" />}
+                              <span className="text-2xl font-bold text-slate-900">{underwritingResult.recommendedProcessor}</span>
+                            </div>
+                          </div>
+                          <Badge variant="success" className="px-3 py-1 text-sm">Rule-Based Match</Badge>
+                        </div>
+                        <FormattedSummary text={underwritingResult.reason} emptyText="No recommendation reason." />
+                      </div>
+
+                      <CardContent className="p-6">
+                        <div className="mb-8">
+                          <div className="flex justify-between items-end mb-2">
+                            <h4 className="font-semibold text-slate-900 flex items-center gap-2">
+                              <Activity className="w-5 h-5 text-slate-400" />
+                              Overall Risk Score
+                            </h4>
+                            <div className="text-right">
+                              <span className={`font-bold text-3xl ${getScoreTextColor(underwritingResult.riskScore)}`}>
+                                {underwritingResult.riskScore}
+                              </span>
+                              <span className="text-slate-400 text-sm">/100</span>
+                            </div>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-3 mb-2 overflow-hidden">
+                            <div className={`h-full ${getScoreColor(underwritingResult.riskScore)} transition-all duration-1000`} style={{ width: `${underwritingResult.riskScore}%` }}></div>
+                          </div>
+                          <div className="flex justify-between text-xs text-slate-500 font-medium">
+                            <span>Low Risk (0-33)</span>
+                            <span>Medium Risk (34-66)</span>
+                            <span>High Risk (67-100)</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <h4 className="font-semibold text-slate-900 border-b pb-2">Key Risk Factors Identified</h4>
+                          <ul className="space-y-3">
+                            {underwritingResult.riskFactors.map((factor, idx) => (
+                              <li key={idx} className="flex items-start gap-3 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                <AlertCircle className={`w-5 h-5 shrink-0 mt-0.5 ${
+                                  underwritingResult.riskCategory === 'High' ? 'text-red-500' : underwritingResult.riskCategory === 'Medium' ? 'text-yellow-500' : 'text-blue-500'
+                                }`} />
+                                <span className="text-sm text-slate-700 leading-relaxed">{factor}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        <div className="space-y-4 mt-8">
+                          <h4 className="font-semibold text-slate-900 border-b pb-2">Readiness Decision</h4>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <p className="text-sm font-semibold text-slate-900">{underwritingResult.readinessDecision || 'No readiness decision.'}</p>
+                            {underwritingResult.missingItems.length > 0 ? (
+                              <ul className="mt-3 space-y-2">
+                                {underwritingResult.missingItems.map((item, idx) => (
+                                  <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
+                                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                                    <span>{item}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="mt-2 text-sm text-slate-500">No blocking missing items.</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-4 mt-8">
+                          <h4 className="font-semibold text-slate-900 border-b pb-2 flex items-center gap-2">
+                            <FileSearch className="w-5 h-5 text-slate-500" />
+                            Cross-Reference Audit
+                          </h4>
+                          <div className={`p-4 rounded-lg border flex items-start gap-3 ${
+                            underwritingResult.verificationStatus === 'Verified' ? 'bg-green-50 border-green-200 text-green-800' :
+                            underwritingResult.verificationStatus === 'Discrepancies Found' ? 'bg-red-50 border-red-200 text-red-800' :
+                            'bg-slate-50 border-slate-200 text-slate-800'
+                          }`}>
+                            {underwritingResult.verificationStatus === 'Verified' ? <ShieldCheck className="w-6 h-6 shrink-0 mt-0.5 text-green-600" /> :
+                             underwritingResult.verificationStatus === 'Discrepancies Found' ? <ShieldAlert className="w-6 h-6 shrink-0 mt-0.5 text-red-600" /> :
+                             <AlertCircle className="w-6 h-6 shrink-0 mt-0.5 text-slate-500" />}
+                            <div className="w-full">
+                              <h5 className="font-bold uppercase tracking-wider text-xs mb-2">{underwritingResult.verificationStatus}</h5>
+                              {underwritingResult.verificationNotes.length > 0 ? (
+                                <ul className="space-y-2">
+                                  {underwritingResult.verificationNotes.map((note, idx) => (
+                                    <li key={idx} className="text-sm flex items-start gap-2">
+                                      <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-current shrink-0"></span>
+                                      <span className="leading-relaxed">{note}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="text-sm opacity-80">No specific audit notes.</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                      <CardFooter className="bg-slate-50 border-t p-6">
+                        <Button
+                          className={`w-full h-12 text-lg ${appStatus === 'approved' || appStatus === 'signed' ? 'bg-green-600 hover:bg-green-700' : ''}`}
+                          disabled={appStatus === 'approved' || appStatus === 'signed'}
+                          onClick={() => {
+                            toast.success(`Application approved — routed to ${underwritingResult.recommendedProcessor}`);
+                            setAppStatus('approved');
+                          }}
+                        >
+                          {appStatus === 'approved' || appStatus === 'signed'
+                            ? `Approved & Routed to ${underwritingResult.recommendedProcessor}`
+                            : `Approve & Route to ${underwritingResult.recommendedProcessor}`}
+                        </Button>
+                      </CardFooter>
+                    </Card>
+                  </motion.div>
+                </div>
+
+                {/* Right Column: Context & Documents */}
+                <div className="space-y-6">
+                  <Card>
+                    <CardHeader className="pb-3 border-b">
+                      <CardTitle className="text-base">Merchant Context</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4 space-y-3 text-sm">
+                      <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Category</span> <Badge variant={underwritingResult.riskCategory === 'Low' ? 'success' : underwritingResult.riskCategory === 'Medium' ? 'warning' : 'destructive'}>{underwritingResult.riskCategory}</Badge></div>
+                      <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Industry</span> <span className="font-medium capitalize">{merchantData.industry.replace('_', ' ')}</span></div>
+                      <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Volume</span> <span className="font-medium">{merchantData.monthlyVolume}</span></div>
+                      <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Transactions</span> <span className="font-medium">{merchantData.monthlyTransactions}</span></div>
+                      <div className="flex justify-between items-center pt-1"><span className="text-slate-500">Est. Avg Ticket</span> <span className="font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded border border-blue-100">{getAvgTicketSize(merchantData.monthlyVolume, merchantData.monthlyTransactions)}</span></div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-3 border-b">
+                      <CardTitle className="text-base">Merchant Summary</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4">
+                      <FormattedSummary text={underwritingResult.merchantSummary} emptyText="No merchant summary." />
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-violet-100 bg-violet-50/60">
+                    <CardHeader className="pb-3 border-b border-violet-100">
+                      <CardTitle className="text-base text-violet-950 flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4" />
+                        Workflow Readiness
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4 space-y-4 text-sm">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">KYC / KYB routing</p>
+                        <FormattedSummary text={merchantData.personaInvitePlan || merchantData.personaVerificationSummary} emptyText="No KYC / KYB routing plan attached." tone="slate" />
+                      </div>
+                      <div className="border-t border-violet-100 pt-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Website review signals</p>
+                        <FormattedSummary text={underwritingResult.websiteReviewSummary || merchantData.websiteReviewSummary} emptyText="No website review signals." tone="slate" />
+                      </div>
+                      <div className="border-t border-violet-100 pt-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Processor fit suggestion</p>
+                        <FormattedSummary text={underwritingResult.processorFitSuggestion} emptyText="No processor fit comparison." tone="slate" />
+                      </div>
+                      <div className="border-t border-violet-100 pt-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Processor package</p>
+                        <FormattedSummary text={merchantData.processorReadyPackageSummary || merchantData.processorSpecificAnswers} emptyText="Processor-specific follow-up not completed." tone="slate" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {docChecklist.some((d) => !d.present) && (
+                    <Card className="border-amber-200 bg-amber-50/60">
+                      <CardHeader className="pb-2 border-b border-amber-200/80">
+                        <CardTitle className="text-sm text-amber-950">Missing required uploads</CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-4">
+                        <ul className="text-xs text-amber-900 space-y-1">
+                          {docChecklist.filter((d) => !d.present).map((d) => (
+                            <li key={d.key} className="flex items-center gap-2">
+                              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                              {d.label}
+                            </li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  <Card className="bg-blue-50 border-blue-100">
+                    <CardHeader className="pb-3 border-b border-blue-100">
+                      <CardTitle className="text-base text-blue-900 flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        Document Summary
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4">
+                      <FormattedSummary text={underwritingResult.documentSummary} emptyText="No document data." tone="blue" />
+                      <div className="mt-4 pt-4 border-t border-blue-200/50">
+                        <p className="text-xs font-semibold text-blue-800 uppercase tracking-wider mb-2">Files On Record</p>
+                        {documents.length > 0 ? (
+                          <ul className="space-y-2">
+                            {documents.map(doc => (
+                              <li key={doc.id} className="text-xs text-blue-700 flex items-center gap-2 truncate">
+                                <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
+                                {doc.name}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-xs text-blue-600/70">No files uploaded</p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

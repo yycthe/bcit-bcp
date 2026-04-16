@@ -2,28 +2,26 @@ import React, { useState } from 'react';
 import { Toaster } from 'sonner';
 import { MerchantPortal } from './components/MerchantPortal';
 import { AdminPortal } from './components/AdminPortal';
-import { AITestLab } from './components/AITestLab';
 import { MerchantData, FileData, ApplicationStatus } from './types';
 import { demoMerchantData } from './lib/demoMerchantData';
 import type { VerificationIssue } from './lib/localVerification';
-import { ArrowRightLeft, FlaskConical } from 'lucide-react';
+import type { UnderwritingDisplayResult } from './lib/underwritingFallback';
+import { ArrowRightLeft } from 'lucide-react';
 
 export default function App() {
-  const showAiTestLab = true;
-  const [viewMode, setViewMode] = useState<'merchant' | 'admin' | 'ai-lab'>('merchant');
+  const [viewMode, setViewMode] = useState<'merchant' | 'admin'>('merchant');
   const [appStatus, setAppStatus] = useState<ApplicationStatus>('draft');
   const [merchantData, setMerchantData] = useState<MerchantData>(demoMerchantData);
   const [documents, setDocuments] = useState<FileData[]>([]);
-  const [aiRecommendation, setAiRecommendation] = useState<any>(null);
+  const [underwritingResult, setUnderwritingResult] = useState<UnderwritingDisplayResult | null>(null);
   /** Shown to merchant while under review (set from Admin). */
   const [merchantNoticeFromAdmin, setMerchantNoticeFromAdmin] = useState('');
   const [verificationIssues, setVerificationIssues] = useState<VerificationIssue[]>([]);
-  const effectiveViewMode = !showAiTestLab && viewMode === 'ai-lab' ? 'merchant' : viewMode;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col">
       <Toaster position="top-right" />
-      
+
       {/* Top Navigation Bar */}
       <header className="bg-slate-900 text-white border-b sticky top-0 z-10 shrink-0">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -34,7 +32,7 @@ export default function App() {
             <span className="font-bold text-xl tracking-tight">BCIT BCP</span>
             <span className="ml-2 px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 text-xs font-semibold uppercase tracking-wider">Demo Env</span>
           </div>
-          
+
           <div className="flex items-center gap-2 bg-slate-800 p-1 rounded-lg">
             <button
               onClick={() => setViewMode('merchant')}
@@ -49,24 +47,12 @@ export default function App() {
             >
               Admin Portal
             </button>
-            {showAiTestLab ? (
-              <>
-                <ArrowRightLeft className="w-4 h-4 text-slate-500" />
-                <button
-                  onClick={() => setViewMode('ai-lab')}
-                  className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${effectiveViewMode === 'ai-lab' ? 'bg-amber-500 text-slate-950' : 'text-slate-300 hover:text-white'}`}
-                >
-                  <FlaskConical className="w-4 h-4" />
-                  AI Test Lab
-                </button>
-              </>
-            ) : null}
           </div>
         </div>
       </header>
 
       <main className="flex-1 overflow-hidden">
-        {effectiveViewMode === 'merchant' ? (
+        {viewMode === 'merchant' ? (
           <MerchantPortal
             appStatus={appStatus}
             setAppStatus={setAppStatus}
@@ -74,28 +60,26 @@ export default function App() {
             setMerchantData={setMerchantData}
             documents={documents}
             setDocuments={setDocuments}
-            aiRecommendation={aiRecommendation}
-            setAiRecommendation={setAiRecommendation}
+            underwritingResult={underwritingResult}
+            setUnderwritingResult={setUnderwritingResult}
             merchantNoticeFromAdmin={merchantNoticeFromAdmin}
             onDismissMerchantNotice={() => setMerchantNoticeFromAdmin('')}
             verificationIssues={verificationIssues}
             onClearVerificationIssues={() => setVerificationIssues([])}
           />
-        ) : effectiveViewMode === 'admin' ? (
+        ) : (
           <AdminPortal
             appStatus={appStatus}
             setAppStatus={setAppStatus}
             merchantData={merchantData}
             setMerchantData={setMerchantData}
             documents={documents}
-            aiRecommendation={aiRecommendation}
-            setAiRecommendation={setAiRecommendation}
+            underwritingResult={underwritingResult}
+            setUnderwritingResult={setUnderwritingResult}
             merchantNoticeFromAdmin={merchantNoticeFromAdmin}
             setMerchantNoticeFromAdmin={setMerchantNoticeFromAdmin}
             setVerificationIssues={setVerificationIssues}
           />
-        ) : (
-          <AITestLab />
         )}
       </main>
     </div>

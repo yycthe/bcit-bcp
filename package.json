@@ -8,12 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit",
-    "smoke:xai": "tsx scripts/xai-stream-smoke.ts"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/xai": "^2.0.0",
-    "ai": "^5.0.60",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "clsx": "^2.1.1",
