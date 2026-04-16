@@ -5,7 +5,7 @@ import { runLocalVerificationCheck, type VerificationCheckResult, type Verificat
 import { buildPersonaSummary } from '@/src/lib/onboardingWorkflow';
 import { getFallbackUnderwriting, type UnderwritingDisplayResult } from '@/src/lib/underwritingFallback';
 import { FormattedSummary } from '@/src/components/ui/formatted-summary';
-import { ShieldCheck, LayoutDashboard, Search, Filter, Clock, CheckCircle2, FileWarning, Send, Trash2, Building, Activity, AlertCircle, Globe, FileText, FileSearch, ShieldAlert, RefreshCcw } from 'lucide-react';
+import { ShieldCheck, LayoutDashboard, Clock, CheckCircle2, FileWarning, Send, Trash2, Building, Activity, AlertCircle, Globe, FileText, FileSearch, ShieldAlert, RefreshCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/src/components/ui/card';
 import { Badge } from '@/src/components/ui/badge';
 import { Button } from '@/src/components/ui/button';
@@ -188,20 +188,9 @@ export function AdminPortal({
       <div className="flex-1 overflow-hidden relative bg-slate-50">
         {currentView === 'queue' && (
           <div className="p-8 max-w-6xl mx-auto h-full overflow-y-auto">
-            <div className="flex justify-between items-center mb-8">
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900">Application Queue</h1>
-                <p className="text-slate-500">Manage and review incoming merchant applications.</p>
-              </div>
-              <div className="flex gap-3">
-                <div className="relative">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input type="text" placeholder="Search merchants..." className="pl-9 pr-4 py-2 border rounded-md text-sm w-64 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                </div>
-                <button className="flex items-center gap-2 px-4 py-2 border rounded-md text-sm font-medium text-slate-700 bg-white hover:bg-slate-50">
-                  <Filter className="w-4 h-4" /> Filter
-                </button>
-              </div>
+            <div className="mb-8">
+              <h1 className="text-2xl font-bold text-slate-900">Application Queue</h1>
+              <p className="text-slate-500">Manage and review incoming merchant applications.</p>
             </div>
 
             <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
@@ -272,258 +261,225 @@ export function AdminPortal({
             </div>
 
             {appStatus !== 'draft' && (
-              <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <FileWarning className="w-4 h-4 text-amber-600" />
-                      Document checklist (expected for this profile)
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-sm">
-                    {docChecklist.map((row) => (
-                      <div
-                        key={row.key}
-                        className={`flex items-center justify-between rounded-md border px-3 py-2 ${
-                          row.present ? 'border-green-200 bg-green-50/50' : 'border-amber-200 bg-amber-50/40'
-                        }`}
-                      >
-                        <span className="text-slate-800">{row.label}</span>
-                        {row.present ? (
-                          <Badge className="bg-green-100 text-green-800 hover:bg-green-100">On file</Badge>
-                        ) : (
-                          <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">Missing</Badge>
-                        )}
+              <>
+                <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Document checklist */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <FileWarning className="w-4 h-4 text-amber-600" />
+                        Document checklist
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      {docChecklist.map((row) => (
+                        <div
+                          key={row.key}
+                          className={`flex items-center justify-between rounded-md border px-3 py-2 ${
+                            row.present ? 'border-green-200 bg-green-50/50' : 'border-amber-200 bg-amber-50/40'
+                          }`}
+                        >
+                          <span className="text-slate-800">{row.label}</span>
+                          {row.present ? (
+                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100">On file</Badge>
+                          ) : (
+                            <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">Missing</Badge>
+                          )}
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+
+                  {/* Notify merchant */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">Notify merchant (demo)</CardTitle>
+                      <p className="text-xs text-slate-500 font-normal mt-1">
+                        Shown as a banner on the Merchant portal while <strong>Under review</strong>.
+                      </p>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" size="sm" variant="secondary" onClick={postAutoReminder} className="gap-1">
+                          <Send className="w-3.5 h-3.5" />
+                          Post auto (missing list)
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={clearMerchantNotice} className="gap-1 text-red-700 border-red-200">
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Clear notice
+                        </Button>
                       </div>
-                    ))}
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">Notify merchant (demo)</CardTitle>
-                    <p className="text-xs text-slate-500 font-normal mt-1">
-                      Shown as a banner on the Merchant portal while <strong>Under review</strong>. Use to ask for missing uploads.
-                    </p>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" size="sm" variant="secondary" onClick={postAutoReminder} className="gap-1">
-                        <Send className="w-3.5 h-3.5" />
-                        Post auto (missing list)
-                      </Button>
-                      <Button type="button" size="sm" variant="outline" onClick={clearMerchantNotice} className="gap-1 text-red-700 border-red-200">
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Clear notice
-                      </Button>
-                    </div>
-                    <textarea
-                      className="w-full min-h-[100px] rounded-md border border-slate-200 p-3 text-sm"
-                      placeholder="Custom message to merchant…"
-                      value={reminderCustom}
-                      onChange={(e) => setReminderCustom(e.target.value)}
-                    />
-                    <Button type="button" size="sm" onClick={postCustomReminder} className="gap-1 bg-emerald-600 hover:bg-emerald-700">
-                      <Send className="w-3.5 h-3.5" />
-                      Post custom message
-                    </Button>
-                    {merchantNoticeFromAdmin.trim() && (
-                      <p className="text-xs text-slate-500 border-t pt-2">
-                        <span className="font-medium text-slate-600">Active notice preview:</span>{' '}
-                        {merchantNoticeFromAdmin.slice(0, 120)}
-                        {merchantNoticeFromAdmin.length > 120 ? '…' : ''}
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-
-            {appStatus !== 'draft' && (
-              <Card className="mt-6 border-emerald-200 bg-emerald-50/40">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Building className="w-4 h-4 text-emerald-600" />
-                    Processor assignment
-                  </CardTitle>
-                  <p className="text-xs text-slate-600 font-normal mt-1">
-                    Select or override the payment processor for this merchant.
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-end gap-3">
-                    <div className="flex-1">
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Payment processor</label>
-                      <select
-                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                        value={merchantData.matchedProcessor || ''}
-                        onChange={(e) => {
-                          const processor = e.target.value;
-                          setMerchantData((prev) => ({ ...prev, matchedProcessor: processor || undefined }));
-                          if (processor) {
-                            toast.success(`Processor set to ${processor}`);
-                          } else {
-                            toast.message('Processor assignment cleared');
-                          }
-                        }}
-                      >
-                        <option value="">— not assigned —</option>
-                        <option value="Nuvei">Nuvei</option>
-                        <option value="Payroc">Payroc / Peoples</option>
-                        <option value="Chase">Chase</option>
-                      </select>
-                    </div>
-                    {underwritingResult?.recommendedProcessor && (
-                      <p className="text-xs text-slate-500 pb-2">
-                        Rule-based suggestion: <strong>{underwritingResult.recommendedProcessor}</strong>
-                      </p>
-                    )}
-                  </div>
-                  {merchantData.matchedProcessor && (
-                    <p className="text-xs text-emerald-700 font-medium">
-                      Current assignment: {merchantData.matchedProcessor}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {appStatus !== 'draft' && (
-              <Card className="mt-6 border-blue-200 bg-blue-50/40">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-blue-600" />
-                    Persona verification results
-                  </CardTitle>
-                  <p className="text-xs text-slate-600 font-normal mt-1">
-                    Record the structured results returned by Persona after KYB / KYC invites are completed.
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">KYB status</label>
-                      <select
-                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                        value={personaKybStatus}
-                        onChange={(e) => setPersonaKybStatus(e.target.value)}
-                      >
-                        <option value="">— not yet received —</option>
-                        <option value="passed">Passed</option>
-                        <option value="failed">Failed</option>
-                        <option value="pending">Pending</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">KYC status per person</label>
                       <textarea
-                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm min-h-[72px]"
-                        placeholder={"Jane Doe (owner 60%): passed\nJohn Smith (signer): pending"}
-                        value={personaKycStatuses}
-                        onChange={(e) => setPersonaKycStatuses(e.target.value)}
+                        className="w-full min-h-[80px] rounded-md border border-slate-200 p-3 text-sm"
+                        placeholder="Custom message to merchant…"
+                        value={reminderCustom}
+                        onChange={(e) => setReminderCustom(e.target.value)}
                       />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Verification issues / mismatches</label>
-                    <textarea
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm min-h-[72px]"
-                      placeholder={"identity mismatch, address mismatch, document mismatch, signer mismatch, business registration inconsistency, incomplete verification — leave blank if none"}
-                      value={personaVerificationIssues}
-                      onChange={(e) => setPersonaVerificationIssues(e.target.value)}
-                    />
-                  </div>
-                  <Button type="button" size="sm" className="bg-blue-700 hover:bg-blue-800 gap-1" onClick={savePersonaResults}>
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    Save Persona results to merchant profile
-                  </Button>
-                  {(merchantData.personaKybStatus || merchantData.personaKycStatuses) && (
-                    <p className="text-xs text-slate-500 border-t pt-2">
-                      <span className="font-medium text-slate-600">Saved:</span>{' '}
-                      KYB {merchantData.personaKybStatus || 'not set'} •{' '}
-                      {merchantData.personaKycStatuses ? merchantData.personaKycStatuses.slice(0, 80) + (merchantData.personaKycStatuses.length > 80 ? '…' : '') : 'KYC not set'}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+                      <Button type="button" size="sm" onClick={postCustomReminder} className="gap-1 bg-emerald-600 hover:bg-emerald-700">
+                        <Send className="w-3.5 h-3.5" />
+                        Post custom message
+                      </Button>
+                      {merchantNoticeFromAdmin.trim() && (
+                        <p className="text-xs text-slate-500 border-t pt-2">
+                          <span className="font-medium text-slate-600">Active notice:</span>{' '}
+                          {merchantNoticeFromAdmin.slice(0, 120)}
+                          {merchantNoticeFromAdmin.length > 120 ? '…' : ''}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
 
-            {appStatus !== 'draft' && (
-              <Card className="mt-6 border-violet-200 bg-violet-50/40">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-violet-600" />
-                    KYC / KYB review
-                  </CardTitle>
-                  <p className="text-xs text-slate-600 font-normal mt-1">
-                    Runs a local KYC / KYB-style rules pass across the intake answers and uploaded documents.
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="bg-violet-700 hover:bg-violet-800"
-                      disabled={verificationLoading}
-                      onClick={runVerification}
-                    >
-                      Run KYC / KYB
-                    </Button>
-                  </div>
-                  {lastVerification && (
-                    <div className="rounded-lg border border-violet-200 bg-white/90 p-4 text-sm">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge className={lastVerification.status === 'clear' ? 'bg-emerald-100 text-emerald-900 hover:bg-emerald-100' : 'bg-amber-100 text-amber-900 hover:bg-amber-100'}>
-                          {lastVerification.status === 'clear' ? 'Clear' : 'Needs follow-up'}
-                        </Badge>
-                        <Badge variant="outline" className="border-slate-200 text-slate-700">
-                          {lastVerification.issues.length} item{lastVerification.issues.length === 1 ? '' : 's'}
-                        </Badge>
+                  {/* Processor assignment */}
+                  <Card className="border-emerald-200 bg-emerald-50/40">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Building className="w-4 h-4 text-emerald-600" />
+                        Processor assignment
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Payment processor</label>
+                        <select
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                          value={merchantData.matchedProcessor || ''}
+                          onChange={(e) => {
+                            const processor = e.target.value;
+                            setMerchantData((prev) => ({ ...prev, matchedProcessor: processor || undefined }));
+                            if (processor) {
+                              toast.success(`Processor set to ${processor}`);
+                            } else {
+                              toast.message('Processor assignment cleared');
+                            }
+                          }}
+                        >
+                          <option value="">— not assigned —</option>
+                          <option value="Nuvei">Nuvei</option>
+                          <option value="Payroc">Payroc / Peoples</option>
+                          <option value="Chase">Chase</option>
+                        </select>
                       </div>
-                      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      {underwritingResult?.recommendedProcessor && (
+                        <p className="text-xs text-slate-500">
+                          Rule-based suggestion: <strong>{underwritingResult.recommendedProcessor}</strong>
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* KYC / KYB — merged Persona results + rules check */}
+                  <Card className="border-blue-200 bg-blue-50/40">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-blue-600" />
+                        KYC / KYB verification
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Persona manual entry */}
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Summary</p>
-                          <p className="mt-1 text-slate-800">{lastVerification.summary}</p>
+                          <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">KYB status</label>
+                          <select
+                            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                            value={personaKybStatus}
+                            onChange={(e) => setPersonaKybStatus(e.target.value)}
+                          >
+                            <option value="">— not yet received —</option>
+                            <option value="passed">Passed</option>
+                            <option value="failed">Failed</option>
+                            <option value="pending">Pending</option>
+                          </select>
                         </div>
                         <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Checked At</p>
-                          <p className="mt-1 text-slate-800">{new Date(lastVerification.checkedAt).toLocaleString()}</p>
+                          <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">KYC status per person</label>
+                          <textarea
+                            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm min-h-[60px]"
+                            placeholder={"Jane Doe (owner): passed\nJohn Smith (signer): pending"}
+                            value={personaKycStatuses}
+                            onChange={(e) => setPersonaKycStatuses(e.target.value)}
+                          />
                         </div>
                       </div>
-                      {lastVerification.issues.length > 0 ? (
-                        <ul className="mt-3 space-y-2">
-                          {lastVerification.issues.map((issue) => (
-                            <li key={issue.id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                              <p className="text-slate-800">{issue.reason}</p>
-                              <p className="mt-1 text-xs text-slate-500">{issue.target.whereLabel}</p>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : null}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Verification issues</label>
+                        <textarea
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm min-h-[48px]"
+                          placeholder="identity mismatch, address mismatch, etc. — leave blank if none"
+                          value={personaVerificationIssues}
+                          onChange={(e) => setPersonaVerificationIssues(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" size="sm" className="bg-blue-700 hover:bg-blue-800 gap-1" onClick={savePersonaResults}>
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          Save Persona results
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="gap-1"
+                          disabled={verificationLoading}
+                          onClick={runVerification}
+                        >
+                          Run rules check
+                        </Button>
+                      </div>
+                      {(merchantData.personaKybStatus || merchantData.personaKycStatuses) && (
+                        <p className="text-xs text-slate-500 border-t pt-2">
+                          <span className="font-medium text-slate-600">Saved:</span>{' '}
+                          KYB {merchantData.personaKybStatus || 'not set'} •{' '}
+                          {merchantData.personaKycStatuses ? merchantData.personaKycStatuses.slice(0, 80) + (merchantData.personaKycStatuses.length > 80 ? '…' : '') : 'KYC not set'}
+                        </p>
+                      )}
+                      {lastVerification && (
+                        <div className="rounded-lg border border-blue-200 bg-white/90 p-3 text-sm">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <Badge className={lastVerification.status === 'clear' ? 'bg-emerald-100 text-emerald-900 hover:bg-emerald-100' : 'bg-amber-100 text-amber-900 hover:bg-amber-100'}>
+                              {lastVerification.status === 'clear' ? 'Clear' : 'Needs follow-up'}
+                            </Badge>
+                            <Badge variant="outline" className="border-slate-200 text-slate-700">
+                              {lastVerification.issues.length} item{lastVerification.issues.length === 1 ? '' : 's'}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-slate-600 mb-2">{lastVerification.summary}</p>
+                          {lastVerification.issues.length > 0 && (
+                            <ul className="space-y-1">
+                              {lastVerification.issues.map((issue) => (
+                                <li key={issue.id} className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs">
+                                  <span className="text-slate-800">{issue.reason}</span>
+                                  <span className="text-slate-400 ml-1">— {issue.target.whereLabel}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
 
-            {appStatus !== 'draft' && merchantData.processorSpecificAnswers?.trim() && (
-              <Card className="mt-6 border-emerald-200 bg-emerald-50/40">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <FileWarning className="w-4 h-4 text-emerald-600" />
-                    Processor-specific follow-up answers
-                  </CardTitle>
-                  <p className="text-xs text-slate-600 font-normal mt-1">
-                    Matched processor: <strong>{merchantData.matchedProcessor || 'Not yet matched'}</strong>
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <pre className="whitespace-pre-wrap text-sm text-slate-800 bg-white rounded-md border border-slate-200 p-3 max-h-64 overflow-y-auto">
-                    {merchantData.processorSpecificAnswers}
-                  </pre>
-                </CardContent>
-              </Card>
+                {/* Processor-specific follow-up answers — only if present */}
+                {merchantData.processorSpecificAnswers?.trim() && (
+                  <Card className="mt-6 border-emerald-200 bg-emerald-50/40">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <FileWarning className="w-4 h-4 text-emerald-600" />
+                        Processor-specific follow-up answers
+                      </CardTitle>
+                      <p className="text-xs text-slate-600 font-normal mt-1">
+                        Matched processor: <strong>{merchantData.matchedProcessor || 'Not yet matched'}</strong>
+                      </p>
+                    </CardHeader>
+                    <CardContent>
+                      <pre className="whitespace-pre-wrap text-sm text-slate-800 bg-white rounded-md border border-slate-200 p-3 max-h-64 overflow-y-auto">
+                        {merchantData.processorSpecificAnswers}
+                      </pre>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
             )}
           </div>
         )}
@@ -690,28 +646,24 @@ export function AdminPortal({
 
                 {/* Right Column: Context & Documents */}
                 <div className="space-y-6">
+                  {/* Merchant overview — context + summary merged */}
                   <Card>
                     <CardHeader className="pb-3 border-b">
-                      <CardTitle className="text-base">Merchant Context</CardTitle>
+                      <CardTitle className="text-base">Merchant Overview</CardTitle>
                     </CardHeader>
                     <CardContent className="p-4 space-y-3 text-sm">
                       <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Category</span> <Badge variant={underwritingResult.riskCategory === 'Low' ? 'success' : underwritingResult.riskCategory === 'Medium' ? 'warning' : 'destructive'}>{underwritingResult.riskCategory}</Badge></div>
                       <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Industry</span> <span className="font-medium capitalize">{merchantData.industry.replace('_', ' ')}</span></div>
                       <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Volume</span> <span className="font-medium">{merchantData.monthlyVolume}</span></div>
                       <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Transactions</span> <span className="font-medium">{merchantData.monthlyTransactions}</span></div>
-                      <div className="flex justify-between items-center pt-1"><span className="text-slate-500">Est. Avg Ticket</span> <span className="font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded border border-blue-100">{getAvgTicketSize(merchantData.monthlyVolume, merchantData.monthlyTransactions)}</span></div>
+                      <div className="flex justify-between items-center pb-2 border-b"><span className="text-slate-500">Est. Avg Ticket</span> <span className="font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded border border-blue-100">{getAvgTicketSize(merchantData.monthlyVolume, merchantData.monthlyTransactions)}</span></div>
+                      <div className="pt-1">
+                        <FormattedSummary text={underwritingResult.merchantSummary} emptyText="No merchant summary." />
+                      </div>
                     </CardContent>
                   </Card>
 
-                  <Card>
-                    <CardHeader className="pb-3 border-b">
-                      <CardTitle className="text-base">Merchant Summary</CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-4">
-                      <FormattedSummary text={underwritingResult.merchantSummary} emptyText="No merchant summary." />
-                    </CardContent>
-                  </Card>
-
+                  {/* Workflow readiness — simplified */}
                   <Card className="border-violet-100 bg-violet-50/60">
                     <CardHeader className="pb-3 border-b border-violet-100">
                       <CardTitle className="text-base text-violet-950 flex items-center gap-2">
@@ -724,52 +676,48 @@ export function AdminPortal({
                         <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">KYC / KYB routing</p>
                         <FormattedSummary text={merchantData.personaInvitePlan || merchantData.personaVerificationSummary} emptyText="No KYC / KYB routing plan attached." tone="slate" />
                       </div>
-                      <div className="border-t border-violet-100 pt-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Website review signals</p>
-                        <FormattedSummary text={underwritingResult.websiteReviewSummary || merchantData.websiteReviewSummary} emptyText="No website review signals." tone="slate" />
-                      </div>
-                      <div className="border-t border-violet-100 pt-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Processor fit suggestion</p>
-                        <FormattedSummary text={underwritingResult.processorFitSuggestion} emptyText="No processor fit comparison." tone="slate" />
-                      </div>
-                      <div className="border-t border-violet-100 pt-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Processor package</p>
-                        <FormattedSummary text={merchantData.processorReadyPackageSummary || merchantData.processorSpecificAnswers} emptyText="Processor-specific follow-up not completed." tone="slate" />
-                      </div>
+                      {(underwritingResult.websiteReviewSummary || merchantData.websiteReviewSummary) && (
+                        <div className="border-t border-violet-100 pt-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Website review signals</p>
+                          <FormattedSummary text={underwritingResult.websiteReviewSummary || merchantData.websiteReviewSummary} emptyText="" tone="slate" />
+                        </div>
+                      )}
+                      {(merchantData.processorReadyPackageSummary || merchantData.processorSpecificAnswers) && (
+                        <div className="border-t border-violet-100 pt-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Processor package</p>
+                          <FormattedSummary text={merchantData.processorReadyPackageSummary || merchantData.processorSpecificAnswers} emptyText="" tone="slate" />
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 
-                  {docChecklist.some((d) => !d.present) && (
-                    <Card className="border-amber-200 bg-amber-50/60">
-                      <CardHeader className="pb-2 border-b border-amber-200/80">
-                        <CardTitle className="text-sm text-amber-950">Missing required uploads</CardTitle>
-                      </CardHeader>
-                      <CardContent className="p-4">
-                        <ul className="text-xs text-amber-900 space-y-1">
-                          {docChecklist.filter((d) => !d.present).map((d) => (
-                            <li key={d.key} className="flex items-center gap-2">
-                              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                              {d.label}
-                            </li>
-                          ))}
-                        </ul>
-                      </CardContent>
-                    </Card>
-                  )}
-
+                  {/* Documents — merged missing uploads + document summary */}
                   <Card className="bg-blue-50 border-blue-100">
                     <CardHeader className="pb-3 border-b border-blue-100">
                       <CardTitle className="text-base text-blue-900 flex items-center gap-2">
                         <FileText className="w-4 h-4" />
-                        Document Summary
+                        Documents
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="p-4">
+                    <CardContent className="p-4 space-y-3">
                       <FormattedSummary text={underwritingResult.documentSummary} emptyText="No document data." tone="blue" />
-                      <div className="mt-4 pt-4 border-t border-blue-200/50">
-                        <p className="text-xs font-semibold text-blue-800 uppercase tracking-wider mb-2">Files On Record</p>
-                        {documents.length > 0 ? (
-                          <ul className="space-y-2">
+                      {docChecklist.some((d) => !d.present) && (
+                        <div className="pt-3 border-t border-blue-200/50">
+                          <p className="text-xs font-semibold text-amber-800 uppercase tracking-wider mb-2">Missing required uploads</p>
+                          <ul className="text-xs text-amber-900 space-y-1">
+                            {docChecklist.filter((d) => !d.present).map((d) => (
+                              <li key={d.key} className="flex items-center gap-2">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                                {d.label}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {documents.length > 0 && (
+                        <div className="pt-3 border-t border-blue-200/50">
+                          <p className="text-xs font-semibold text-blue-800 uppercase tracking-wider mb-2">Files on record</p>
+                          <ul className="space-y-1.5">
                             {documents.map(doc => (
                               <li key={doc.id} className="text-xs text-blue-700 flex items-center gap-2 truncate">
                                 <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
@@ -777,10 +725,8 @@ export function AdminPortal({
                               </li>
                             ))}
                           </ul>
-                        ) : (
-                          <p className="text-xs text-blue-600/70">No files uploaded</p>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
