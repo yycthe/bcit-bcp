@@ -16,6 +16,7 @@ import {
   buildProcessorReadyPackageSummary,
   buildWebsiteSignalSummary,
   decidePersonaInvites,
+  getProcessorQuestionSet,
   getProcessorQuestionPrompt,
   normalizeProcessorFit,
 } from '@/src/lib/onboardingWorkflow';
@@ -28,6 +29,44 @@ import {
 } from '@/src/lib/documentChecklist';
 
 const MERCHANT_FILE_QUESTION_ID_SET = new Set<string>(MERCHANT_FILE_QUESTION_KEYS);
+
+const YES_NO_OPTIONS = [
+  { label: 'Yes', value: 'Yes' },
+  { label: 'No', value: 'No' },
+  { label: 'Not sure', value: 'Not sure' },
+];
+
+const YES_NO_NA_OPTIONS = [
+  { label: 'Yes', value: 'Yes' },
+  { label: 'No', value: 'No' },
+  { label: 'Not applicable', value: 'Not applicable' },
+  { label: 'Not sure', value: 'Not sure' },
+];
+
+const READINESS_OPTIONS = [
+  { label: 'Yes, ready now', value: 'Yes' },
+  { label: 'Can provide, needs time', value: 'Need time' },
+  { label: 'Need help', value: 'Need help' },
+  { label: 'No', value: 'No' },
+  { label: 'Not applicable', value: 'Not applicable' },
+];
+
+const PERCENT_RANGE_OPTIONS = [
+  { label: '0%', value: '0%' },
+  { label: '1-10%', value: '1-10%' },
+  { label: '11-25%', value: '11-25%' },
+  { label: '26-50%', value: '26-50%' },
+  { label: '51-75%', value: '51-75%' },
+  { label: '76-100%', value: '76-100%' },
+  { label: 'Not sure', value: 'Not sure' },
+];
+
+const PROCESSOR_FOLLOW_UP_STATUS_OPTIONS = [
+  { label: 'Ready / available', value: 'Ready / available' },
+  { label: 'Need help', value: 'Need help' },
+  { label: 'Not applicable', value: 'Not applicable' },
+  { label: 'Needs manual review', value: 'Needs manual review' },
+];
 
 type QuestionId =
   | Exclude<keyof MerchantData, 'additionalDocuments'>
@@ -58,7 +97,13 @@ interface QuestionDef {
   text: string;
   type: 'buttons' | 'dropdown' | 'text' | 'upload' | 'form' | 'system';
   options?: { label: string; value: string }[];
-  fields?: { id: keyof MerchantData; label: string; type: 'text' | 'email' | 'number' | 'date' | 'textarea'; required?: boolean }[];
+  fields?: {
+    id: keyof MerchantData;
+    label: string;
+    type: 'text' | 'email' | 'number' | 'date' | 'textarea' | 'select';
+    required?: boolean;
+    options?: { label: string; value: string }[];
+  }[];
 }
 
 type SmartGuide = {
@@ -732,7 +777,7 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
       { id: 'businessRegistrationNumber', label: 'What is your business registration / corporation / GST/HST number?', type: 'text' },
       { id: 'establishedDate', label: 'When was the business established or incorporated?', type: 'text' },
       { id: 'legalBusinessAddress', label: 'What is your legal business address?', type: 'text' },
-      { id: 'operatingAddressDifferent', label: 'Is your operating address different from your legal address?', type: 'text' },
+      { id: 'operatingAddressDifferent', label: 'Is your operating address different from your legal address?', type: 'select', options: YES_NO_OPTIONS },
       { id: 'operatingAddress', label: 'If yes, what is your operating address?', type: 'text', required: false },
       { id: 'businessPhone', label: 'What is your business phone number?', type: 'text' },
       { id: 'legalBusinessEmail', label: 'What is your legal business email?', type: 'email' },
@@ -746,14 +791,56 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
     fields: [
       { id: 'productsServices', label: 'What products or services do you sell?', type: 'textarea' },
       { id: 'businessDescription', label: 'Please describe your business in detail.', type: 'textarea' },
-      { id: 'businessCategory', label: 'What type of merchant are you? Retail, e-commerce, MOTO, restaurant, service, or other?', type: 'text' },
-      { id: 'goodsOrServicesType', label: 'Do you sell physical goods, digital goods, services, or a mix?', type: 'text' },
-      { id: 'customerType', label: 'Are your customers B2B, B2C, or both?', type: 'text' },
-      { id: 'advancePayment', label: 'Is payment taken in advance before fulfillment?', type: 'text' },
-      { id: 'advancePaymentPercent', label: 'If yes, approximately what percentage of sales is paid in advance?', type: 'text', required: false },
-      { id: 'recurringBilling', label: 'Do you offer recurring billing or subscriptions?', type: 'text' },
-      { id: 'recurringSalesPercent', label: 'If yes, approximately what percentage of sales is recurring?', type: 'text', required: false },
-      { id: 'fulfillmentTimeline', label: 'How long does it usually take customers to receive the product or service?', type: 'text' },
+      {
+        id: 'businessCategory',
+        label: 'What type of merchant are you?',
+        type: 'select',
+        options: [
+          { label: 'Retail', value: 'Retail' },
+          { label: 'E-commerce', value: 'E-commerce' },
+          { label: 'MOTO / keyed', value: 'MOTO / keyed' },
+          { label: 'Restaurant', value: 'Restaurant' },
+          { label: 'Service', value: 'Service' },
+          { label: 'Other', value: 'Other' },
+        ],
+      },
+      {
+        id: 'goodsOrServicesType',
+        label: 'Do you sell physical goods, digital goods, services, or a mix?',
+        type: 'select',
+        options: [
+          { label: 'Physical goods', value: 'Physical goods' },
+          { label: 'Digital goods', value: 'Digital goods' },
+          { label: 'Services', value: 'Services' },
+          { label: 'Mix', value: 'Mix' },
+        ],
+      },
+      {
+        id: 'customerType',
+        label: 'Are your customers B2B, B2C, or both?',
+        type: 'select',
+        options: [
+          { label: 'B2B', value: 'B2B' },
+          { label: 'B2C', value: 'B2C' },
+          { label: 'Both', value: 'Both' },
+        ],
+      },
+      { id: 'advancePayment', label: 'Is payment taken in advance before fulfillment?', type: 'select', options: YES_NO_OPTIONS },
+      { id: 'advancePaymentPercent', label: 'If yes, approximately what percentage of sales is paid in advance?', type: 'select', required: false, options: PERCENT_RANGE_OPTIONS },
+      { id: 'recurringBilling', label: 'Do you offer recurring billing or subscriptions?', type: 'select', options: YES_NO_OPTIONS },
+      { id: 'recurringSalesPercent', label: 'If yes, approximately what percentage of sales is recurring?', type: 'select', required: false, options: PERCENT_RANGE_OPTIONS },
+      {
+        id: 'fulfillmentTimeline',
+        label: 'How long does it usually take customers to receive the product or service?',
+        type: 'select',
+        options: [
+          { label: 'Same day / instant', value: 'Same day / instant' },
+          { label: '1-3 days', value: '1-3 days' },
+          { label: '4-7 days', value: '4-7 days' },
+          { label: '8-30 days', value: '8-30 days' },
+          { label: 'Over 30 days', value: 'Over 30 days' },
+        ],
+      },
     ],
   },
   ownershipControlForm: {
@@ -762,14 +849,14 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
     type: 'form',
     fields: [
       { id: 'beneficialOwners', label: 'Please list all beneficial owners with 25% or more ownership: full legal name, ownership %, title / role, email.', type: 'textarea' },
-      { id: 'parentOwned', label: 'Is the business owned by another company or parent entity?', type: 'text' },
+      { id: 'parentOwned', label: 'Is the business owned by another company or parent entity?', type: 'select', options: YES_NO_OPTIONS },
       { id: 'parentCompanyName', label: 'If yes, what is the parent company name?', type: 'text', required: false },
-      { id: 'nonOwnerController', label: 'Is there anyone with significant managerial control who is not an owner?', type: 'text' },
+      { id: 'nonOwnerController', label: 'Is there anyone with significant managerial control who is not an owner?', type: 'select', options: YES_NO_OPTIONS },
       { id: 'nonOwnerControllerDetails', label: 'If yes, provide their name, title, and email.', type: 'text', required: false },
       { id: 'authorizedSignerName', label: 'Who is the authorized signer for this application? Name.', type: 'text' },
       { id: 'authorizedSignerTitle', label: 'Authorized signer title.', type: 'text' },
       { id: 'authorizedSignerEmail', label: 'Authorized signer email.', type: 'email' },
-      { id: 'signerIsOwner', label: 'Is the signer one of the owners listed above?', type: 'text' },
+      { id: 'signerIsOwner', label: 'Is the signer one of the owners listed above?', type: 'select', options: YES_NO_OPTIONS },
     ],
   },
   processingHistoryForm: {
@@ -777,14 +864,14 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
     text: 'Processing history',
     type: 'form',
     fields: [
-      { id: 'currentlyProcessesCards', label: 'Do you currently process card payments?', type: 'text' },
+      { id: 'currentlyProcessesCards', label: 'Do you currently process card payments?', type: 'select', options: YES_NO_OPTIONS },
       { id: 'currentOrPreviousProcessor', label: 'Who is your current or previous processor?', type: 'text', required: false },
       { id: 'processorExitReason', label: 'Why are you leaving your current / previous processor?', type: 'textarea', required: false },
-      { id: 'priorTermination', label: 'Has the business or any owner ever had a merchant account or processing agreement terminated?', type: 'text' },
+      { id: 'priorTermination', label: 'Has the business or any owner ever had a merchant account or processing agreement terminated?', type: 'select', options: YES_NO_OPTIONS },
       { id: 'priorTerminationExplanation', label: 'If yes, please explain.', type: 'textarea', required: false },
-      { id: 'bankruptcyHistory', label: 'Has the business or any owner ever filed for bankruptcy?', type: 'text' },
+      { id: 'bankruptcyHistory', label: 'Has the business or any owner ever filed for bankruptcy?', type: 'select', options: YES_NO_OPTIONS },
       { id: 'bankruptcyExplanation', label: 'If yes, please explain.', type: 'textarea', required: false },
-      { id: 'riskProgramHistory', label: 'Has the business or any owner ever been identified in a Visa / Mastercard risk program?', type: 'text' },
+      { id: 'riskProgramHistory', label: 'Has the business or any owner ever been identified in a Visa / Mastercard risk program?', type: 'select', options: YES_NO_OPTIONS },
       { id: 'riskProgramExplanation', label: 'If yes, please explain.', type: 'textarea', required: false },
     ],
   },
@@ -795,11 +882,44 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
     fields: [
       { id: 'avgTicketSize', label: 'What is your average transaction amount?', type: 'number' },
       { id: 'highestTicketAmount', label: 'What is your highest transaction amount?', type: 'number' },
-      { id: 'transactionChannelSplit', label: 'What percentage of transactions are card present, e-commerce, and MOTO / keyed?', type: 'text' },
-      { id: 'paymentTypesWanted', label: 'Which payment types do you want to accept?', type: 'text' },
-      { id: 'recurringTransactionsPercent', label: 'What percentage of your transactions are recurring?', type: 'text' },
-      { id: 'foreignCardsPercent', label: 'What percentage of your transactions involve foreign cards?', type: 'text' },
-      { id: 'processingCurrencies', label: 'Which processing currencies do you need?', type: 'text' },
+      {
+        id: 'transactionChannelSplit',
+        label: 'What is your main transaction channel mix?',
+        type: 'select',
+        options: [
+          { label: 'Mostly card-present', value: 'Mostly card-present' },
+          { label: 'Mostly e-commerce', value: 'Mostly e-commerce' },
+          { label: 'Mostly MOTO / keyed', value: 'Mostly MOTO / keyed' },
+          { label: 'Mixed card-present and e-commerce', value: 'Mixed card-present and e-commerce' },
+          { label: 'Mixed e-commerce and MOTO', value: 'Mixed e-commerce and MOTO' },
+          { label: 'Not sure', value: 'Not sure' },
+        ],
+      },
+      {
+        id: 'paymentTypesWanted',
+        label: 'Which payment types do you want to accept?',
+        type: 'select',
+        options: [
+          { label: 'Visa / Mastercard only', value: 'Visa / Mastercard' },
+          { label: 'Visa / Mastercard / Amex', value: 'Visa / Mastercard / Amex' },
+          { label: 'Cards + Interac', value: 'Cards + Interac' },
+          { label: 'Cards + ACH / bank debit', value: 'Cards + ACH / bank debit' },
+          { label: 'Full mix', value: 'Visa / Mastercard / Amex / Interac / ACH' },
+        ],
+      },
+      { id: 'recurringTransactionsPercent', label: 'What percentage of your transactions are recurring?', type: 'select', options: PERCENT_RANGE_OPTIONS },
+      { id: 'foreignCardsPercent', label: 'What percentage of your transactions involve foreign cards?', type: 'select', options: PERCENT_RANGE_OPTIONS },
+      {
+        id: 'processingCurrencies',
+        label: 'Which processing currencies do you need?',
+        type: 'select',
+        options: [
+          { label: 'CAD only', value: 'CAD' },
+          { label: 'USD only', value: 'USD' },
+          { label: 'CAD + USD', value: 'CAD, USD' },
+          { label: 'CAD + USD + other', value: 'CAD, USD, other' },
+        ],
+      },
     ],
   },
   websiteComplianceForm: {
@@ -807,17 +927,17 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
     text: 'Website / security / PCI basics',
     type: 'form',
     fields: [
-      { id: 'websitePrivacyPolicy', label: 'Does your website include a Privacy Policy?', type: 'text' },
-      { id: 'websiteTerms', label: 'Does your website include Terms and Conditions / Terms of Use?', type: 'text' },
-      { id: 'websiteRefundPolicy', label: 'Does your website include a Return / Refund Policy?', type: 'text' },
-      { id: 'websiteShippingPolicy', label: 'Does your website include a Shipping Policy if applicable?', type: 'text' },
-      { id: 'websiteContactInfo', label: 'Does your website include customer service contact information?', type: 'text' },
-      { id: 'websiteCurrencyDisplay', label: 'Does your website display transaction currency if applicable?', type: 'text' },
-      { id: 'websiteSsl', label: 'Is your payment page encrypted with SSL or better?', type: 'text' },
-      { id: 'storesCardNumbers', label: 'Do you store credit card numbers?', type: 'text' },
+      { id: 'websitePrivacyPolicy', label: 'Does your website include a Privacy Policy?', type: 'select', options: YES_NO_OPTIONS },
+      { id: 'websiteTerms', label: 'Does your website include Terms and Conditions / Terms of Use?', type: 'select', options: YES_NO_OPTIONS },
+      { id: 'websiteRefundPolicy', label: 'Does your website include a Return / Refund Policy?', type: 'select', options: YES_NO_OPTIONS },
+      { id: 'websiteShippingPolicy', label: 'Does your website include a Shipping Policy if applicable?', type: 'select', options: YES_NO_NA_OPTIONS },
+      { id: 'websiteContactInfo', label: 'Does your website include customer service contact information?', type: 'select', options: YES_NO_OPTIONS },
+      { id: 'websiteCurrencyDisplay', label: 'Does your website display transaction currency if applicable?', type: 'select', options: YES_NO_NA_OPTIONS },
+      { id: 'websiteSsl', label: 'Is your payment page encrypted with SSL or better?', type: 'select', options: YES_NO_OPTIONS },
+      { id: 'storesCardNumbers', label: 'Do you store credit card numbers?', type: 'select', options: YES_NO_OPTIONS },
       { id: 'thirdPartyCardApps', label: 'Do you use any third-party applications to process, transmit, or store cardholder data? If yes, list them.', type: 'textarea', required: false },
-      { id: 'dataBreachHistory', label: 'Have you experienced a data breach or card data compromise in the past?', type: 'text' },
-      { id: 'regulatedBusiness', label: 'Is your business an MSB or another regulated business?', type: 'text' },
+      { id: 'dataBreachHistory', label: 'Have you experienced a data breach or card data compromise in the past?', type: 'select', options: YES_NO_OPTIONS },
+      { id: 'regulatedBusiness', label: 'Is your business an MSB or another regulated business?', type: 'select', options: YES_NO_OPTIONS },
     ],
   },
   documentReadinessForm: {
@@ -825,13 +945,13 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
     text: 'Document readiness',
     type: 'form',
     fields: [
-      { id: 'canProvideRegistration', label: 'Can you provide Business Registration or Articles of Incorporation?', type: 'text' },
-      { id: 'canProvideVoidCheque', label: 'Can you provide a Void Cheque or Bank Letter?', type: 'text' },
-      { id: 'canProvideBankStatements', label: 'Can you provide 2 recent official business bank statements?', type: 'text' },
-      { id: 'canProvideProofOfAddress', label: 'Can you provide proof of business address?', type: 'text' },
-      { id: 'canProvideProofOfOwnership', label: 'Can you provide proof of ownership?', type: 'text' },
-      { id: 'canProvideOwnerIds', label: 'Can each 25%+ owner and signer provide government-issued photo ID?', type: 'text' },
-      { id: 'canProvideProcessingStatements', label: 'If you currently process payments, can you provide 3 recent processing statements?', type: 'text' },
+      { id: 'canProvideRegistration', label: 'Can you provide Business Registration or Articles of Incorporation?', type: 'select', options: READINESS_OPTIONS },
+      { id: 'canProvideVoidCheque', label: 'Can you provide a Void Cheque or Bank Letter?', type: 'select', options: READINESS_OPTIONS },
+      { id: 'canProvideBankStatements', label: 'Can you provide 2 recent official business bank statements?', type: 'select', options: READINESS_OPTIONS },
+      { id: 'canProvideProofOfAddress', label: 'Can you provide proof of business address?', type: 'select', options: READINESS_OPTIONS },
+      { id: 'canProvideProofOfOwnership', label: 'Can you provide proof of ownership?', type: 'select', options: READINESS_OPTIONS },
+      { id: 'canProvideOwnerIds', label: 'Can each 25%+ owner and signer provide government-issued photo ID?', type: 'select', options: READINESS_OPTIONS },
+      { id: 'canProvideProcessingStatements', label: 'If you currently process payments, can you provide 3 recent processing statements?', type: 'select', options: READINESS_OPTIONS },
     ],
   },
   personaDecisionGate: {
@@ -1620,6 +1740,111 @@ export function ChatApp({
     }
 
     if (qDef.type === 'form') {
+      if (currentQuestion === 'processorSpecificFollowUpForm') {
+        const processorQuestionSet = getProcessorQuestionSet(data.matchedProcessor || 'Nuvei');
+        return (
+          <div className="relative">
+            {isEditing && (
+              <div className="absolute -top-10 right-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={abortEditing}
+                  className="text-slate-500 hover:text-slate-700 bg-white/80 backdrop-blur-sm"
+                >
+                  Cancel Edit
+                </Button>
+              </div>
+            )}
+            <div className="max-h-[calc(100vh-11rem)] overflow-y-auto overscroll-y-contain border-t bg-white">
+              <div className="border-b bg-slate-50/90 px-4 py-4">
+                <div className="mx-auto max-w-3xl rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Processor follow-up</p>
+                  <h3 className="mt-1 text-sm font-semibold text-slate-900">
+                    {processorQuestionSet.processor} readiness checklist
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    Mark each item instead of writing a long narrative. Add short notes only where the status needs context.
+                  </p>
+                </div>
+              </div>
+              <div className="p-4">
+                <form
+                  className="mx-auto max-w-3xl space-y-5"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const formData = new FormData(e.currentTarget);
+                    const lines: string[] = [`Processor follow-up for ${processorQuestionSet.processor}`];
+
+                    processorQuestionSet.sections.forEach((section, sectionIndex) => {
+                      lines.push(`\n${section.title}:`);
+                      section.questions.forEach((question, questionIndex) => {
+                        const status = String(formData.get(`followUp-${sectionIndex}-${questionIndex}`) || '');
+                        const note = String(formData.get(`followUpNote-${sectionIndex}-${questionIndex}`) || '').trim();
+                        lines.push(`- ${question}: ${status}${note ? ` (${note})` : ''}`);
+                      });
+                    });
+
+                    const generalNotes = String(formData.get('processorFollowUpGeneralNotes') || '').trim();
+                    if (generalNotes) {
+                      lines.push(`\nAdditional notes: ${generalNotes}`);
+                    }
+
+                    handleAnswer({ processorSpecificAnswers: lines.join('\n') }, 'Completed processor-specific checklist');
+                  }}
+                >
+                  {processorQuestionSet.sections.map((section, sectionIndex) => (
+                    <div key={section.title} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                      <h4 className="text-sm font-semibold text-slate-900">{section.title}</h4>
+                      <div className="mt-3 space-y-3">
+                        {section.questions.map((question, questionIndex) => (
+                          <div key={question} className="rounded-xl border border-slate-200 bg-white p-3">
+                            <label className="text-sm font-medium leading-5 text-slate-800">
+                              {question}
+                            </label>
+                            <div className="mt-2 grid gap-2 md:grid-cols-[220px_1fr]">
+                              <Select
+                                name={`followUp-${sectionIndex}-${questionIndex}`}
+                                required
+                                defaultValue=""
+                                className="bg-white"
+                              >
+                                <option value="">Choose status...</option>
+                                {PROCESSOR_FOLLOW_UP_STATUS_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </Select>
+                              <Input
+                                name={`followUpNote-${sectionIndex}-${questionIndex}`}
+                                placeholder="Optional short note"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <label className="text-sm font-semibold text-slate-900">Optional overall note</label>
+                    <textarea
+                      name="processorFollowUpGeneralNotes"
+                      rows={3}
+                      className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                      placeholder="Only add anything unusual or blocker-level here."
+                    />
+                  </div>
+                  <div className="sticky bottom-0 -mx-4 flex justify-end border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
+                    <Button type="submit">Build Processor Package</Button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="relative">
           {isEditing && (
@@ -1688,6 +1913,20 @@ export function ChatApp({
                         defaultValue={data[field.id as keyof MerchantData] as string || ''}
                         className="min-h-[112px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                       />
+                    ) : field.type === 'select' ? (
+                      <Select
+                        name={field.id}
+                        required={field.required !== false}
+                        defaultValue={data[field.id as keyof MerchantData] as string || ''}
+                        className="bg-white"
+                      >
+                        <option value="">Select one...</option>
+                        {field.options?.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </Select>
                     ) : (
                       <Input
                         name={field.id}
