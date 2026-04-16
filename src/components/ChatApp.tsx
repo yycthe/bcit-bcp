@@ -371,7 +371,7 @@ function getSmartGuide(questionId: QuestionId, data: MerchantData): SmartGuide {
         'These first answers determine which follow-up sections and documents actually matter for you, so we avoid asking every merchant the same long list.',
       tips: [
         'First we collect processor-neutral common intake.',
-        'After AI matching, I will only ask the selected processor-specific questions.',
+        'After rule-based processor routing, I will only ask the selected processor-specific questions.',
       ],
     };
   }
@@ -380,7 +380,7 @@ function getSmartGuide(questionId: QuestionId, data: MerchantData): SmartGuide {
     return {
       eyebrow: `${stage} • Pricing fit`,
       title: 'This helps us size your processor match',
-      description: `For ${getIndustryLabel(data.industry)}, volume and transaction count help decide whether we keep things lightweight or move into a more underwriting-heavy path.`,
+      description: `For ${getIndustryLabel(data.industry)}, volume and transaction count help decide which processor lane and document depth fit best.`,
       tips: [
         `A realistic estimate is better than a perfect one. We can refine ${getVolumeLabel(data.monthlyVolume)} later.`,
         'Higher volumes usually trigger stronger documentation because the pricing upside is worth it.',
@@ -423,7 +423,7 @@ function getSmartGuide(questionId: QuestionId, data: MerchantData): SmartGuide {
       description:
         isRequiredHeavyDoc
           ? 'If you have it ready, upload it now. If not, you can skip and still continue, but the admin team may ask for it later.'
-          : 'The goal is to keep underwriting moving without forcing a hard stop when a file is not handy.',
+          : 'The goal is to keep the review moving without forcing a hard stop when a file is not handy.',
       tips: [
         'PDF, PNG, and JPG all work.',
         'If the file is large, the system may switch to metadata-only mode to stay within Vercel limits.',
@@ -507,22 +507,22 @@ const getQuestionText = (qId: QuestionId, data: MerchantData): string => {
       "A few processing-history questions help detect early risk before we ask for any processor-specific details.",
 
     salesProfileForm: () =>
-      "Let's capture the common sales profile so AI can score ticket size, channel mix, recurring exposure, and foreign-card exposure.",
+      "Let's capture the common sales profile so the routing rules can evaluate ticket size, channel mix, recurring exposure, and foreign-card exposure.",
 
     websiteComplianceForm: () =>
-      "Now we will capture website, security, and PCI basics. AI will use this as a structured website legitimacy and compliance review.",
+      'Now we will capture website, security, and PCI basics for the strict common-review layer.',
 
     documentReadinessForm: () =>
       "Last common-intake block: document readiness. This lets us separate missing documents from true risk.",
 
     personaDecisionGate: () => {
       const decision = decidePersonaInvites(data);
-      return `${decision.summary} I will attach this KYC / KYB routing plan to the merchant profile before AI underwriting.`;
+      return `${decision.summary} I will attach this KYC / KYB routing plan to the merchant profile before final rule-based review.`;
     },
 
     processorSpecificFollowUpForm: () => {
       const processor = normalizeProcessorFit(data.matchedProcessor);
-      return `AI matched this case to ${processor}. Now I will only ask the ${processor}-specific underwriting follow-up items, without repeating the common intake.`;
+      return `This case was routed to ${processor}. Now I will only ask the ${processor}-specific follow-up items, without repeating the common intake.`;
     },
     
     // Document uploads - contextual
@@ -666,7 +666,7 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
   ...COMMON_FORM_QUESTIONS,
   personaDecisionGate: {
     id: 'personaDecisionGate',
-    text: 'Persona trigger decision',
+    text: 'KYC / KYB trigger decision',
     type: 'system',
   },
   processorSpecificFollowUpForm: {
@@ -976,7 +976,7 @@ export function ChatApp({
         {
           id: Math.random().toString(36).substring(2, 15),
           sender: 'system',
-          content: 'Processor-ready package assembled with common intake, KYC / KYB routing, AI underwriting, website signals, document checklist, missing items, and processor-specific answers.',
+          content: 'Processor-ready package assembled with common intake, KYC / KYB routing, rule-based review, website signals, document checklist, missing items, and processor-specific answers.',
         }
       ]);
       setIsFinished(true);
@@ -1033,7 +1033,7 @@ export function ChatApp({
       {
         id: Math.random().toString(36).substring(2, 15),
         sender: 'system',
-        content: 'Common intake complete! Please review your application on the next page, then submit for underwriting.',
+        content: 'Common intake complete. Please review your application on the next page, then submit for verification and rule-based routing review.',
       }
     ]);
 
@@ -1128,7 +1128,7 @@ export function ChatApp({
             <p className="mt-2 text-sm leading-6 text-slate-700">{decision.summary}</p>
             {decision.missingReadinessItems.length > 0 ? (
               <div className="mt-3 rounded-lg border border-violet-200 bg-white p-3 text-sm text-slate-700">
-                <p className="font-medium text-slate-900">Still missing before full Persona readiness</p>
+                <p className="font-medium text-slate-900">Still missing before full KYC / KYB readiness</p>
                 <ul className="mt-2 space-y-1">
                   {decision.missingReadinessItems.map((item) => (
                     <li key={item} className="flex gap-2">
@@ -1150,7 +1150,7 @@ export function ChatApp({
               </ul>
             ) : null}
             <div className="mt-4 rounded-lg border border-violet-200 bg-white p-3 text-xs leading-5 text-slate-600">
-              This routing follows the strict common-question rules. No external Persona API is called here; the plan is attached to the merchant profile, and actual verification results can be added before AI underwriting when available.
+              This routing follows the strict common-question rules. No external KYC / KYB API is called here; the plan is attached to the merchant profile, and verification results can be added before final rule-based review when available.
             </div>
             <div className="mt-4 flex justify-end">
               <Button

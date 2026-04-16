@@ -80,14 +80,14 @@ export function ReviewPage({ data, documents, setCurrentView, onEdit, onSubmit }
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Review Application</h1>
-          <p className="text-slate-500">Please review your information before submitting for AI underwriting.</p>
+          <p className="text-slate-500">Please review your information before submitting for rule-based verification and routing.</p>
         </div>
         <Button 
           onClick={onSubmit} 
           disabled={!isComplete}
           className="bg-blue-600 hover:bg-blue-700 text-white"
         >
-          Submit for Underwriting
+          Submit for Review
         </Button>
       </div>
 

@@ -61,8 +61,8 @@ export function AgreementPage({ data, onSign }: Props) {
             <h3 className="font-bold text-lg">1. Services Provided</h3>
             <p>Provider agrees to provide Merchant with payment processing services, gateway access, and related financial technology solutions as described in the BCIT BCP Terms of Service. Provider will facilitate the transmission of transaction data to the applicable acquiring banks and card networks.</p>
 
-            <h3 className="font-bold text-lg">2. Compliance & Underwriting</h3>
-            <p>Merchant agrees to comply with all applicable laws, card network rules, and Provider's acceptable use policy. Provider reserves the right to hold funds, suspend processing, or terminate this Agreement immediately if Merchant engages in prohibited activities, experiences excessive chargebacks, or exceeds acceptable risk thresholds as determined by Provider's AI underwriting systems.</p>
+            <h3 className="font-bold text-lg">2. Compliance & Review</h3>
+            <p>Merchant agrees to comply with all applicable laws, card network rules, and Provider's acceptable use policy. Provider reserves the right to hold funds, suspend processing, or terminate this Agreement immediately if Merchant engages in prohibited activities, experiences excessive chargebacks, or exceeds acceptable risk thresholds as determined by Provider's rule-based review process.</p>
 
             <h3 className="font-bold text-lg">3. Fees & Settlement</h3>
             <p>Fees for the Services will be assessed according to the standard BCIT BCP pricing schedule unless otherwise negotiated in writing. Settlement of funds will be made to the bank account provided by the Merchant during the onboarding process, subject to standard holding periods and reserve requirements.</p>
@@ -81,7 +81,7 @@ export function AgreementPage({ data, onSign }: Props) {
               </div>
               <div>
                 <p className="text-sm font-medium">Name: Authorized Representative</p>
-                <p className="text-sm text-slate-500">Title: Underwriting Director</p>
+                <p className="text-sm text-slate-500">Title: Review Director</p>
                 <p className="text-sm text-slate-500">Date: {new Date().toLocaleDateString()}</p>
               </div>
             </div>

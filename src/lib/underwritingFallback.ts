@@ -65,7 +65,7 @@ function countUploadedFiles(finalData: MerchantData): number {
   return slotCount + additionalCount;
 }
 
-/** Rule-based underwriting engine: scores risk, recommends processor, and audits documents. */
+/** Rule-based review engine: scores risk, recommends processor, and audits documents. */
 export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDisplayResult {
   const checklist = getMerchantDocumentChecklist(finalData);
   const missingDocuments = getMissingDocumentLabels(finalData);
@@ -206,7 +206,7 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
   const topFactors = riskFactors.slice(0, 4);
   const reasonParts = [
     `Rule-based engine scored this merchant at ${riskScore}/100 using intake answers, document coverage, and KYC / KYB review issues.`,
-    `Persona routing: ${personaDecision.action.replace('_', ' ')}.`,
+    `KYC / KYB routing: ${personaDecision.action.replace('_', ' ')}.`,
   ];
   if (topFactors.length > 0) {
     reasonParts.push(`Key drivers: ${topFactors.join('; ')}.`);
@@ -234,11 +234,11 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
     `Ownership / signer: ${finalData.beneficialOwners || finalData.ownerName || 'not supplied'}; signer ${finalData.authorizedSignerName || 'not supplied'}`,
     `Processing history: ${finalData.currentOrPreviousProcessor || finalData.previousProcessors || 'not supplied'}`,
     `Sales profile: ${finalData.monthlyVolume || 'unknown'} monthly volume, ${finalData.avgTicketSize || 'unknown'} average ticket, ${finalData.transactionChannelSplit || 'channel split not supplied'}`,
-    `Persona/KYC/KYB status: ${finalData.personaVerificationSummary || 'not attached'}`,
+    `KYC / KYB status: ${finalData.personaVerificationSummary || 'not attached'}`,
   ].join('\n');
   const processorFitSuggestion = [
     `Nuvei: good fit for standard Canadian merchant setup when KYC/KYB and documents are clean.`,
-    `Payroc / Peoples: stronger fit when risk, adverse history, or manual underwriting follow-up is present.`,
+    `Payroc / Peoples: stronger fit when risk, adverse history, or manual review follow-up is present.`,
     `Chase: stronger fit for larger, card-not-present, advance-payment, or structured ownership cases.`,
     `Selected recommendation: ${recommendedProcessor}.`,
   ].join('\n');

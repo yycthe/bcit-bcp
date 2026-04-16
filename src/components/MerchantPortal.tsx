@@ -13,7 +13,6 @@ import {
 } from '@/src/lib/documentChecklist';
 import { getFallbackUnderwriting, type UnderwritingDisplayResult } from '@/src/lib/underwritingFallback';
 import { prepareFileForUpload } from '@/src/lib/uploadPreparation';
-import { normalizeProcessorFit, buildProcessorReadyPackageSummary, getProcessorQuestionPrompt } from '@/src/lib/onboardingWorkflow';
 import type { VerificationIssue } from '@/src/lib/localVerification';
 import { MessageSquare, FileCheck, Activity, PenTool, RotateCcw, Zap, X, AlertTriangle, ShieldAlert, Upload } from 'lucide-react';
 import { Button } from '@/src/components/ui/button';
@@ -155,14 +154,19 @@ export function MerchantPortal({
     setCurrentView('status');
   };
 
-  // Run rule-based underwriting on submission
+  // Run rule-based review on submission. Admin confirms routing before processor-specific follow-up opens.
   const runUnderwritingOnSubmit = useCallback((data: MerchantData) => {
     const result = getFallbackUnderwriting(data);
     setUnderwritingResult(result);
-    const processor = normalizeProcessorFit(result.recommendedProcessor);
-    setMerchantData({ ...data, matchedProcessor: processor });
-    toast.success(`Underwriting complete — matched to ${processor}`, {
-      description: `Risk score: ${result.riskScore}/100`,
+    setMerchantData({
+      ...data,
+      matchedProcessor: '',
+      processorSpecificAnswers: '',
+      processorSpecificAnswersJson: '',
+      processorReadyPackageSummary: '',
+    });
+    toast.success('Application submitted for rule-based review', {
+      description: `Suggested route: ${result.recommendedProcessor}. Admin must confirm before follow-up.`,
     });
   }, [setUnderwritingResult, setMerchantData]);
 
@@ -266,8 +270,8 @@ export function MerchantPortal({
       <div className="relative flex min-h-0 flex-1 flex-col">
         {appStatus === 'under_review' && (
           <div className="shrink-0 border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900 flex flex-wrap items-center gap-3">
-            <span className="font-medium">Application under review</span>
-            <span className="text-blue-700/90">Our team is verifying your submission. You can still open Intake to add documents if requested.</span>
+            <span className="font-medium">Verification & routing review in progress</span>
+            <span className="text-blue-700/90">Our team is checking KYC / KYB readiness, routing, and supporting documents. You can still open Intake to add documents if requested.</span>
           </div>
         )}
         {verificationIssues.length > 0 && (
@@ -314,7 +318,7 @@ export function MerchantPortal({
           <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-3 flex gap-3 items-start">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Message from underwriting</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Message from review team</p>
               <p className="text-sm text-amber-950 mt-1 whitespace-pre-wrap">{merchantNoticeFromAdmin}</p>
               {missingDocs.length > 0 && (
                 <>

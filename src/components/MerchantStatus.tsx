@@ -74,8 +74,8 @@ export function MerchantStatus({
     },
     {
       id: 'under_review',
-      title: 'Underwriting Review',
-      description: 'Our team is reviewing your profile and verifying documents.',
+      title: 'Verification & Routing Review',
+      description: 'Our team is checking KYC / KYB readiness, documents, and processor routing.',
       icon: Clock,
       isActive: status === 'under_review' || status === 'approved' || status === 'signed',
       isCompleted: status === 'approved' || status === 'signed'
@@ -101,7 +101,7 @@ export function MerchantStatus({
         <div className="mb-8 rounded-lg border border-amber-200 bg-amber-50 p-4 flex gap-3 text-left">
           <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold uppercase text-amber-800">Underwriting requested an update</p>
+            <p className="text-xs font-semibold uppercase text-amber-800">Review team requested an update</p>
             <p className="text-sm text-amber-950 mt-1 whitespace-pre-wrap">{adminNotice}</p>
             {missingDocuments.length > 0 && onInlineUpload && (
               <>
@@ -137,7 +137,7 @@ export function MerchantStatus({
               <Building className={`w-5 h-5 shrink-0 mt-0.5 ${processorFollowUpComplete ? 'text-green-600' : 'text-blue-600'}`} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-slate-900">
-                  Processor matched: {matchedProcessor}
+                  Processor routed: {matchedProcessor}
                 </p>
                 {processorFollowUpComplete ? (
                   <p className="text-sm text-green-800 mt-1">Processor-specific follow-up complete.</p>

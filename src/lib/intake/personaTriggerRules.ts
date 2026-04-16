@@ -410,7 +410,7 @@ export function evaluateStrictPersonaTriggers(data: MerchantData): StrictPersona
   const summaryBits = [
     `Action: ${
       action === 'none'
-        ? 'hold Persona invites'
+        ? 'hold KYC / KYB steps'
         : action === 'both'
           ? 'send KYB and KYC together'
           : action === 'kyb_first'
@@ -423,7 +423,7 @@ export function evaluateStrictPersonaTriggers(data: MerchantData): StrictPersona
     `KYB ready: ${flags.KYB_ready_to_send ? 'yes' : 'no'}.`,
     `KYC ready: ${flags.KYC_ready_to_send ? 'yes' : 'no'}.`,
     `KYB priority: ${kybPriority}.`,
-    missingReadinessItems.length > 0 ? `Still missing: ${missingReadinessItems.join(', ')}.` : 'Persona readiness is complete from the Common layer.',
+    missingReadinessItems.length > 0 ? `Still missing: ${missingReadinessItems.join(', ')}.` : 'KYC / KYB readiness is complete from the Common layer.',
   ];
 
   return {
@@ -461,7 +461,7 @@ export function buildStrictPersonaSummary(data: MerchantData): string {
   const reasonText = decision.reasons.length > 0 ? ` Reasons: ${decision.reasons.join(' ')}` : '';
 
   return [
-    `Persona trigger decision: ${decision.summary}`,
+    `KYC / KYB trigger decision: ${decision.summary}`,
     `KYC recipients: ${recipientText}.`,
     `Held KYC recipients: ${heldText}.`,
     `Shared verification sufficiently completed: ${decision.sharedVerificationSufficientlyCompleted ? 'yes' : 'no'}.`,

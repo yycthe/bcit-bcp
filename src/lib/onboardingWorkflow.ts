@@ -58,7 +58,7 @@ export function buildPersonaSummary(data: MerchantData): string {
 
   const resultsText =
     resultParts.length > 0
-      ? ` Persona results: ${resultParts.join('. ')}.`
+      ? ` KYC / KYB verification results: ${resultParts.join('. ')}.`
       : ' Verification result capture: KYB/KYC passed, failed, pending, mismatches, and incomplete checks should be attached here when available.';
 
   return `${buildStrictPersonaSummary(data)}${resultsText}`;
@@ -107,6 +107,7 @@ const PROCESSOR_QUESTION_SETS: Record<ProcessorFit, ProcessorQuestionSet> = {
         title: 'Ownership / management detail',
         questions: [
           'For each owner, do they have significant managerial control?',
+          'Are there additional beneficial owners beyond the first listed section?',
           'For each owner, what is their driver licence number? Use masked or last-four format in this demo.',
           'For each owner, what province issued the driver licence?',
           'For each owner, what is their mobile number?',
@@ -145,11 +146,16 @@ const PROCESSOR_QUESTION_SETS: Record<ProcessorFit, ProcessorQuestionSet> = {
         ],
       },
       {
-        title: 'Site / location / setup',
+        title: 'Site / location questions',
         questions: [
           'What zone is your business located in?',
           'What is the approximate square footage?',
           'What type of location is it?',
+        ],
+      },
+      {
+        title: 'Setup / technical',
+        questions: [
           'Do you need terminal purchase or rental?',
           'Do you need tip functionality?',
           'Do you need auto-settle?',
@@ -298,7 +304,7 @@ const PROCESSOR_QUESTION_SETS: Record<ProcessorFit, ProcessorQuestionSet> = {
         ],
       },
       {
-        title: 'Signer / guarantee / consent / retrieval',
+        title: 'Signer / guarantee / consent',
         questions: [
           'Who is the authorized representative signing on behalf of the merchant?',
           'Is the signer listed in the ownership section?',
@@ -306,6 +312,11 @@ const PROCESSOR_QUESTION_SETS: Record<ProcessorFit, ProcessorQuestionSet> = {
           'Does each guarantor agree to the personal guarantee terms?',
           'Does the merchant consent to credit and financial investigation?',
           'Does the merchant consent to pre-authorized debits from the settlement account?',
+        ],
+      },
+      {
+        title: 'Reporting / retrieval',
+        questions: [
           'Where should chargeback and retrieval requests be sent?',
           'Should online reporting instructions be sent to the legal email provided?',
         ],
@@ -337,15 +348,15 @@ export function buildProcessorReadyPackageSummary(data: MerchantData): string {
   if (!hasText(data.legalName)) missingParts.push('legal business name');
   if (!hasText(data.website)) missingParts.push('website URL');
   if (!hasText(data.personaVerificationSummary) || personaResult.includes('pending')) {
-    missingParts.push('completed Persona verification results');
+    missingParts.push('completed KYC / KYB verification results');
   }
   if (!hasText(data.processorSpecificAnswers)) missingParts.push(`${processor} follow-up answers`);
 
   const readiness = missingParts.length === 0 ? 'Processor-ready' : `Not ready; missing ${missingParts.join(', ')}`;
   return [
     `Matched processor: ${processor}`,
-    `Persona plan: ${decision.action.replace('_', ' ')}`,
+    `KYC / KYB plan: ${decision.action.replace('_', ' ')}`,
     `Readiness: ${readiness}`,
-    `Package contents: common intake, Persona decision/results, website review signals, AI underwriting summary, ${processor} follow-up answers, document checklist, and missing items.`,
+    `Package contents: common intake, KYC / KYB decision/results, website compliance signals, rule-based review summary, ${processor} follow-up answers, document checklist, and missing items.`,
   ].join('\n');
 }

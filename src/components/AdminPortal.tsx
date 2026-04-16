@@ -4,6 +4,11 @@ import { getMerchantDocumentChecklist, buildDefaultDocumentReminder } from '@/sr
 import { runLocalVerificationCheck, type VerificationCheckResult, type VerificationIssue } from '@/src/lib/localVerification';
 import { buildPersonaSummary } from '@/src/lib/onboardingWorkflow';
 import { getFallbackUnderwriting, type UnderwritingDisplayResult } from '@/src/lib/underwritingFallback';
+import {
+  RULE_BASED_MASTER_PROMPT,
+  RULE_BASED_PORTAL_RULES,
+  RULE_BASED_WORKFLOW_STEPS,
+} from '@/src/lib/ruleBasedWorkflow';
 import { FormattedSummary } from '@/src/components/ui/formatted-summary';
 import { ShieldCheck, LayoutDashboard, Clock, CheckCircle2, FileWarning, Send, Trash2, Building, Activity, AlertCircle, Globe, FileText, FileSearch, ShieldAlert, RefreshCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/src/components/ui/card';
@@ -94,8 +99,8 @@ export function AdminPortal({
   const runRuleBasedUnderwriting = () => {
     const result = getFallbackUnderwriting(merchantData);
     setUnderwritingResult(result);
-    toast.success('Rule-based underwriting complete', {
-      description: `Risk score: ${result.riskScore}/100 — ${result.riskCategory}`,
+    toast.success('Rule-based review complete', {
+      description: `Review score: ${result.riskScore}/100 — ${result.riskCategory}`,
     });
   };
 
@@ -105,7 +110,7 @@ export function AdminPortal({
       return;
     }
     if (!personaKybStatus && !personaKycStatuses && !personaVerificationIssues) {
-      toast.error('Enter at least one Persona result field before saving.');
+      toast.error('Enter at least one KYC / KYB result field before saving.');
       return;
     }
     setMerchantData((prev) => ({
@@ -121,7 +126,7 @@ export function AdminPortal({
         .filter(Boolean)
         .join('. ') || prev.personaVerificationSummary,
     }));
-    toast.success('Persona verification results saved to merchant profile');
+    toast.success('KYC / KYB verification results saved to merchant profile');
   };
 
   const getScoreColor = (score: number) => {
@@ -157,7 +162,7 @@ export function AdminPortal({
       {/* Sidebar */}
       <div className="w-64 bg-slate-900 text-slate-300 border-r border-slate-800 flex flex-col shrink-0">
         <div className="p-4 border-b border-slate-800">
-          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Underwriter Dashboard</h2>
+          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Rule-Based Review Dashboard</h2>
         </div>
         <nav className="flex-1 p-4 space-y-1">
           <button
@@ -179,7 +184,7 @@ export function AdminPortal({
             }`}
           >
             <ShieldCheck className={`w-5 h-5 ${currentView === 'underwriting' ? 'text-emerald-500' : 'text-slate-500'}`} />
-            Underwriting Report
+            Review Report
           </button>
         </nav>
       </div>
@@ -190,7 +195,7 @@ export function AdminPortal({
           <div className="p-8 max-w-6xl mx-auto h-full overflow-y-auto">
             <div className="mb-8">
               <h1 className="text-2xl font-bold text-slate-900">Application Queue</h1>
-              <p className="text-slate-500">Manage and review incoming merchant applications.</p>
+              <p className="text-slate-500">Manage common intake, KYC / KYB verification, processor routing, and package readiness.</p>
             </div>
 
             <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
@@ -199,7 +204,7 @@ export function AdminPortal({
                   <tr>
                     <th className="px-6 py-4 font-medium">Merchant</th>
                     <th className="px-6 py-4 font-medium">Industry</th>
-                    <th className="px-6 py-4 font-medium">Risk Score</th>
+                    <th className="px-6 py-4 font-medium">Review Score</th>
                     <th className="px-6 py-4 font-medium">Status</th>
                     <th className="px-6 py-4 font-medium text-right">Action</th>
                   </tr>
@@ -238,11 +243,11 @@ export function AdminPortal({
                             <span className="font-medium">{underwritingResult.riskScore}/100</span>
                           </div>
                         ) : (
-                          <span className="text-slate-400 italic">Not scored</span>
+                          <span className="text-slate-400 italic">Not reviewed</span>
                         )}
                       </td>
                       <td className="px-6 py-4">
-                        {appStatus === 'under_review' && <Badge variant="warning" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100 flex w-fit items-center gap-1"><Clock className="w-3 h-3" /> Under Review</Badge>}
+                        {appStatus === 'under_review' && <Badge variant="warning" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100 flex w-fit items-center gap-1"><Clock className="w-3 h-3" /> Review in Progress</Badge>}
                         {appStatus === 'approved' && <Badge variant="success" className="bg-green-100 text-green-800 hover:bg-green-100 flex w-fit items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Approved</Badge>}
                         {appStatus === 'signed' && <Badge variant="success" className="bg-blue-100 text-blue-800 hover:bg-blue-100 flex w-fit items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Signed</Badge>}
                       </td>
@@ -251,7 +256,7 @@ export function AdminPortal({
                           onClick={() => setCurrentView('underwriting')}
                           className="text-emerald-600 hover:text-emerald-700 font-medium text-sm"
                         >
-                          Review Report
+                          Open Review
                         </button>
                       </td>
                     </tr>
@@ -295,7 +300,7 @@ export function AdminPortal({
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base">Notify merchant (demo)</CardTitle>
                       <p className="text-xs text-slate-500 font-normal mt-1">
-                        Shown as a banner on the Merchant portal while <strong>Under review</strong>.
+                        Shown as a banner on the Merchant portal while <strong>verification and routing review</strong> is in progress.
                       </p>
                     </CardHeader>
                     <CardContent className="space-y-3">
@@ -334,7 +339,7 @@ export function AdminPortal({
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base flex items-center gap-2">
                         <Building className="w-4 h-4 text-emerald-600" />
-                        Processor assignment
+                        Processor routing
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
@@ -345,7 +350,7 @@ export function AdminPortal({
                           value={merchantData.matchedProcessor || ''}
                           onChange={(e) => {
                             const processor = e.target.value;
-                            setMerchantData((prev) => ({ ...prev, matchedProcessor: processor || undefined }));
+                            setMerchantData((prev) => ({ ...prev, matchedProcessor: processor }));
                             if (processor) {
                               toast.success(`Processor set to ${processor}`);
                             } else {
@@ -361,13 +366,13 @@ export function AdminPortal({
                       </div>
                       {underwritingResult?.recommendedProcessor && (
                         <p className="text-xs text-slate-500">
-                          Rule-based suggestion: <strong>{underwritingResult.recommendedProcessor}</strong>
+                          Rule-based routing suggestion: <strong>{underwritingResult.recommendedProcessor}</strong>
                         </p>
                       )}
                     </CardContent>
                   </Card>
 
-                  {/* KYC / KYB — merged Persona results + rules check */}
+                  {/* KYC / KYB — manual results + rules check */}
                   <Card className="border-blue-200 bg-blue-50/40">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base flex items-center gap-2">
@@ -376,7 +381,7 @@ export function AdminPortal({
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      {/* Persona manual entry */}
+                      {/* KYC / KYB manual entry */}
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <div>
                           <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">KYB status</label>
@@ -413,7 +418,7 @@ export function AdminPortal({
                       <div className="flex flex-wrap gap-2">
                         <Button type="button" size="sm" className="bg-blue-700 hover:bg-blue-800 gap-1" onClick={savePersonaResults}>
                           <ShieldCheck className="w-3.5 h-3.5" />
-                          Save Persona results
+                          Save KYC / KYB results
                         </Button>
                         <Button
                           type="button"
@@ -458,6 +463,49 @@ export function AdminPortal({
                       )}
                     </CardContent>
                   </Card>
+
+                  <Card className="lg:col-span-2 border-slate-200 bg-white">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-slate-600" />
+                        Rule-based workflow prompt
+                      </CardTitle>
+                      <p className="text-xs text-slate-500 font-normal mt-1">
+                        Source of truth for this demo flow: no AI model call, no external identity API dependency.
+                      </p>
+                    </CardHeader>
+                    <CardContent className="grid gap-4 text-sm lg:grid-cols-2">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Portal flow</p>
+                        <ol className="mt-2 space-y-2">
+                          {RULE_BASED_WORKFLOW_STEPS.map((step, index) => (
+                            <li key={step} className="flex gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                              <span className="font-semibold text-slate-500">{index + 1}.</span>
+                              <span className="text-slate-700">{step}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Guardrails</p>
+                        <ul className="mt-2 space-y-2">
+                          {RULE_BASED_PORTAL_RULES.map((rule) => (
+                            <li key={rule} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+                              {rule}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <details className="lg:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          View master prompt / question map
+                        </summary>
+                        <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-white p-3 text-xs leading-5 text-slate-700">
+                          {RULE_BASED_MASTER_PROMPT}
+                        </pre>
+                      </details>
+                    </CardContent>
+                  </Card>
                 </div>
 
                 {/* Processor-specific follow-up answers — only if present */}
@@ -466,10 +514,10 @@ export function AdminPortal({
                     <CardHeader className="pb-2">
                       <CardTitle className="text-base flex items-center gap-2">
                         <FileWarning className="w-4 h-4 text-emerald-600" />
-                        Processor-specific follow-up answers
+                        Processor-specific second-layer answers
                       </CardTitle>
                       <p className="text-xs text-slate-600 font-normal mt-1">
-                        Matched processor: <strong>{merchantData.matchedProcessor || 'Not yet matched'}</strong>
+                        Routed processor: <strong>{merchantData.matchedProcessor || 'Not yet routed'}</strong>
                       </p>
                     </CardHeader>
                     <CardContent>
@@ -488,8 +536,8 @@ export function AdminPortal({
           <div className="p-8 max-w-5xl mx-auto overflow-y-auto h-full space-y-8">
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h1 className="text-2xl font-bold text-slate-900">Underwriting Report</h1>
-                <p className="text-slate-500">Rule-based risk analysis and processor recommendation.</p>
+                <h1 className="text-2xl font-bold text-slate-900">Verification & Routing Report</h1>
+                <p className="text-slate-500">Rule-based review of readiness, verification status, and processor routing.</p>
               </div>
               <Button
                 type="button"
@@ -499,7 +547,7 @@ export function AdminPortal({
                 onClick={runRuleBasedUnderwriting}
               >
                 <RefreshCcw className="w-4 h-4" />
-                {underwritingResult ? 'Re-analyze' : 'Run Analysis'}
+                {underwritingResult ? 'Re-run Review' : 'Run Review'}
               </Button>
             </div>
 
@@ -508,24 +556,24 @@ export function AdminPortal({
                 <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
                   <Activity className="w-8 h-8 text-slate-400" />
                 </div>
-                <h2 className="text-xl font-semibold text-slate-800 mb-2">No Underwriting Data Yet</h2>
+                <h2 className="text-xl font-semibold text-slate-800 mb-2">No Review Data Yet</h2>
                 <p className="text-slate-500 max-w-md mb-4">
-                  Click "Run Analysis" above to generate a rule-based underwriting report from the merchant's intake data.
+                  Click "Run Review" above to generate a rule-based verification, readiness, and routing report from the merchant's intake data.
                 </p>
                 <Button onClick={runRuleBasedUnderwriting} className="gap-2">
-                  <Activity className="w-4 h-4" /> Run Analysis
+                  <Activity className="w-4 h-4" /> Run Review
                 </Button>
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left Column: Risk & Recommendation */}
+                {/* Left Column: review score and routing recommendation */}
                 <div className="lg:col-span-2 space-y-6">
                   <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
                     <Card className="border-primary shadow-md overflow-hidden">
                       <div className="bg-slate-50 border-b p-6">
                         <div className="flex justify-between items-start mb-4">
                           <div>
-                            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Recommended Processor</h3>
+                            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Processor Routing Result</h3>
                             <div className="flex items-center gap-3">
                               {underwritingResult.recommendedProcessor === 'Nuvei' && <Building className="w-6 h-6 text-blue-500" />}
                               {underwritingResult.recommendedProcessor === 'Payroc / Peoples' && <ShieldCheck className="w-6 h-6 text-emerald-600" />}
@@ -533,7 +581,7 @@ export function AdminPortal({
                               <span className="text-2xl font-bold text-slate-900">{underwritingResult.recommendedProcessor}</span>
                             </div>
                           </div>
-                          <Badge variant="success" className="px-3 py-1 text-sm">Rule-Based Match</Badge>
+                          <Badge variant="success" className="px-3 py-1 text-sm">Rule-Based Route</Badge>
                         </div>
                         <FormattedSummary text={underwritingResult.reason} emptyText="No recommendation reason." />
                       </div>
@@ -543,7 +591,7 @@ export function AdminPortal({
                           <div className="flex justify-between items-end mb-2">
                             <h4 className="font-semibold text-slate-900 flex items-center gap-2">
                               <Activity className="w-5 h-5 text-slate-400" />
-                              Overall Risk Score
+                              Overall Review Score
                             </h4>
                             <div className="text-right">
                               <span className={`font-bold text-3xl ${getScoreTextColor(underwritingResult.riskScore)}`}>
@@ -556,9 +604,9 @@ export function AdminPortal({
                             <div className={`h-full ${getScoreColor(underwritingResult.riskScore)} transition-all duration-1000`} style={{ width: `${underwritingResult.riskScore}%` }}></div>
                           </div>
                           <div className="flex justify-between text-xs text-slate-500 font-medium">
-                            <span>Low Risk (0-33)</span>
-                            <span>Medium Risk (34-66)</span>
-                            <span>High Risk (67-100)</span>
+                            <span>Low (0-33)</span>
+                            <span>Medium (34-66)</span>
+                            <span>High (67-100)</span>
                           </div>
                         </div>
 
@@ -637,7 +685,7 @@ export function AdminPortal({
                         >
                           {appStatus === 'approved' || appStatus === 'signed'
                             ? `Approved & Routed to ${underwritingResult.recommendedProcessor}`
-                            : `Approve & Route to ${underwritingResult.recommendedProcessor}`}
+                            : `Approve Package & Route to ${underwritingResult.recommendedProcessor}`}
                         </Button>
                       </CardFooter>
                     </Card>
@@ -652,7 +700,7 @@ export function AdminPortal({
                       <CardTitle className="text-base">Merchant Overview</CardTitle>
                     </CardHeader>
                     <CardContent className="p-4 space-y-3 text-sm">
-                      <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Category</span> <Badge variant={underwritingResult.riskCategory === 'Low' ? 'success' : underwritingResult.riskCategory === 'Medium' ? 'warning' : 'destructive'}>{underwritingResult.riskCategory}</Badge></div>
+                      <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Review Category</span> <Badge variant={underwritingResult.riskCategory === 'Low' ? 'success' : underwritingResult.riskCategory === 'Medium' ? 'warning' : 'destructive'}>{underwritingResult.riskCategory}</Badge></div>
                       <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Industry</span> <span className="font-medium capitalize">{merchantData.industry.replace('_', ' ')}</span></div>
                       <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Volume</span> <span className="font-medium">{merchantData.monthlyVolume}</span></div>
                       <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Transactions</span> <span className="font-medium">{merchantData.monthlyTransactions}</span></div>
