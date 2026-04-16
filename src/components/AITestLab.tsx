@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Upload, FileText, Sparkles, LoaderCircle, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/src/components/ui/button';
@@ -41,6 +41,14 @@ function stripBinaryFromFile(file: FileData): FileData {
     ...file,
     data: '',
   };
+}
+
+function parseRetryAfterSeconds(value: string | null): number {
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.min(300, Math.ceil(seconds));
+  }
+  return 60;
 }
 
 function buildMerchantData(files: FileData[], notes: string, scenarioName: string): MerchantData {
@@ -102,8 +110,26 @@ export function AITestLab() {
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
   const [lastMode, setLastMode] = useState<'full' | 'metadata-only' | null>(null);
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const totalBytes = useMemo(() => estimateJsonBytes({ files }), [files]);
+  const cooldownSeconds = cooldownUntil ? Math.max(0, Math.ceil((cooldownUntil - now) / 1000)) : 0;
+
+  useEffect(() => {
+    if (!cooldownUntil) return undefined;
+
+    const timer = window.setInterval(() => {
+      const current = Date.now();
+      setNow(current);
+      if (current >= cooldownUntil) {
+        setCooldownUntil(null);
+        window.clearInterval(timer);
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [cooldownUntil]);
 
   async function handleFilesSelected(event: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(event.target.files ?? []);
@@ -131,6 +157,10 @@ export function AITestLab() {
   async function runSummary() {
     if (!files.length) {
       toast.error('Please upload at least one file first.');
+      return;
+    }
+    if (cooldownSeconds > 0) {
+      toast.warning(`xAI is rate-limited. Try again in ${cooldownSeconds}s.`);
       return;
     }
 
@@ -177,6 +207,10 @@ export function AITestLab() {
       }
       if (!response.ok) {
         const detail = payload.error || rawText.trim().slice(0, 400);
+        if (response.status === 429) {
+          const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('retry-after'));
+          setCooldownUntil(Date.now() + retryAfterSeconds * 1000);
+        }
         throw new Error(detail || `Request failed (${response.status})`);
       }
 
@@ -286,11 +320,13 @@ export function AITestLab() {
               <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-amber-500" />
-                  Estimated upload payload: {(totalBytes / 1024 / 1024).toFixed(2)} MB
+                  {cooldownSeconds > 0
+                    ? `xAI cooldown active: try again in ${cooldownSeconds}s`
+                    : `Estimated upload payload: ${(totalBytes / 1024 / 1024).toFixed(2)} MB`}
                 </div>
-                <Button onClick={runSummary} disabled={isRunning || files.length === 0} className="gap-2">
+                <Button onClick={runSummary} disabled={isRunning || files.length === 0 || cooldownSeconds > 0} className="gap-2">
                   {isRunning ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  Run AI Summary
+                  {cooldownSeconds > 0 ? `Wait ${cooldownSeconds}s` : 'Run AI Summary'}
                 </Button>
               </div>
             </CardContent>

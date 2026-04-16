@@ -66,15 +66,19 @@ type XaiResponseTextPart = {
 };
 
 type XaiResponseOutputItem = {
-  content?: XaiResponseTextPart[];
+  type?: string;
+  text?: string;
+  content?: string | XaiResponseTextPart[];
 };
 
 type XaiResponsesCreateResponse = {
+  output_text?: string;
   output?: XaiResponseOutputItem[];
 };
 
 const XAI_BASE_URL = 'https://api.x.ai/v1';
 const DEFAULT_XAI_MODEL = 'grok-4-1-fast-non-reasoning';
+const FALLBACK_XAI_MODELS = ['grok-4-fast-non-reasoning', 'grok-4.20-reasoning'] as const;
 const ALLOWED_PROCESSORS: Processor[] = ['Nuvei', 'Payroc / Peoples', 'Chase'];
 const XAI_UPLOAD_TIMEOUT_MS = 15_000;
 const XAI_RESPONSE_TIMEOUT_MS = 35_000;
@@ -431,6 +435,80 @@ const INTAKE_SECTIONS: IntakeSectionDefinition[] = [
     ],
   },
 ];
+const UNDERWRITING_RESULT_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'riskScore',
+    'riskCategory',
+    'riskFactors',
+    'recommendedProcessor',
+    'reason',
+    'merchantSummary',
+    'missingItems',
+    'readinessDecision',
+    'processorFitSuggestion',
+    'websiteReviewSummary',
+    'documentSummary',
+    'verificationStatus',
+    'verificationNotes',
+  ],
+  properties: {
+    riskScore: {
+      type: 'number',
+      description: 'Overall underwriting risk score from 0 to 100.',
+    },
+    riskCategory: {
+      type: 'string',
+      enum: ['Low', 'Medium', 'High'],
+    },
+    riskFactors: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Two to five concrete underwriting risk drivers.',
+    },
+    recommendedProcessor: {
+      type: 'string',
+      enum: ['Nuvei', 'Payroc / Peoples', 'Chase'],
+    },
+    reason: {
+      type: 'string',
+      description: 'Evidence-based explanation for score and processor recommendation.',
+    },
+    merchantSummary: {
+      type: 'string',
+      description: 'Structured merchant summary covering entity, model, owners, signer, sales, website, documents, and verification.',
+    },
+    missingItems: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    readinessDecision: {
+      type: 'string',
+      description: 'One of: Ready for matching, Hold for manual review, or Missing items needed.',
+    },
+    processorFitSuggestion: {
+      type: 'string',
+      description: 'Fit notes for Nuvei, Payroc / Peoples, and Chase.',
+    },
+    websiteReviewSummary: {
+      type: 'string',
+      description: 'Structured website legitimacy and compliance summary.',
+    },
+    documentSummary: {
+      type: 'string',
+      description: 'Summary of uploaded document evidence or metadata-only limitations.',
+    },
+    verificationStatus: {
+      type: 'string',
+      enum: ['Verified', 'Discrepancies Found', 'Unverified'],
+    },
+    verificationNotes: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} as const;
 
 function jsonResponse(body: unknown, status = 200, extraHeaders?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
@@ -448,7 +526,19 @@ function toPublicErrorMessage(message: string): string {
     return 'AI service is not configured on the server.';
   }
 
+  if (isXaiRateLimitMessage(message)) {
+    return 'xAI is rate-limiting this project right now (429). Please wait about a minute and try again, or increase the xAI/Vercel Integration limits if this repeats.';
+  }
+
+  if (isLikelyXaiModelMessage(message)) {
+    return 'The configured xAI model is unavailable for this project. The server tried its safe fallback model list, but xAI still rejected the request.';
+  }
+
   return 'AI underwriting request failed. Please try again.';
+}
+
+function toPublicErrorStatus(message: string): number {
+  return isXaiRateLimitMessage(message) ? 429 : 500;
 }
 
 function toServerLogErrorMessage(message: string): string {
@@ -643,6 +733,15 @@ function resolveXaiApiKey(): string | undefined {
 
 function resolveXaiModel(): string {
   return process.env.XAI_MODEL?.trim() || process.env.AI_MODEL?.trim() || DEFAULT_XAI_MODEL;
+}
+
+function resolveXaiModels(): string[] {
+  const configuredFallbacks = (process.env.XAI_MODEL_FALLBACKS ?? '')
+    .split(',')
+    .map((model) => model.trim())
+    .filter(Boolean);
+
+  return [...new Set([resolveXaiModel(), ...configuredFallbacks, ...FALLBACK_XAI_MODELS])];
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -1474,14 +1573,125 @@ async function deleteXaiFile(fileId: string, apiKey: string): Promise<void> {
 
 function extractResponseText(payload: XaiResponsesCreateResponse): string {
   const texts: string[] = [];
+  if (typeof payload.output_text === 'string' && payload.output_text.trim()) {
+    texts.push(payload.output_text);
+  }
+
   for (const item of payload.output ?? []) {
+    if (typeof item.text === 'string' && item.text.trim()) {
+      texts.push(item.text);
+    }
+
+    if (typeof item.content === 'string' && item.content.trim()) {
+      texts.push(item.content);
+      continue;
+    }
+
     for (const part of item.content ?? []) {
-      if (part.type === 'output_text' && typeof part.text === 'string') {
+      if (typeof part.text === 'string' && part.text.trim()) {
         texts.push(part.text);
       }
     }
   }
   return texts.join('\n').trim();
+}
+
+function stripJsonFence(value: string): string {
+  const trimmed = value.trim();
+  const fenced = trimmed.match(/^```(?:json|js|javascript)?\s*([\s\S]*?)\s*```$/i);
+  if (fenced?.[1]) return fenced[1].trim();
+  if (!trimmed.startsWith('```')) return trimmed;
+  return trimmed
+    .replace(/^```[^\n]*\n?/i, '')
+    .replace(/\n?```$/i, '')
+    .trim();
+}
+
+function findBalancedJsonObjectText(value: string): string | undefined {
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (start === -1) {
+      if (char === '{') {
+        start = index;
+        depth = 1;
+      }
+      continue;
+    }
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+    } else if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return value.slice(start, index + 1);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function parseModelJson(outputText: string): unknown {
+  const stripped = stripJsonFence(outputText);
+  const candidates = [
+    outputText.trim(),
+    stripped,
+    findBalancedJsonObjectText(outputText),
+    findBalancedJsonObjectText(stripped),
+  ].filter((candidate): candidate is string => Boolean(candidate?.trim()));
+
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Try the next recovery shape; the public error stays generic.
+    }
+  }
+
+  throw new Error('xAI returned output that was not valid JSON for the underwriting schema.');
+}
+
+function isXaiRateLimitMessage(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes('xai') && (lower.includes('(429)') || lower.includes('rate limit') || lower.includes('too many requests'));
+}
+
+function isLikelyXaiModelMessage(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('xai responses request failed') &&
+    lower.includes('model') &&
+    (lower.includes('not found') ||
+      lower.includes('does not exist') ||
+      lower.includes('unavailable') ||
+      lower.includes('not supported') ||
+      lower.includes('unsupported') ||
+      lower.includes('invalid'))
+  );
+}
+
+function shouldRetryWithFallbackModel(error: unknown): boolean {
+  const message = describeError(error);
+  if (isXaiRateLimitMessage(message)) return false;
+  return isLikelyXaiModelMessage(message);
 }
 
 function describeError(error: unknown): string {
@@ -1500,7 +1710,7 @@ async function runUnderwriting(merchantData: MerchantDataLike): Promise<Underwri
     throw new Error('Missing XAI_API_KEY or an environment variable ending in _XAI_API_KEY.');
   }
 
-  const model = resolveXaiModel();
+  const models = resolveXaiModels();
   const uploads = getUploadedFiles(merchantData);
   const uploadedFileIds: string[] = [];
   const deliveredFields = new Set<string>();
@@ -1555,40 +1765,61 @@ async function runUnderwriting(merchantData: MerchantDataLike): Promise<Underwri
       text: buildPromptText(merchantData, deliveredFields, skippedNotes, websiteReviewText),
     });
 
-    const response = await xaiFetch(
-      '/responses',
-      apiKey,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          store: false,
-          input: [
-            {
-              role: 'user',
-              content,
+    let lastError: unknown;
+    for (const model of models) {
+      try {
+        const response = await xaiFetch(
+          '/responses',
+          apiKey,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
             },
-          ],
-        }),
-      },
-      XAI_RESPONSE_TIMEOUT_MS
-    );
+            body: JSON.stringify({
+              model,
+              store: false,
+              text: {
+                format: {
+                  type: 'json_schema',
+                  name: 'underwriting_result',
+                  schema: UNDERWRITING_RESULT_JSON_SCHEMA,
+                  strict: true,
+                },
+              },
+              input: [
+                {
+                  role: 'user',
+                  content,
+                },
+              ],
+            }),
+          },
+          XAI_RESPONSE_TIMEOUT_MS
+        );
 
-    const rawText = await response.text();
-    if (!response.ok) {
-      throw new Error(`xAI responses request failed (${response.status}): ${rawText.slice(0, 1000)}`);
+        const rawText = await response.text();
+        if (!response.ok) {
+          throw new Error(`xAI responses request failed (${response.status}) for model ${model}: ${rawText.slice(0, 1000)}`);
+        }
+
+        const payload = JSON.parse(rawText) as XaiResponsesCreateResponse;
+        const outputText = extractResponseText(payload);
+        if (!outputText) {
+          throw new Error(`xAI responses request succeeded but no output_text was returned for model ${model}: ${rawText.slice(0, 1000)}`);
+        }
+
+        return parseUnderwritingResult(parseModelJson(outputText));
+      } catch (error) {
+        lastError = error;
+        if (!shouldRetryWithFallbackModel(error)) {
+          throw error;
+        }
+        console.warn('[underwrite] model failed, trying xAI fallback model:', toServerLogErrorMessage(describeError(error)));
+      }
     }
 
-    const payload = JSON.parse(rawText) as XaiResponsesCreateResponse;
-    const outputText = extractResponseText(payload);
-    if (!outputText) {
-      throw new Error(`xAI responses request succeeded but no output_text was returned: ${rawText.slice(0, 1000)}`);
-    }
-
-    return parseUnderwritingResult(JSON.parse(outputText));
+    throw lastError instanceof Error ? lastError : new Error('xAI responses request failed.');
   } finally {
     await Promise.all(uploadedFileIds.map((fileId) => deleteXaiFile(fileId, apiKey)));
   }
@@ -1612,6 +1843,10 @@ export async function POST(request: Request): Promise<Response> {
     } catch (error) {
       const firstMessage = describeError(error);
 
+      if (isXaiRateLimitMessage(firstMessage)) {
+        throw error;
+      }
+
       if (!hasBinaryAttachmentData(body.merchantData)) {
         throw error;
       }
@@ -1623,7 +1858,12 @@ export async function POST(request: Request): Promise<Response> {
   } catch (error) {
     const message = describeError(error);
     console.error('[underwrite] request failed:', toServerLogErrorMessage(message));
-    return jsonResponse({ error: toPublicErrorMessage(message) }, 500);
+    const status = toPublicErrorStatus(message);
+    return jsonResponse(
+      { error: toPublicErrorMessage(message) },
+      status,
+      status === 429 ? { 'Retry-After': '60' } : undefined
+    );
   }
 }
 
