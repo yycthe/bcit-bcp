@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/src/comp
 import { Badge } from '@/src/components/ui/badge';
 import { Button } from '@/src/components/ui/button';
 import { FormattedSummary } from '@/src/components/ui/formatted-summary';
-import { Zap, Globe, AlertCircle, Building, Activity, FileText, CheckCircle2, FileSearch, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Globe, AlertCircle, Building, Activity, FileText, CheckCircle2, FileSearch, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
@@ -91,10 +91,9 @@ export function AIUnderwriting({ data, aiRecommendation, documents, documentChec
                   <div>
                     <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Recommended Processor</h3>
                     <div className="flex items-center gap-3">
-                      {recommendedProcessor === 'Stripe' && <Zap className="w-6 h-6 text-indigo-500" />}
-                      {recommendedProcessor === 'Adyen' && <Globe className="w-6 h-6 text-green-500" />}
-                      {recommendedProcessor === 'HighRiskPay' && <AlertCircle className="w-6 h-6 text-red-500" />}
                       {recommendedProcessor === 'Nuvei' && <Building className="w-6 h-6 text-blue-500" />}
+                      {recommendedProcessor === 'Payroc / Peoples' && <ShieldCheck className="w-6 h-6 text-emerald-600" />}
+                      {recommendedProcessor === 'Chase' && <Globe className="w-6 h-6 text-sky-600" />}
                       <span className="text-2xl font-bold text-slate-900">{recommendedProcessor}</span>
                     </div>
                   </div>
@@ -207,6 +206,41 @@ export function AIUnderwriting({ data, aiRecommendation, documents, documentChec
               <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Volume</span> <span className="font-medium">{data.monthlyVolume}</span></div>
               <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Transactions</span> <span className="font-medium">{data.monthlyTransactions}</span></div>
               <div className="flex justify-between items-center pt-1"><span className="text-slate-500">Est. Avg Ticket</span> <span className="font-medium text-blue-700 bg-blue-50 px-2 py-1 rounded border border-blue-100">{avgTicketSize}</span></div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-violet-100 bg-violet-50/60">
+            <CardHeader className="pb-3 border-b border-violet-100">
+              <CardTitle className="text-base text-violet-950 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4" />
+                Workflow Readiness
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-4 text-sm">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">KYC / KYB routing</p>
+                <FormattedSummary
+                  text={data.personaInvitePlan || data.personaVerificationSummary}
+                  emptyText="No KYC / KYB routing plan attached."
+                  tone="slate"
+                />
+              </div>
+              <div className="border-t border-violet-100 pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Website review signals</p>
+                <FormattedSummary
+                  text={data.websiteReviewSummary}
+                  emptyText="No website review signals attached."
+                  tone="slate"
+                />
+              </div>
+              <div className="border-t border-violet-100 pt-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">Processor package</p>
+                <FormattedSummary
+                  text={data.processorReadyPackageSummary || data.processorSpecificAnswers}
+                  emptyText="Processor-specific follow-up has not been completed yet."
+                  tone="slate"
+                />
+              </div>
             </CardContent>
           </Card>
 

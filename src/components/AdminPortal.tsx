@@ -3,6 +3,7 @@ import { AIUnderwriting } from './AIUnderwriting';
 import { ApplicationStatus, MerchantData, FileData } from '@/src/types';
 import { getMerchantDocumentChecklist, buildDefaultDocumentReminder } from '@/src/lib/documentChecklist';
 import { runLocalVerificationCheck, type VerificationCheckResult, type VerificationIssue } from '@/src/lib/localVerification';
+import { buildPersonaSummary } from '@/src/lib/onboardingWorkflow';
 import { ShieldCheck, LayoutDashboard, Search, Filter, Clock, CheckCircle2, FileWarning, Send, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { Badge } from '@/src/components/ui/badge';
@@ -13,6 +14,7 @@ interface Props {
   appStatus: ApplicationStatus;
   setAppStatus: (status: ApplicationStatus) => void;
   merchantData: MerchantData;
+  setMerchantData: React.Dispatch<React.SetStateAction<MerchantData>>;
   documents: FileData[];
   aiRecommendation: any;
   merchantNoticeFromAdmin: string;
@@ -24,6 +26,7 @@ export function AdminPortal({
   appStatus,
   setAppStatus,
   merchantData,
+  setMerchantData,
   documents,
   aiRecommendation,
   merchantNoticeFromAdmin,
@@ -65,6 +68,14 @@ export function AdminPortal({
       const result = runLocalVerificationCheck(merchantData);
       setLastVerification(result);
       setVerificationIssues(result.issues);
+      setMerchantData((prev) => ({
+        ...prev,
+        personaInvitePlan: prev.personaInvitePlan || buildPersonaSummary(prev),
+        personaVerificationSummary:
+          result.status === 'clear'
+            ? `Local KYC / KYB result: passed. ${result.summary}`
+            : `Local KYC / KYB result: pending follow-up. ${result.summary}`,
+      }));
       toast.success('KYC / KYB review complete', {
         description: result.summary,
       });

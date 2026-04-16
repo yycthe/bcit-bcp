@@ -1,4 +1,5 @@
 import type { MerchantData } from '@/src/types';
+import { decidePersonaInvites } from '@/src/lib/onboardingWorkflow';
 import {
   MERCHANT_DOCUMENT_LABELS,
   getExpectedMerchantDocumentKeys,
@@ -47,39 +48,76 @@ export function runLocalVerificationCheck(merchantData: MerchantData): Verificat
   const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(merchantData.industry);
   const isInternational = merchantData.country !== 'CA' && merchantData.country !== 'US' && merchantData.country !== '';
   const isHighVolume = merchantData.monthlyVolume === '>250k' || merchantData.monthlyVolume === '50k-250k';
+  const personaDecision = decidePersonaInvites(merchantData);
 
-  if (!hasText(merchantData.legalName) || !hasText(merchantData.website)) {
+  if (!hasText(merchantData.legalName) || !hasText(merchantData.website) || !hasText(merchantData.legalBusinessEmail)) {
     pushUnique(issues, {
       id: 'business-basics',
-      reason: 'Business legal name and website should both be on file before final review.',
+      reason: 'Business legal name, legal email, and website should be on file before final review.',
       target: {
         kind: 'intake',
-        questionId: 'companyDetailsForm',
-        whereLabel: 'Intake Assistant → Business profile → Company details',
+        questionId: 'legalBusinessForm',
+        whereLabel: 'Intake Assistant → Common intake → Legal business information',
       },
     });
   }
 
-  if (!hasText(merchantData.ownerName) || !hasText(merchantData.ownerEmail)) {
+  if (!hasText(merchantData.beneficialOwners) && (!hasText(merchantData.ownerName) || !hasText(merchantData.ownerEmail))) {
     pushUnique(issues, {
       id: 'owner-details',
-      reason: 'Primary owner identity details are incomplete.',
+      reason: 'Beneficial owner details are incomplete, so KYC invite targeting may be wrong.',
       target: {
         kind: 'intake',
-        questionId: 'ownerDetailsForm',
-        whereLabel: 'Intake Assistant → Business profile → Owner details',
+        questionId: 'ownershipControlForm',
+        whereLabel: 'Intake Assistant → Common intake → Ownership and control',
       },
     });
   }
 
-  if (!hasText(merchantData.bankName) || !hasText(merchantData.settlementCurrency)) {
+  if (!hasText(merchantData.authorizedSignerName) || !hasText(merchantData.authorizedSignerEmail)) {
     pushUnique(issues, {
-      id: 'banking-details',
-      reason: 'Settlement banking details are incomplete.',
+      id: 'authorized-signer',
+      reason: 'Authorized signer details are incomplete, so signer KYC cannot be routed cleanly.',
       target: {
         kind: 'intake',
-        questionId: 'bankAccountForm',
-        whereLabel: 'Intake Assistant → Business profile → Bank account',
+        questionId: 'ownershipControlForm',
+        whereLabel: 'Intake Assistant → Common intake → Ownership and control',
+      },
+    });
+  }
+
+  if (personaDecision.action === 'none') {
+    pushUnique(issues, {
+      id: 'persona-routing',
+      reason: 'KYC / KYB invite routing is not ready because entity, owner, or signer information is incomplete.',
+      target: {
+        kind: 'intake',
+        questionId: 'ownershipControlForm',
+        whereLabel: 'Intake Assistant → KYC / KYB routing',
+      },
+    });
+  }
+
+  if (!hasText(merchantData.websitePrivacyPolicy) || !hasText(merchantData.websiteTerms) || !hasText(merchantData.websiteRefundPolicy)) {
+    pushUnique(issues, {
+      id: 'website-compliance',
+      reason: 'Website compliance basics are incomplete: privacy policy, terms, and refund policy should be confirmed.',
+      target: {
+        kind: 'intake',
+        questionId: 'websiteComplianceForm',
+        whereLabel: 'Intake Assistant → Common intake → Website / PCI basics',
+      },
+    });
+  }
+
+  if (!hasText(merchantData.canProvideRegistration) || !hasText(merchantData.canProvideBankStatements) || !hasText(merchantData.canProvideOwnerIds)) {
+    pushUnique(issues, {
+      id: 'document-readiness',
+      reason: 'Common document readiness is incomplete for registration, bank statements, or owner photo ID.',
+      target: {
+        kind: 'intake',
+        questionId: 'documentReadinessForm',
+        whereLabel: 'Intake Assistant → Common intake → Document readiness',
       },
     });
   }

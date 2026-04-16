@@ -1,6 +1,7 @@
 import type { MerchantData } from '@/src/types';
 import { getMerchantDocumentChecklist, getMissingDocumentLabels } from '@/src/lib/documentChecklist';
 import { runLocalVerificationCheck } from '@/src/lib/localVerification';
+import { buildWebsiteSignalSummary, decidePersonaInvites } from '@/src/lib/onboardingWorkflow';
 
 export type UnderwritingDisplayResult = {
   riskScore: number;
@@ -71,6 +72,14 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
   const processingCurrencies = normalizeText(finalData.processingCurrencies);
   const chargebackHistory = normalizeText(finalData.chargebackHistory);
   const previousProcessors = normalizeText(finalData.previousProcessors);
+  const priorTermination = normalizeText(finalData.priorTermination);
+  const bankruptcyHistory = normalizeText(finalData.bankruptcyHistory);
+  const riskProgramHistory = normalizeText(finalData.riskProgramHistory);
+  const advancePayment = normalizeText(finalData.advancePayment);
+  const advancePaymentPercent = normalizeText(finalData.advancePaymentPercent);
+  const transactionChannelSplit = normalizeText(finalData.transactionChannelSplit);
+  const foreignCardsPercent = normalizeText(finalData.foreignCardsPercent);
+  const personaDecision = decidePersonaInvites(finalData);
   const criticalMissingCount = verification.issues.filter((issue) => issue.target.kind === 'intake').length;
   const isHighRiskIndustry = HIGH_RISK_INDUSTRIES.has(finalData.industry);
   const isInternational = hasText(finalData.country) && !DOMESTIC_COUNTRIES.has(finalData.country);
@@ -78,6 +87,8 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
   const isVeryHighVolume = finalData.monthlyVolume === '>250k';
   const hasRecurringExposure =
     hasText(finalData.recurringBillingDetails) ||
+    hasText(finalData.recurringBilling) ||
+    hasText(finalData.recurringSalesPercent) ||
     hasText(finalData.trialPeriod) ||
     billingModel.toLowerCase().includes('subscription') ||
     billingModel.toLowerCase().includes('recurring');
@@ -85,7 +96,15 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
     isInternational ||
     domesticVsInternational.toLowerCase().includes('international') ||
     domesticCrossBorderSplit.toLowerCase().includes('cross') ||
+    foreignCardsPercent.length > 0 ||
     (processingCurrencies.length > 0 && processingCurrencies.includes(','));
+  const hasAdvancePaymentExposure = advancePayment.length > 0 || advancePaymentPercent.length > 0;
+  const hasCardNotPresentExposure =
+    transactionChannelSplit.toLowerCase().includes('e-commerce') ||
+    transactionChannelSplit.toLowerCase().includes('moto') ||
+    transactionChannelSplit.toLowerCase().includes('keyed');
+  const hasAdverseHistory =
+    [priorTermination, bankruptcyHistory, riskProgramHistory].some((item) => item.length > 0 && !/^no\b/i.test(item));
   const disclosedChargebackRisk = chargebackHistory.length > 0;
   const disclosedProcessorIssues = previousProcessors.length > 0;
   const hasMitigatingCompliance =
@@ -124,6 +143,14 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
     riskScore += 8;
     pushUnique(riskFactors, 'Recurring billing or trial exposure');
   }
+  if (hasAdvancePaymentExposure) {
+    riskScore += 8;
+    pushUnique(riskFactors, 'Advance-payment or delayed-fulfillment exposure');
+  }
+  if (hasCardNotPresentExposure) {
+    riskScore += 6;
+    pushUnique(riskFactors, 'Card-not-present sales mix');
+  }
   if (hasCrossBorderExposure) {
     riskScore += 8;
     pushUnique(riskFactors, 'Cross-border or multi-currency processing exposure');
@@ -135,6 +162,14 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
   if (disclosedProcessorIssues) {
     riskScore += containsConcern(previousProcessors) ? 10 : 4;
     pushUnique(riskFactors, 'Previous processor history may indicate onboarding friction');
+  }
+  if (hasAdverseHistory) {
+    riskScore += 14;
+    pushUnique(riskFactors, 'Prior termination, bankruptcy, or card-brand risk-program answer requires review');
+  }
+  if (personaDecision.action === 'none') {
+    riskScore += 8;
+    pushUnique(riskFactors, 'KYC / KYB invite routing is incomplete');
   }
   if (criticalMissingCount > 0) {
     riskScore += Math.min(criticalMissingCount * 4, 20);
@@ -157,17 +192,16 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
     riskScore <= 33 ? 'Low' : riskScore <= 66 ? 'Medium' : 'High';
 
   const recommendedProcessor =
-    riskScore >= 75 || isHighRiskIndustry
-      ? 'HighRiskPay'
-      : riskScore >= 55 || isVeryHighVolume || hasCrossBorderExposure
-        ? 'Adyen'
-        : riskScore <= 33 && !isInternational
-          ? 'Stripe'
-          : 'Nuvei';
+    riskScore >= 72 || hasAdverseHistory || isHighRiskIndustry
+      ? 'Payroc / Peoples'
+      : isVeryHighVolume || hasAdvancePaymentExposure || hasCardNotPresentExposure || hasCrossBorderExposure
+        ? 'Chase'
+        : 'Nuvei';
 
   const topFactors = riskFactors.slice(0, 4);
   const reasonParts = [
     `Local fallback scored this merchant at ${riskScore}/100 using intake answers, document coverage, and KYC / KYB review issues.`,
+    `Persona routing: ${personaDecision.action.replace('_', ' ')}.`,
   ];
   if (topFactors.length > 0) {
     reasonParts.push(`Key drivers: ${topFactors.join('; ')}.`);
@@ -203,6 +237,7 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
           ...verification.issues.slice(0, 5).map((issue) => issue.reason),
           ...(missingDocuments.length > 0 ? [`Missing required uploads: ${missingDocuments.join(', ')}.`] : []),
           ...(uploadedFiles === 0 ? ['No uploaded files were available for the local audit.'] : []),
+          `Website signals captured from common intake: ${buildWebsiteSignalSummary(finalData).replace(/\n/g, '; ')}`,
         ];
 
   return {

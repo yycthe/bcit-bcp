@@ -5,8 +5,10 @@ BCIT **Business Consulting Project** — a **BCIT BCP** onboarding demo for paym
 ## Features
 
 - **Merchant portal** — Application flow, agreements, status, and AI underwriting integration.
+- **Adaptive chatbot workflow** — common intake first, local KYC / KYB routing decision, document readiness, AI underwriting, then processor-specific follow-up only after matching.
 - **Admin portal** — Review submitted applications and run a local KYC / KYB review with no external identity API.
 - **AI underwriting** — direct **xAI REST API** on Vercel (`XAI_API_KEY` or Vercel’s `*_XAI_API_KEY`; default **`grok-4-1-fast-non-reasoning`**, override with `XAI_MODEL`).
+- **Processor matching** — AI recommends **Nuvei**, **Payroc / Peoples**, or **Chase** and the chatbot assembles a processor-ready package.
 
 ## Stack
 

@@ -19,10 +19,10 @@ export const MERCHANT_DOCUMENT_LABELS: Record<MerchantDocumentKey, string> = {
   idUpload: 'Government-issued ID (owner)',
   proofOfAddress: 'Proof of address',
   registrationCertificate: 'Business registration / certificate',
-  taxDocument: 'Tax document',
-  proofOfFunds: 'Proof of funds',
-  bankStatement: 'Bank statement',
-  financials: 'Financial statements',
+  taxDocument: 'Void cheque / bank letter',
+  proofOfFunds: 'Proof of ownership',
+  bankStatement: 'Recent business bank statements',
+  financials: 'Recent processing statements / financial statements',
   complianceDocument: 'Compliance document',
   enhancedVerification: 'Enhanced verification / secondary ID',
 };
@@ -34,19 +34,24 @@ const DOC_KEYS = MERCHANT_FILE_QUESTION_KEYS;
 
 export function getExpectedMerchantDocumentKeys(data: MerchantData): MerchantDocumentKey[] {
   const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(data.industry);
-  const isCrypto = data.industry === 'crypto';
-  const isGaming = data.industry === 'gaming';
   const isInternational = data.country !== 'CA' && data.country !== 'US' && data.country !== '';
   const isHighVolume = data.monthlyVolume === '>250k' || data.monthlyVolume === '50k-250k';
+  const currentlyProcesses = data.currentlyProcessesCards.toLowerCase().includes('yes');
 
-  const keys: MerchantDocumentKey[] = ['idUpload', 'registrationCertificate'];
+  const keys: MerchantDocumentKey[] = [
+    'registrationCertificate',
+    'taxDocument',
+    'bankStatement',
+    'proofOfAddress',
+    'proofOfFunds',
+    'idUpload',
+  ];
 
-  if (isInternational || isHighRisk) keys.push('proofOfAddress');
-  if (isHighVolume || isHighRisk) keys.push('bankStatement', 'financials');
-  if (isHighRisk) keys.push('complianceDocument', 'proofOfFunds');
+  if (currentlyProcesses || isHighVolume || isHighRisk) keys.push('financials');
+  if (isHighRisk) keys.push('complianceDocument');
   if (isInternational) keys.push('enhancedVerification');
 
-  return keys;
+  return [...new Set(keys)];
 }
 
 export type DocumentChecklistItem = {

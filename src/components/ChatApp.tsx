@@ -9,7 +9,16 @@ import { Badge } from '@/src/components/ui/badge';
 import { toast } from 'sonner';
 import { MerchantData, FileData } from '@/src/types';
 import { getFallbackUnderwriting } from '@/src/lib/underwritingFallback';
+import { runLocalVerificationCheck } from '@/src/lib/localVerification';
 import { prepareFileForUpload } from '@/src/lib/uploadPreparation';
+import {
+  buildPersonaSummary,
+  buildProcessorReadyPackageSummary,
+  buildWebsiteSignalSummary,
+  decidePersonaInvites,
+  getProcessorQuestionPrompt,
+  normalizeProcessorFit,
+} from '@/src/lib/onboardingWorkflow';
 import {
   MERCHANT_FILE_QUESTION_KEYS,
   MERCHANT_DOCUMENT_LABELS,
@@ -20,14 +29,36 @@ import {
 
 const MERCHANT_FILE_QUESTION_ID_SET = new Set<string>(MERCHANT_FILE_QUESTION_KEYS);
 
-type QuestionId = Exclude<keyof MerchantData, 'additionalDocuments'> | 'done' | 'companyDetailsForm' | 'contactAddressForm' | 'businessOperationsForm' | 'ownerDetailsForm' | 'bankAccountForm' | 'subscriptionForm' | 'retailForm' | 'highRiskForm' | 'cryptoForm' | 'gamingForm' | 'servicesForm';
+type QuestionId =
+  | Exclude<keyof MerchantData, 'additionalDocuments'>
+  | 'done'
+  | 'legalBusinessForm'
+  | 'businessModelForm'
+  | 'ownershipControlForm'
+  | 'processingHistoryForm'
+  | 'salesProfileForm'
+  | 'websiteComplianceForm'
+  | 'documentReadinessForm'
+  | 'personaDecisionGate'
+  | 'processorSpecificFollowUpForm'
+  | 'companyDetailsForm'
+  | 'contactAddressForm'
+  | 'businessOperationsForm'
+  | 'ownerDetailsForm'
+  | 'bankAccountForm'
+  | 'subscriptionForm'
+  | 'retailForm'
+  | 'highRiskForm'
+  | 'cryptoForm'
+  | 'gamingForm'
+  | 'servicesForm';
 
 interface QuestionDef {
   id: QuestionId;
   text: string;
-  type: 'buttons' | 'dropdown' | 'text' | 'upload' | 'form';
+  type: 'buttons' | 'dropdown' | 'text' | 'upload' | 'form' | 'system';
   options?: { label: string; value: string }[];
-  fields?: { id: keyof MerchantData; label: string; type: 'text' | 'email' | 'number' | 'date' }[];
+  fields?: { id: keyof MerchantData; label: string; type: 'text' | 'email' | 'number' | 'date' | 'textarea'; required?: boolean }[];
 }
 
 type SmartGuide = {
@@ -128,51 +159,72 @@ function getVolumeLabel(volume: string): string {
 
 function buildQuestionSequence(data: MerchantData): QuestionId[] {
   const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(data.industry);
-  const isSubscription = data.industry === 'software';
-  const isPhysicalGoods = data.industry === 'retail';
-  const isServices = data.industry === 'services';
-  const isCrypto = data.industry === 'crypto';
-  const isGaming = data.industry === 'gaming';
   const isInternational = data.country !== 'CA' && data.country !== 'US' && data.country !== '';
   const isHighVolume = data.monthlyVolume === '>250k' || data.monthlyVolume === '50k-250k';
+  const currentlyProcesses = data.currentlyProcessesCards.toLowerCase().includes('yes');
 
-  const followUpSequence: QuestionId[] = [
-    'companyDetailsForm',
-    'contactAddressForm',
-    'ownerDetailsForm',
-    'businessOperationsForm',
-    'bankAccountForm',
+  const uploadSequence: QuestionId[] = [
+    'registrationCertificate',
+    'taxDocument',
+    'bankStatement',
+    'proofOfAddress',
+    'proofOfFunds',
+    'idUpload',
   ];
 
-  if (isSubscription) followUpSequence.push('subscriptionForm');
-  if (isPhysicalGoods) followUpSequence.push('retailForm');
-  if (isCrypto) followUpSequence.push('cryptoForm');
-  if (isGaming) followUpSequence.push('gamingForm');
-  if (isServices) followUpSequence.push('servicesForm');
-  if (data.industry === 'high_risk') followUpSequence.push('highRiskForm');
-  if (isHighRisk && !isCrypto && !isGaming) followUpSequence.push('complianceDetails');
+  if (currentlyProcesses || isHighVolume || isHighRisk) uploadSequence.push('financials');
+  if (isHighRisk) uploadSequence.push('complianceDocument');
+  if (isInternational) uploadSequence.push('enhancedVerification');
 
-  followUpSequence.push('idUpload', 'registrationCertificate');
-
-  if (isInternational || isHighRisk) followUpSequence.push('proofOfAddress');
-  if (isHighVolume || isHighRisk) followUpSequence.push('bankStatement', 'financials');
-  if (isHighRisk) followUpSequence.push('complianceDocument', 'proofOfFunds');
-  if (isInternational) followUpSequence.push('enhancedVerification');
-
-  followUpSequence.push('done');
-  return [
+  const sequence: QuestionId[] = [
     'businessType',
     'country',
     'industry',
     'monthlyVolume',
     'monthlyTransactions',
-    ...followUpSequence,
+    'legalBusinessForm',
+    'businessModelForm',
+    'ownershipControlForm',
+    'processingHistoryForm',
+    'salesProfileForm',
+    'websiteComplianceForm',
+    'documentReadinessForm',
+    'personaDecisionGate',
+    ...uploadSequence,
   ];
+
+  if (data.matchedProcessor && !data.processorSpecificAnswers?.trim()) {
+    sequence.push('processorSpecificFollowUpForm');
+  }
+
+  sequence.push('done');
+  return sequence;
 }
 
 function getQuestionStage(questionId: QuestionId): string {
-  if (['businessType', 'country', 'industry', 'monthlyVolume', 'monthlyTransactions'].includes(questionId)) {
-    return 'Qualification';
+  if (
+    [
+      'businessType',
+      'country',
+      'industry',
+      'monthlyVolume',
+      'monthlyTransactions',
+      'legalBusinessForm',
+      'businessModelForm',
+      'ownershipControlForm',
+      'processingHistoryForm',
+      'salesProfileForm',
+      'websiteComplianceForm',
+      'documentReadinessForm',
+    ].includes(questionId)
+  ) {
+    return 'Common intake';
+  }
+  if (questionId === 'personaDecisionGate') {
+    return 'KYC / KYB routing';
+  }
+  if (questionId === 'processorSpecificFollowUpForm') {
+    return 'Processor follow-up';
   }
   if (questionId.includes('Form') || ['complianceDetails'].includes(questionId)) {
     return 'Business profile';
@@ -198,11 +250,26 @@ function getQuestionStage(questionId: QuestionId): string {
 function getFieldPlaceholder(fieldId: keyof MerchantData, data: MerchantData): string {
   const placeholders: Partial<Record<keyof MerchantData, string>> = {
     legalName: 'BCIT BCP Holdings Inc.',
+    dbaName: 'Leave blank if none',
     taxId: data.country === 'US' ? '12-3456789' : 'Business number / tax registration',
+    businessRegistrationNumber: 'Corporation, registration, or GST/HST number',
+    establishedDate: 'YYYY-MM-DD or approximate year',
+    legalBusinessAddress: 'Full legal registered address',
+    operatingAddressDifferent: 'Yes / No',
+    businessPhone: '+1 604 555 0123',
+    legalBusinessEmail: 'legal@yourcompany.com',
     website: 'https://yourcompany.com',
     timeInBusiness: '2 years',
     staffSize: '12 employees',
     businessCategory: 'Digital services',
+    productsServices: 'Describe exactly what customers buy',
+    goodsOrServicesType: 'Physical goods, digital goods, services, or mix',
+    customerType: 'B2B, B2C, or both',
+    advancePayment: 'Yes / No',
+    advancePaymentPercent: 'Example: 25%',
+    recurringBilling: 'Yes / No',
+    recurringSalesPercent: 'Example: 40%',
+    fulfillmentTimeline: 'Example: same day, 3-5 days, 30+ days',
     generalEmail: 'ops@yourcompany.com',
     phone: '+1 604 555 0123',
     registeredAddress: '123 Main Street',
@@ -248,7 +315,47 @@ function getFieldPlaceholder(fieldId: keyof MerchantData, data: MerchantData): s
     regulatoryStatus: 'List licenses or registrations',
     chargebackHistory: 'Under 0.7%',
     previousProcessors: 'Stripe, local bank gateway',
+    beneficialOwners: 'One per line: Jane Doe, 60%, CEO, jane@example.com',
+    parentOwned: 'Yes / No',
+    parentCompanyName: 'Parent company legal name, if any',
+    nonOwnerController: 'Yes / No',
+    nonOwnerControllerDetails: 'Name, title, email',
+    authorizedSignerName: 'Authorized signer full legal name',
+    authorizedSignerTitle: 'CEO / Director / Owner',
+    authorizedSignerEmail: 'signer@yourcompany.com',
+    signerIsOwner: 'Yes / No',
     complianceDetails: 'Short overview of AML, KYC, monitoring, or licensing',
+    currentlyProcessesCards: 'Yes / No',
+    currentOrPreviousProcessor: 'Current or previous processor name',
+    processorExitReason: 'Why are you leaving or why did you leave?',
+    priorTermination: 'Yes / No',
+    priorTerminationExplanation: 'Explain if yes',
+    bankruptcyHistory: 'Yes / No',
+    bankruptcyExplanation: 'Explain if yes',
+    riskProgramHistory: 'Yes / No',
+    riskProgramExplanation: 'Explain if yes',
+    highestTicketAmount: 'Example: 2500',
+    transactionChannelSplit: 'Card present 20%, e-commerce 70%, MOTO 10%',
+    paymentTypesWanted: 'Visa, Mastercard, Amex, Interac, ACH',
+    recurringTransactionsPercent: 'Example: 25%',
+    foreignCardsPercent: 'Example: 15%',
+    websitePrivacyPolicy: 'Yes / No / Not sure',
+    websiteTerms: 'Yes / No / Not sure',
+    websiteRefundPolicy: 'Yes / No / Not sure',
+    websiteContactInfo: 'Yes / No / Not sure',
+    websiteSsl: 'Yes / No / Not sure',
+    storesCardNumbers: 'Yes / No',
+    thirdPartyCardApps: 'Stripe, Shopify, WooCommerce, etc.',
+    dataBreachHistory: 'Yes / No',
+    regulatedBusiness: 'Yes / No; include MSB or other licensing if applicable',
+    canProvideRegistration: 'Yes / No / Need help',
+    canProvideVoidCheque: 'Yes / No / Need help',
+    canProvideBankStatements: 'Yes / No / Need help',
+    canProvideProofOfAddress: 'Yes / No / Need help',
+    canProvideProofOfOwnership: 'Yes / No / Need help',
+    canProvideOwnerIds: 'Yes / No / Need help',
+    canProvideProcessingStatements: 'Yes / No / Not applicable',
+    processorSpecificAnswers: 'Answer the checklist in bullets. Use availability or last 4 only for sensitive identifiers.',
   };
 
   return placeholders[fieldId] || 'Enter details';
@@ -269,8 +376,8 @@ function getSmartGuide(questionId: QuestionId, data: MerchantData): SmartGuide {
       description:
         'These first answers determine which follow-up sections and documents actually matter for you, so we avoid asking every merchant the same long list.',
       tips: [
-        'Once you choose an industry, I will switch to an industry-specific path.',
-        'International or higher-risk profiles will automatically get the extra compliance steps they need.',
+        'First we collect processor-neutral common intake.',
+        'After AI matching, I will only ask the selected processor-specific questions.',
       ],
     };
   }
@@ -292,7 +399,7 @@ function getSmartGuide(questionId: QuestionId, data: MerchantData): SmartGuide {
       eyebrow: `${stage} • Guided section`,
       title: 'Only the fields that matter are shown here',
       description:
-        questionId === 'ownerDetailsForm'
+        questionId === 'ownershipControlForm'
           ? 'We are collecting the beneficial-owner and control details processors expect, so approvals do not get stuck in manual review.'
           : `This section is tuned for ${getIndustryLabel(data.industry)} and ${businessName}. Fill the essentials now and we will keep the rest moving.`,
       tips: [
@@ -353,9 +460,13 @@ const getQuestionText = (qId: QuestionId, data: MerchantData): string => {
     country: () => {
       const typeLabels: Record<string, string> = {
         'sole_proprietorship': 'sole proprietorship',
-        'llc': 'LLC',
+        'llc': 'limited liability entity',
+        'limited_liability': 'limited liability entity',
         'corporation': 'corporation',
-        'partnership': 'partnership'
+        'partnership': 'partnership',
+        'non_profit': 'non-profit',
+        'government': 'government entity',
+        'parent_owned': 'parent-owned business',
       };
       return `Great choice! As a ${typeLabels[data.businessType] || 'business'}, where are you legally registered?`;
     },
@@ -389,6 +500,37 @@ const getQuestionText = (qId: QuestionId, data: MerchantData): string => {
         return "Even at lower volumes, we want to get you the best rates. Roughly how many transactions monthly?";
       }
       return "And roughly how many individual transactions do you process per month?";
+    },
+
+    legalBusinessForm: () =>
+      "Phase 1 starts with legal business information. These answers identify the entity and tell us whether KYB should be expected.",
+
+    businessModelForm: () =>
+      "Next I need the common business-model details processors ask for before any processor-specific forms.",
+
+    ownershipControlForm: () =>
+      "Now let's capture ownership and control. This is what decides who should receive KYC invites and whether KYB should go first.",
+
+    processingHistoryForm: () =>
+      "A few processing-history questions help detect early risk before we ask for any processor-specific details.",
+
+    salesProfileForm: () =>
+      "Let's capture the common sales profile so AI can score ticket size, channel mix, recurring exposure, and foreign-card exposure.",
+
+    websiteComplianceForm: () =>
+      "Now we will capture website, security, and PCI basics. AI will use this as a structured website legitimacy and compliance review.",
+
+    documentReadinessForm: () =>
+      "Last common-intake block: document readiness. This lets us separate missing documents from true risk.",
+
+    personaDecisionGate: () => {
+      const decision = decidePersonaInvites(data);
+      return `${decision.summary} I will attach this KYC / KYB routing plan to the merchant profile before AI underwriting.`;
+    },
+
+    processorSpecificFollowUpForm: () => {
+      const processor = normalizeProcessorFit(data.matchedProcessor);
+      return `AI matched this case to ${processor}. Now I will only ask the ${processor}-specific underwriting follow-up items, without repeating the common intake.`;
     },
     
     companyDetailsForm: () => {
@@ -519,9 +661,12 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
     type: 'buttons',
     options: [
       { label: 'Sole Proprietorship', value: 'sole_proprietorship' },
-      { label: 'LLC', value: 'llc' },
+      { label: 'Limited Liability', value: 'limited_liability' },
       { label: 'Corporation', value: 'corporation' },
       { label: 'Partnership', value: 'partnership' },
+      { label: 'Non-profit', value: 'non_profit' },
+      { label: 'Government', value: 'government' },
+      { label: 'Parent-owned', value: 'parent_owned' },
     ]
   },
   country: {
@@ -570,6 +715,129 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
       { label: '1,000 - 10,000', value: '1k-10k' },
       { label: '> 10,000', value: '>10k' },
     ]
+  },
+  legalBusinessForm: {
+    id: 'legalBusinessForm',
+    text: 'Legal business information',
+    type: 'form',
+    fields: [
+      { id: 'legalName', label: 'What is your legal business name?', type: 'text' },
+      { id: 'dbaName', label: 'Do you operate under a DBA, operating name, or trade name? If yes, what is it?', type: 'text', required: false },
+      { id: 'businessRegistrationNumber', label: 'What is your business registration / corporation / GST/HST number?', type: 'text' },
+      { id: 'establishedDate', label: 'When was the business established or incorporated?', type: 'text' },
+      { id: 'legalBusinessAddress', label: 'What is your legal business address?', type: 'text' },
+      { id: 'operatingAddressDifferent', label: 'Is your operating address different from your legal address?', type: 'text' },
+      { id: 'operatingAddress', label: 'If yes, what is your operating address?', type: 'text', required: false },
+      { id: 'businessPhone', label: 'What is your business phone number?', type: 'text' },
+      { id: 'legalBusinessEmail', label: 'What is your legal business email?', type: 'email' },
+      { id: 'website', label: 'What is your website URL?', type: 'text' },
+    ],
+  },
+  businessModelForm: {
+    id: 'businessModelForm',
+    text: 'Business model',
+    type: 'form',
+    fields: [
+      { id: 'productsServices', label: 'What products or services do you sell?', type: 'textarea' },
+      { id: 'businessDescription', label: 'Please describe your business in detail.', type: 'textarea' },
+      { id: 'businessCategory', label: 'What type of merchant are you? Retail, e-commerce, MOTO, restaurant, service, or other?', type: 'text' },
+      { id: 'goodsOrServicesType', label: 'Do you sell physical goods, digital goods, services, or a mix?', type: 'text' },
+      { id: 'customerType', label: 'Are your customers B2B, B2C, or both?', type: 'text' },
+      { id: 'advancePayment', label: 'Is payment taken in advance before fulfillment?', type: 'text' },
+      { id: 'advancePaymentPercent', label: 'If yes, approximately what percentage of sales is paid in advance?', type: 'text', required: false },
+      { id: 'recurringBilling', label: 'Do you offer recurring billing or subscriptions?', type: 'text' },
+      { id: 'recurringSalesPercent', label: 'If yes, approximately what percentage of sales is recurring?', type: 'text', required: false },
+      { id: 'fulfillmentTimeline', label: 'How long does it usually take customers to receive the product or service?', type: 'text' },
+    ],
+  },
+  ownershipControlForm: {
+    id: 'ownershipControlForm',
+    text: 'Ownership and control',
+    type: 'form',
+    fields: [
+      { id: 'beneficialOwners', label: 'Please list all beneficial owners with 25% or more ownership: full legal name, ownership %, title / role, email.', type: 'textarea' },
+      { id: 'parentOwned', label: 'Is the business owned by another company or parent entity?', type: 'text' },
+      { id: 'parentCompanyName', label: 'If yes, what is the parent company name?', type: 'text', required: false },
+      { id: 'nonOwnerController', label: 'Is there anyone with significant managerial control who is not an owner?', type: 'text' },
+      { id: 'nonOwnerControllerDetails', label: 'If yes, provide their name, title, and email.', type: 'text', required: false },
+      { id: 'authorizedSignerName', label: 'Who is the authorized signer for this application? Name.', type: 'text' },
+      { id: 'authorizedSignerTitle', label: 'Authorized signer title.', type: 'text' },
+      { id: 'authorizedSignerEmail', label: 'Authorized signer email.', type: 'email' },
+      { id: 'signerIsOwner', label: 'Is the signer one of the owners listed above?', type: 'text' },
+    ],
+  },
+  processingHistoryForm: {
+    id: 'processingHistoryForm',
+    text: 'Processing history',
+    type: 'form',
+    fields: [
+      { id: 'currentlyProcessesCards', label: 'Do you currently process card payments?', type: 'text' },
+      { id: 'currentOrPreviousProcessor', label: 'Who is your current or previous processor?', type: 'text', required: false },
+      { id: 'processorExitReason', label: 'Why are you leaving your current / previous processor?', type: 'textarea', required: false },
+      { id: 'priorTermination', label: 'Has the business or any owner ever had a merchant account or processing agreement terminated?', type: 'text' },
+      { id: 'priorTerminationExplanation', label: 'If yes, please explain.', type: 'textarea', required: false },
+      { id: 'bankruptcyHistory', label: 'Has the business or any owner ever filed for bankruptcy?', type: 'text' },
+      { id: 'bankruptcyExplanation', label: 'If yes, please explain.', type: 'textarea', required: false },
+      { id: 'riskProgramHistory', label: 'Has the business or any owner ever been identified in a Visa / Mastercard risk program?', type: 'text' },
+      { id: 'riskProgramExplanation', label: 'If yes, please explain.', type: 'textarea', required: false },
+    ],
+  },
+  salesProfileForm: {
+    id: 'salesProfileForm',
+    text: 'Sales profile',
+    type: 'form',
+    fields: [
+      { id: 'avgTicketSize', label: 'What is your average transaction amount?', type: 'number' },
+      { id: 'highestTicketAmount', label: 'What is your highest transaction amount?', type: 'number' },
+      { id: 'transactionChannelSplit', label: 'What percentage of transactions are card present, e-commerce, and MOTO / keyed?', type: 'text' },
+      { id: 'paymentTypesWanted', label: 'Which payment types do you want to accept?', type: 'text' },
+      { id: 'recurringTransactionsPercent', label: 'What percentage of your transactions are recurring?', type: 'text' },
+      { id: 'foreignCardsPercent', label: 'What percentage of your transactions involve foreign cards?', type: 'text' },
+      { id: 'processingCurrencies', label: 'Which processing currencies do you need?', type: 'text' },
+    ],
+  },
+  websiteComplianceForm: {
+    id: 'websiteComplianceForm',
+    text: 'Website / security / PCI basics',
+    type: 'form',
+    fields: [
+      { id: 'websitePrivacyPolicy', label: 'Does your website include a Privacy Policy?', type: 'text' },
+      { id: 'websiteTerms', label: 'Does your website include Terms and Conditions / Terms of Use?', type: 'text' },
+      { id: 'websiteRefundPolicy', label: 'Does your website include a Return / Refund Policy?', type: 'text' },
+      { id: 'websiteContactInfo', label: 'Does your website include customer service contact information?', type: 'text' },
+      { id: 'websiteSsl', label: 'Is your payment page encrypted with SSL or better?', type: 'text' },
+      { id: 'storesCardNumbers', label: 'Do you store credit card numbers?', type: 'text' },
+      { id: 'thirdPartyCardApps', label: 'Do you use any third-party applications to process, transmit, or store cardholder data? If yes, list them.', type: 'textarea', required: false },
+      { id: 'dataBreachHistory', label: 'Have you experienced a data breach or card data compromise in the past?', type: 'text' },
+      { id: 'regulatedBusiness', label: 'Is your business an MSB or another regulated business?', type: 'text' },
+    ],
+  },
+  documentReadinessForm: {
+    id: 'documentReadinessForm',
+    text: 'Document readiness',
+    type: 'form',
+    fields: [
+      { id: 'canProvideRegistration', label: 'Can you provide Business Registration or Articles of Incorporation?', type: 'text' },
+      { id: 'canProvideVoidCheque', label: 'Can you provide a Void Cheque or Bank Letter?', type: 'text' },
+      { id: 'canProvideBankStatements', label: 'Can you provide 2 recent official business bank statements?', type: 'text' },
+      { id: 'canProvideProofOfAddress', label: 'Can you provide proof of business address?', type: 'text' },
+      { id: 'canProvideProofOfOwnership', label: 'Can you provide proof of ownership?', type: 'text' },
+      { id: 'canProvideOwnerIds', label: 'Can each 25%+ owner and signer provide government-issued photo ID?', type: 'text' },
+      { id: 'canProvideProcessingStatements', label: 'If you currently process payments, can you provide 3 recent processing statements?', type: 'text' },
+    ],
+  },
+  personaDecisionGate: {
+    id: 'personaDecisionGate',
+    text: 'Persona trigger decision',
+    type: 'system',
+  },
+  processorSpecificFollowUpForm: {
+    id: 'processorSpecificFollowUpForm',
+    text: 'Processor-specific follow-up',
+    type: 'form',
+    fields: [
+      { id: 'processorSpecificAnswers', label: 'Processor-specific follow-up answers. Do not enter full SIN, bank account numbers, or full ID numbers in this demo.', type: 'textarea' },
+    ],
   },
   legalName: {
     id: 'legalName',
@@ -760,12 +1028,12 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
   },
   taxDocument: {
     id: 'taxDocument',
-    text: "Please upload your tax registration document.",
+    text: "Please upload a void cheque or bank letter.",
     type: 'upload'
   },
   proofOfFunds: {
     id: 'proofOfFunds',
-    text: "Please upload proof of source of funds.",
+    text: "Please upload proof of ownership.",
     type: 'upload'
   },
   bankStatement: {
@@ -996,6 +1264,25 @@ export function ChatApp({
 
     setInputValue('');
 
+    if (currentQuestion === 'processorSpecificFollowUpForm') {
+      const packagedData = {
+        ...newData,
+        processorReadyPackageSummary: buildProcessorReadyPackageSummary(newData),
+      };
+      setData(packagedData);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Math.random().toString(36).substring(2, 15),
+          sender: 'system',
+          content: 'Processor-ready package assembled with common intake, KYC / KYB routing, AI underwriting, website signals, document checklist, missing items, and processor-specific answers.',
+        }
+      ]);
+      setIsFinished(true);
+      onFinish();
+      return;
+    }
+
     let nextQ: QuestionId;
     const inGuidedDocumentStep =
       isEditing &&
@@ -1026,11 +1313,53 @@ export function ChatApp({
     }
   };
 
+  const openProcessorFollowUp = (finalData: MerchantData, recommendation: any) => {
+    const matchedProcessor = normalizeProcessorFit(recommendation?.recommendedProcessor);
+    const enrichedData = {
+      ...finalData,
+      matchedProcessor,
+      personaInvitePlan: finalData.personaInvitePlan || buildPersonaSummary(finalData),
+      personaVerificationSummary:
+        finalData.personaVerificationSummary ||
+        'Pending. Attach KYB/KYC pass, fail, pending, mismatch, and incomplete verification results when available.',
+      websiteReviewSummary: finalData.websiteReviewSummary || buildWebsiteSignalSummary(finalData),
+    };
+
+    setData(enrichedData);
+    setAiRecommendation({
+      ...recommendation,
+      recommendedProcessor: matchedProcessor,
+    });
+    setCurrentQuestion('processorSpecificFollowUpForm');
+    setMessages(prev => [
+      ...prev,
+      {
+        id: Math.random().toString(36).substring(2, 15),
+        sender: 'system',
+        content: `AI matched this case to ${matchedProcessor}. Final step: answer only the ${matchedProcessor}-specific follow-up items so the package is processor-ready.`,
+        isActionable: true,
+        questionId: 'processorSpecificFollowUpForm',
+      }
+    ]);
+  };
+
   const finishFlow = async (finalData: MerchantData) => {
     setIsTyping(true);
+    const localVerification = runLocalVerificationCheck(finalData);
+    const analysisData: MerchantData = {
+      ...finalData,
+      personaInvitePlan: finalData.personaInvitePlan || buildPersonaSummary(finalData),
+      personaVerificationSummary:
+        finalData.personaVerificationSummary ||
+        (localVerification.status === 'clear'
+          ? `Local KYC / KYB result: passed. ${localVerification.summary}`
+          : `Local KYC / KYB result: pending follow-up. ${localVerification.summary}`),
+      websiteReviewSummary: finalData.websiteReviewSummary || buildWebsiteSignalSummary(finalData),
+    };
+    setData(analysisData);
     
     // Contextual finishing message
-    const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(finalData.industry);
+    const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(analysisData.industry);
     const finishMessage = isHighRisk 
       ? "All done! Given your industry, I'm performing enhanced due diligence. This may take 20-30 seconds..."
       : "All done! I'm analyzing your profile and documents now. This might take 10-20 seconds...";
@@ -1045,7 +1374,7 @@ export function ChatApp({
     ]);
 
     try {
-      let prepared = prepareUnderwritePayload(finalData);
+      let prepared = prepareUnderwritePayload(analysisData);
       if (prepared.metadataOnly) {
         toast.warning('Large upload detected. Sending document metadata only so the Vercel API request stays under platform limits.');
       }
@@ -1057,7 +1386,7 @@ export function ChatApp({
       });
 
       if (apiRes.status === 413 && !prepared.metadataOnly) {
-        prepared = prepareUnderwritePayload(buildMetadataOnlyMerchantData(finalData));
+        prepared = prepareUnderwritePayload(buildMetadataOnlyMerchantData(analysisData));
         toast.warning('Uploaded files were too large for a Vercel Function request. Retrying without binary document contents.');
         apiRes = await fetch('/api/underwrite', {
           method: 'POST',
@@ -1100,7 +1429,7 @@ export function ChatApp({
         ? payload.verificationNotes.filter((n): n is string => typeof n === 'string')
         : [];
 
-      setAiRecommendation({
+      const recommendation = {
         riskScore: payload.riskScore ?? 50,
         riskCategory: (payload.riskCategory as 'Low' | 'Medium' | 'High') || 'Medium',
         riskFactors: payload.riskFactors ?? [],
@@ -1109,7 +1438,12 @@ export function ChatApp({
         documentSummary: payload.documentSummary ?? '',
         verificationStatus,
         verificationNotes,
-      });
+      };
+      if (!analysisData.processorSpecificAnswers?.trim()) {
+        openProcessorFollowUp(analysisData, recommendation);
+        return;
+      }
+      setAiRecommendation(recommendation);
       setIsFinished(true);
       onFinish();
     } catch (error) {
@@ -1118,7 +1452,12 @@ export function ChatApp({
       console.error('[v0] Error details:', errMsg);
       const short = errMsg.length > 140 ? `${errMsg.slice(0, 140)}…` : errMsg;
       toast.error(`Analysis failed: ${short} (using fallback)`);
-      setAiRecommendation(getFallbackUnderwriting(finalData));
+      const fallback = getFallbackUnderwriting(analysisData);
+      if (!analysisData.processorSpecificAnswers?.trim()) {
+        openProcessorFollowUp(analysisData, fallback);
+        return;
+      }
+      setAiRecommendation(fallback);
       setIsFinished(true);
       onFinish();
     } finally {
@@ -1203,6 +1542,50 @@ export function ChatApp({
     const qDef = QUESTIONS[currentQuestion];
     if (!qDef) return null;
 
+    if (qDef.type === 'system') {
+      const decision = decidePersonaInvites(data);
+      return (
+        <div className="border-t bg-white px-4 py-5">
+          <div className="mx-auto max-w-2xl rounded-2xl border border-violet-200 bg-violet-50/70 p-5 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-700">Phase 2</p>
+            <h3 className="mt-1 text-base font-semibold text-slate-950">KYC / KYB invite decision</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-700">{decision.summary}</p>
+            {decision.reasons.length > 0 ? (
+              <ul className="mt-3 space-y-2 text-sm text-slate-600">
+                {decision.reasons.map((reason) => (
+                  <li key={reason} className="flex gap-2">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
+                    <span>{reason}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="mt-4 rounded-lg border border-violet-200 bg-white p-3 text-xs leading-5 text-slate-600">
+              No external Persona API is called here. The plan is attached to the merchant profile, and actual verification results can be added before AI underwriting when available.
+            </div>
+            <div className="mt-4 flex justify-end">
+              <Button
+                type="button"
+                className="bg-violet-700 hover:bg-violet-800"
+                onClick={() =>
+                  handleAnswer(
+                    {
+                      personaInvitePlan: buildPersonaSummary(data),
+                      personaVerificationSummary: 'Pending. Attach KYB/KYC pass, fail, pending, mismatch, and incomplete verification results when available.',
+                      websiteReviewSummary: buildWebsiteSignalSummary(data),
+                    },
+                    'KYC / KYB routing plan accepted'
+                  )
+                }
+              >
+                Continue to documents
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (qDef.type === 'form') {
       return (
         <div className="relative">
@@ -1247,7 +1630,7 @@ export function ChatApp({
                 qDef.fields?.forEach(f => {
                   const val = formData.get(f.id) as string;
                   values[f.id] = val;
-                  if (!val) allFilled = false;
+                  if (f.required !== false && !val) allFilled = false;
                 });
                 if (!allFilled) {
                   toast.error("Please fill out all fields.");
@@ -1258,15 +1641,29 @@ export function ChatApp({
             >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {qDef.fields?.map(field => (
-                  <div key={field.id} className="space-y-1">
+                  <div key={field.id} className={`space-y-1 ${field.type === 'textarea' ? 'md:col-span-2' : ''}`}>
                     <label className="text-sm font-medium text-slate-700">{field.label}</label>
-                    <Input 
-                      name={field.id} 
-                      type={field.type} 
-                      required 
-                      placeholder={getFieldPlaceholder(field.id, data)}
-                      defaultValue={data[field.id as keyof MerchantData] as string || ''}
-                    />
+                    {field.type === 'textarea' ? (
+                      <textarea
+                        name={field.id}
+                        required={field.required !== false}
+                        placeholder={
+                          field.id === 'processorSpecificAnswers'
+                            ? getProcessorQuestionPrompt(data.matchedProcessor || 'Nuvei')
+                            : getFieldPlaceholder(field.id, data)
+                        }
+                        defaultValue={data[field.id as keyof MerchantData] as string || ''}
+                        className="min-h-[112px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                    ) : (
+                      <Input
+                        name={field.id}
+                        type={field.type}
+                        required={field.required !== false}
+                        placeholder={getFieldPlaceholder(field.id, data)}
+                        defaultValue={data[field.id as keyof MerchantData] as string || ''}
+                      />
+                    )}
                   </div>
                 ))}
               </div>

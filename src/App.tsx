@@ -86,6 +86,7 @@ export default function App() {
             appStatus={appStatus}
             setAppStatus={setAppStatus}
             merchantData={merchantData}
+            setMerchantData={setMerchantData}
             documents={documents}
             aiRecommendation={aiRecommendation}
             merchantNoticeFromAdmin={merchantNoticeFromAdmin}

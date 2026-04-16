@@ -4,7 +4,7 @@ export const runtime = 'nodejs';
 
 type VerificationStatus = 'Verified' | 'Discrepancies Found' | 'Unverified';
 type RiskCategory = 'Low' | 'Medium' | 'High';
-type Processor = 'Stripe' | 'Adyen' | 'Nuvei' | 'HighRiskPay';
+type Processor = 'Nuvei' | 'Payroc / Peoples' | 'Chase';
 
 type UnderwritingApiResult = {
   riskScore: number;
@@ -70,9 +70,10 @@ type XaiResponsesCreateResponse = {
 
 const XAI_BASE_URL = 'https://api.x.ai/v1';
 const DEFAULT_XAI_MODEL = 'grok-4-1-fast-non-reasoning';
-const ALLOWED_PROCESSORS: Processor[] = ['Stripe', 'Adyen', 'Nuvei', 'HighRiskPay'];
+const ALLOWED_PROCESSORS: Processor[] = ['Nuvei', 'Payroc / Peoples', 'Chase'];
 const XAI_UPLOAD_TIMEOUT_MS = 15_000;
 const XAI_RESPONSE_TIMEOUT_MS = 35_000;
+const WEBSITE_REVIEW_TIMEOUT_MS = 5_000;
 const MAX_BINARY_ATTACHMENTS = 2;
 const MAX_BINARY_TOTAL_BYTES = 6_000_000;
 const MAX_INLINE_IMAGE_BYTES = 4_000_000;
@@ -99,22 +100,27 @@ const CRITICAL_INTAKE_FIELDS = [
   'monthlyTransactions',
   'legalName',
   'website',
-  'ownerName',
+  'legalBusinessEmail',
+  'productsServices',
+  'beneficialOwners',
+  'authorizedSignerName',
+  'authorizedSignerEmail',
   'ownerEmail',
-  'targetGeography',
   'avgTicketSize',
-  'bankName',
-  'settlementCurrency',
+  'highestTicketAmount',
+  'websitePrivacyPolicy',
+  'websiteTerms',
+  'websiteRefundPolicy',
 ] as const;
 const UPLOAD_FIELD_LABELS: Record<string, string> = {
-  financials: 'Financial statements',
+  financials: 'Recent processing statements / financial statements',
   idUpload: 'Government ID',
   enhancedVerification: 'Enhanced verification',
   proofOfAddress: 'Proof of address',
   registrationCertificate: 'Registration certificate',
-  taxDocument: 'Tax document',
-  proofOfFunds: 'Proof of funds',
-  bankStatement: 'Bank statement',
+  taxDocument: 'Void cheque / bank letter',
+  proofOfFunds: 'Proof of ownership',
+  bankStatement: 'Recent business bank statements',
   complianceDocument: 'Compliance document',
 };
 const FIELD_LABELS: Record<string, string> = {
@@ -124,11 +130,26 @@ const FIELD_LABELS: Record<string, string> = {
   monthlyVolume: 'Monthly processing volume',
   monthlyTransactions: 'Monthly transactions',
   legalName: 'Legal business name',
+  dbaName: 'DBA / operating / trade name',
   taxId: 'Tax ID / EIN',
+  businessRegistrationNumber: 'Business registration / corporation / GST/HST number',
+  establishedDate: 'Established / incorporated date',
+  legalBusinessAddress: 'Legal business address',
+  operatingAddressDifferent: 'Operating address differs',
+  businessPhone: 'Business phone',
+  legalBusinessEmail: 'Legal business email',
   website: 'Website',
   staffSize: 'Staff size',
   paymentProducts: 'Payment products',
   businessCategory: 'Business subcategory',
+  productsServices: 'Products or services sold',
+  goodsOrServicesType: 'Physical / digital / services mix',
+  customerType: 'B2B / B2C mix',
+  advancePayment: 'Payment taken in advance',
+  advancePaymentPercent: 'Advance-payment percentage',
+  recurringBilling: 'Recurring billing offered',
+  recurringSalesPercent: 'Recurring sales percentage',
+  fulfillmentTimeline: 'Fulfillment timeline',
   generalEmail: 'General email',
   supportEmail: 'Support email',
   disputesEmail: 'Disputes email',
@@ -172,6 +193,15 @@ const FIELD_LABELS: Record<string, string> = {
   regulatoryStatus: 'Regulatory status',
   chargebackHistory: 'Chargeback history',
   previousProcessors: 'Previous processors',
+  beneficialOwners: '25%+ beneficial owners',
+  parentOwned: 'Parent-owned business',
+  parentCompanyName: 'Parent company name',
+  nonOwnerController: 'Non-owner controller disclosed',
+  nonOwnerControllerDetails: 'Non-owner controller details',
+  authorizedSignerName: 'Authorized signer name',
+  authorizedSignerTitle: 'Authorized signer title',
+  authorizedSignerEmail: 'Authorized signer email',
+  signerIsOwner: 'Signer is owner',
   ownershipPercentage: 'Ownership percentage',
   ownerName: 'Owner name',
   ownerRole: 'Owner role',
@@ -184,6 +214,42 @@ const FIELD_LABELS: Record<string, string> = {
   accountNumber: 'Account number / IBAN',
   routingNumber: 'Routing number / branch code',
   settlementCurrency: 'Settlement currency',
+  currentlyProcessesCards: 'Currently processes card payments',
+  currentOrPreviousProcessor: 'Current or previous processor',
+  processorExitReason: 'Reason for leaving current / previous processor',
+  priorTermination: 'Prior merchant account termination',
+  priorTerminationExplanation: 'Prior termination explanation',
+  bankruptcyHistory: 'Bankruptcy history',
+  bankruptcyExplanation: 'Bankruptcy explanation',
+  riskProgramHistory: 'Visa / Mastercard risk program history',
+  riskProgramExplanation: 'Risk program explanation',
+  highestTicketAmount: 'Highest transaction amount',
+  transactionChannelSplit: 'Card-present / ecommerce / MOTO split',
+  paymentTypesWanted: 'Payment types wanted',
+  recurringTransactionsPercent: 'Recurring transaction percentage',
+  foreignCardsPercent: 'Foreign-card percentage',
+  websitePrivacyPolicy: 'Website Privacy Policy present',
+  websiteTerms: 'Website Terms present',
+  websiteRefundPolicy: 'Website refund policy present',
+  websiteContactInfo: 'Website customer service contact present',
+  websiteSsl: 'Website SSL / encrypted payment page',
+  storesCardNumbers: 'Stores card numbers',
+  thirdPartyCardApps: 'Third-party cardholder-data apps',
+  dataBreachHistory: 'Data breach / card compromise history',
+  regulatedBusiness: 'MSB / regulated business',
+  canProvideRegistration: 'Can provide registration / articles',
+  canProvideVoidCheque: 'Can provide void cheque / bank letter',
+  canProvideBankStatements: 'Can provide recent bank statements',
+  canProvideProofOfAddress: 'Can provide proof of address',
+  canProvideProofOfOwnership: 'Can provide proof of ownership',
+  canProvideOwnerIds: 'Can provide owner/signer photo ID',
+  canProvideProcessingStatements: 'Can provide processing statements',
+  personaInvitePlan: 'Persona invite trigger plan',
+  personaVerificationSummary: 'Persona verification result summary',
+  websiteReviewSummary: 'Website review signal summary',
+  matchedProcessor: 'Matched processor',
+  processorSpecificAnswers: 'Processor-specific follow-up answers',
+  processorReadyPackageSummary: 'Processor-ready package summary',
   complianceDetails: 'Compliance details',
 };
 const INTAKE_SECTIONS: IntakeSectionDefinition[] = [
@@ -192,20 +258,50 @@ const INTAKE_SECTIONS: IntakeSectionDefinition[] = [
     fields: ['businessType', 'country', 'industry', 'monthlyVolume', 'monthlyTransactions'],
   },
   {
-    title: 'Business details',
-    fields: ['legalName', 'taxId', 'website', 'timeInBusiness', 'staffSize', 'businessCategory'],
+    title: 'Legal business information',
+    fields: [
+      'legalName',
+      'dbaName',
+      'businessRegistrationNumber',
+      'taxId',
+      'establishedDate',
+      'legalBusinessAddress',
+      'operatingAddressDifferent',
+      'registeredAddress',
+      'operatingAddress',
+      'city',
+      'region',
+      'province',
+      'businessPhone',
+      'legalBusinessEmail',
+      'website',
+      'timeInBusiness',
+      'staffSize',
+    ],
   },
   {
     title: 'Contact and presence',
     fields: ['generalEmail', 'supportEmail', 'disputesEmail', 'phone', 'preferredContact', 'socialPresence'],
   },
   {
-    title: 'Registered and operating footprint',
-    fields: ['registeredAddress', 'operatingAddress', 'city', 'region', 'province', 'operatingDiffers'],
-  },
-  {
-    title: 'Business operations',
-    fields: ['targetGeography', 'deliveryMethod', 'domesticVsInternational', 'paymentProducts', 'processingCurrencies'],
+    title: 'Business model',
+    fields: [
+      'productsServices',
+      'businessDescription',
+      'businessCategory',
+      'goodsOrServicesType',
+      'customerType',
+      'advancePayment',
+      'advancePaymentPercent',
+      'recurringBilling',
+      'recurringSalesPercent',
+      'fulfillmentTimeline',
+      'targetGeography',
+      'deliveryMethod',
+      'domesticVsInternational',
+      'paymentProducts',
+      'processingCurrencies',
+    ],
   },
   {
     title: 'Transaction profile',
@@ -214,7 +310,12 @@ const INTAKE_SECTIONS: IntakeSectionDefinition[] = [
       'minTxnCount',
       'maxTxnCount',
       'avgTicketSize',
+      'highestTicketAmount',
+      'transactionChannelSplit',
       'domesticCrossBorderSplit',
+      'paymentTypesWanted',
+      'recurringTransactionsPercent',
+      'foreignCardsPercent',
       'recurringBillingDetails',
       'trialPeriod',
       'churnRate',
@@ -223,8 +324,17 @@ const INTAKE_SECTIONS: IntakeSectionDefinition[] = [
     ],
   },
   {
-    title: 'Ownership and settlement',
+    title: 'Ownership, control, and signer',
     fields: [
+      'beneficialOwners',
+      'parentOwned',
+      'parentCompanyName',
+      'nonOwnerController',
+      'nonOwnerControllerDetails',
+      'authorizedSignerName',
+      'authorizedSignerTitle',
+      'authorizedSignerEmail',
+      'signerIsOwner',
       'ownerName',
       'ownerEmail',
       'ownerRole',
@@ -237,6 +347,54 @@ const INTAKE_SECTIONS: IntakeSectionDefinition[] = [
       'accountNumber',
       'routingNumber',
       'settlementCurrency',
+    ],
+  },
+  {
+    title: 'Processing history',
+    fields: [
+      'currentlyProcessesCards',
+      'currentOrPreviousProcessor',
+      'processorExitReason',
+      'priorTermination',
+      'priorTerminationExplanation',
+      'bankruptcyHistory',
+      'bankruptcyExplanation',
+      'riskProgramHistory',
+      'riskProgramExplanation',
+      'previousProcessors',
+      'chargebackHistory',
+    ],
+  },
+  {
+    title: 'Website, security, and PCI basics',
+    fields: [
+      'websitePrivacyPolicy',
+      'websiteTerms',
+      'websiteRefundPolicy',
+      'websiteContactInfo',
+      'websiteSsl',
+      'storesCardNumbers',
+      'thirdPartyCardApps',
+      'dataBreachHistory',
+      'regulatedBusiness',
+      'websiteReviewSummary',
+    ],
+  },
+  {
+    title: 'Document readiness and workflow routing',
+    fields: [
+      'canProvideRegistration',
+      'canProvideVoidCheque',
+      'canProvideBankStatements',
+      'canProvideProofOfAddress',
+      'canProvideProofOfOwnership',
+      'canProvideOwnerIds',
+      'canProvideProcessingStatements',
+      'personaInvitePlan',
+      'personaVerificationSummary',
+      'matchedProcessor',
+      'processorSpecificAnswers',
+      'processorReadyPackageSummary',
     ],
   },
   {
@@ -420,6 +578,11 @@ function normalizeRiskCategory(value: unknown, riskScore: number): RiskCategory 
 function normalizeProcessor(value: unknown): Processor {
   if (typeof value === 'string' && ALLOWED_PROCESSORS.includes(value as Processor)) {
     return value as Processor;
+  }
+  if (typeof value === 'string') {
+    const lower = value.toLowerCase();
+    if (lower.includes('payroc') || lower.includes('peoples')) return 'Payroc / Peoples';
+    if (lower.includes('chase')) return 'Chase';
   }
   return 'Nuvei';
 }
@@ -616,18 +779,19 @@ function getExpectedDocumentFields(merchantData: MerchantDataLike): string[] {
   const industry = normalizeString(merchantData.industry);
   const country = normalizeString(merchantData.country);
   const monthlyVolume = normalizeString(merchantData.monthlyVolume);
+  const currentlyProcessesCards = normalizeString(merchantData.currentlyProcessesCards).toLowerCase();
   const isHighRisk = HIGH_RISK_INDUSTRIES.has(industry);
   const isInternational = country.length > 0 && !DOMESTIC_COUNTRIES.has(country);
   const isHighVolume = monthlyVolume === '>250k' || monthlyVolume === '50k-250k';
+  const currentlyProcesses = currentlyProcessesCards.includes('yes');
 
-  const expected = ['idUpload', 'registrationCertificate'];
+  const expected = ['registrationCertificate', 'taxDocument', 'bankStatement', 'proofOfAddress', 'proofOfFunds', 'idUpload'];
 
-  if (isInternational || isHighRisk) expected.push('proofOfAddress');
-  if (isHighVolume || isHighRisk) expected.push('bankStatement', 'financials');
-  if (isHighRisk) expected.push('complianceDocument', 'proofOfFunds');
+  if (currentlyProcesses || isHighVolume || isHighRisk) expected.push('financials');
+  if (isHighRisk) expected.push('complianceDocument');
   if (isInternational) expected.push('enhancedVerification');
 
-  return expected;
+  return [...new Set(expected)];
 }
 
 function buildIntakeCoverageText(merchantData: MerchantDataLike): string {
@@ -671,11 +835,20 @@ function buildDerivedRiskSignalsText(merchantData: MerchantDataLike): string {
   const domesticCrossBorderSplit = normalizeString(merchantData.domesticCrossBorderSplit);
   const domesticVsInternational = normalizeString(merchantData.domesticVsInternational);
   const recurringBillingDetails = normalizeString(merchantData.recurringBillingDetails);
+  const recurringBilling = normalizeString(merchantData.recurringBilling);
+  const recurringSalesPercent = normalizeString(merchantData.recurringSalesPercent);
+  const advancePayment = normalizeString(merchantData.advancePayment);
+  const advancePaymentPercent = normalizeString(merchantData.advancePaymentPercent);
+  const transactionChannelSplit = normalizeString(merchantData.transactionChannelSplit);
+  const foreignCardsPercent = normalizeString(merchantData.foreignCardsPercent);
   const trialPeriod = normalizeString(merchantData.trialPeriod);
   const complianceDetails = normalizeString(merchantData.complianceDetails);
   const regulatoryStatus = normalizeString(merchantData.regulatoryStatus);
   const chargebackHistory = normalizeString(merchantData.chargebackHistory);
   const previousProcessors = normalizeString(merchantData.previousProcessors);
+  const priorTermination = normalizeString(merchantData.priorTermination);
+  const bankruptcyHistory = normalizeString(merchantData.bankruptcyHistory);
+  const riskProgramHistory = normalizeString(merchantData.riskProgramHistory);
 
   const signals: string[] = [];
 
@@ -691,11 +864,17 @@ function buildDerivedRiskSignalsText(merchantData: MerchantDataLike): string {
   if (monthlyTransactions === '1k-10k' || monthlyTransactions === '>10k') {
     signals.push(`Transaction count is moderately high to high: ${monthlyTransactions} per month.`);
   }
-  if (domesticCrossBorderSplit || domesticVsInternational || country === 'EU' || country === 'UK' || country === 'Other') {
+  if (domesticCrossBorderSplit || domesticVsInternational || foreignCardsPercent || country === 'EU' || country === 'UK' || country === 'Other') {
     signals.push('Cross-border or international processing exposure is present or implied.');
   }
-  if (recurringBillingDetails || trialPeriod) {
+  if (recurringBillingDetails || recurringBilling || recurringSalesPercent || trialPeriod) {
     signals.push('Recurring or subscription billing behavior is present.');
+  }
+  if (advancePayment || advancePaymentPercent) {
+    signals.push('Advance-payment or delayed-fulfillment exposure is present.');
+  }
+  if (transactionChannelSplit.toLowerCase().includes('e-commerce') || transactionChannelSplit.toLowerCase().includes('moto') || transactionChannelSplit.toLowerCase().includes('keyed')) {
+    signals.push('Card-not-present volume is present in the channel mix.');
   }
   if (complianceDetails || regulatoryStatus) {
     signals.push('The merchant supplied compliance or licensing narrative that should be weighed in the score.');
@@ -705,6 +884,9 @@ function buildDerivedRiskSignalsText(merchantData: MerchantDataLike): string {
   }
   if (previousProcessors) {
     signals.push(`Previous processor history supplied: ${previousProcessors}.`);
+  }
+  if (priorTermination || bankruptcyHistory || riskProgramHistory) {
+    signals.push('Adverse processing, bankruptcy, or card-brand risk-program history was answered and should be considered.');
   }
   if (!signals.length) {
     signals.push('No additional derived intake signals were detected beyond the raw questionnaire answers.');
@@ -734,7 +916,20 @@ function buildRuleBasedBaselineText(merchantData: MerchantDataLike): string {
   const billingModel = normalizeString(merchantData.billingModel);
   const chargebackHistory = normalizeString(merchantData.chargebackHistory);
   const previousProcessors = normalizeString(merchantData.previousProcessors);
+  const currentOrPreviousProcessor = normalizeString(merchantData.currentOrPreviousProcessor);
+  const priorTermination = normalizeString(merchantData.priorTermination);
+  const priorTerminationExplanation = normalizeString(merchantData.priorTerminationExplanation);
+  const bankruptcyHistory = normalizeString(merchantData.bankruptcyHistory);
+  const bankruptcyExplanation = normalizeString(merchantData.bankruptcyExplanation);
+  const riskProgramHistory = normalizeString(merchantData.riskProgramHistory);
+  const riskProgramExplanation = normalizeString(merchantData.riskProgramExplanation);
   const recurringBillingDetails = normalizeString(merchantData.recurringBillingDetails);
+  const recurringBilling = normalizeString(merchantData.recurringBilling);
+  const recurringSalesPercent = normalizeString(merchantData.recurringSalesPercent);
+  const advancePayment = normalizeString(merchantData.advancePayment);
+  const advancePaymentPercent = normalizeString(merchantData.advancePaymentPercent);
+  const transactionChannelSplit = normalizeString(merchantData.transactionChannelSplit);
+  const foreignCardsPercent = normalizeString(merchantData.foreignCardsPercent);
   const trialPeriod = normalizeString(merchantData.trialPeriod);
   const domesticVsInternational = normalizeString(merchantData.domesticVsInternational);
   const domesticCrossBorderSplit = normalizeString(merchantData.domesticCrossBorderSplit);
@@ -746,6 +941,8 @@ function buildRuleBasedBaselineText(merchantData: MerchantDataLike): string {
   const isVeryHighVolume = monthlyVolume === '>250k';
   const hasRecurringExposure =
     recurringBillingDetails.length > 0 ||
+    recurringBilling.length > 0 ||
+    recurringSalesPercent.length > 0 ||
     trialPeriod.length > 0 ||
     billingModel.toLowerCase().includes('subscription') ||
     billingModel.toLowerCase().includes('recurring');
@@ -753,7 +950,16 @@ function buildRuleBasedBaselineText(merchantData: MerchantDataLike): string {
     isInternational ||
     domesticVsInternational.toLowerCase().includes('international') ||
     domesticCrossBorderSplit.toLowerCase().includes('cross') ||
+    foreignCardsPercent.length > 0 ||
     (processingCurrencies.length > 0 && processingCurrencies.includes(','));
+  const hasAdvancePaymentExposure = advancePayment.length > 0 || advancePaymentPercent.length > 0;
+  const hasCardNotPresentExposure =
+    transactionChannelSplit.toLowerCase().includes('e-commerce') ||
+    transactionChannelSplit.toLowerCase().includes('moto') ||
+    transactionChannelSplit.toLowerCase().includes('keyed');
+  const hasAdverseHistory =
+    [priorTermination, priorTerminationExplanation, bankruptcyHistory, bankruptcyExplanation, riskProgramHistory, riskProgramExplanation]
+      .some((item) => item.length > 0 && !/^no\b/i.test(item));
   const hasMitigatingCompliance =
     hasProvidedText(merchantData.complianceDetails) ||
     hasProvidedText(merchantData.regulatoryStatus) ||
@@ -815,6 +1021,14 @@ function buildRuleBasedBaselineText(merchantData: MerchantDataLike): string {
     baselineScore += 8;
     concernSignals.push('Recurring billing or trial exposure present');
   }
+  if (hasAdvancePaymentExposure) {
+    baselineScore += 8;
+    concernSignals.push('Advance-payment / delayed-fulfillment exposure present');
+  }
+  if (hasCardNotPresentExposure) {
+    baselineScore += 6;
+    concernSignals.push('Card-not-present channel exposure present');
+  }
   if (hasCrossBorderExposure) {
     baselineScore += 8;
     concernSignals.push('Cross-border or multi-currency exposure present');
@@ -826,6 +1040,13 @@ function buildRuleBasedBaselineText(merchantData: MerchantDataLike): string {
   if (previousProcessors.length > 0) {
     baselineScore += containsConcernKeyword(previousProcessors) ? 10 : 4;
     concernSignals.push(`Previous processor history disclosed: ${truncateText(previousProcessors, 100)}`);
+  }
+  if (currentOrPreviousProcessor.length > 0) {
+    concernSignals.push(`Current / previous processor supplied: ${truncateText(currentOrPreviousProcessor, 100)}`);
+  }
+  if (hasAdverseHistory) {
+    baselineScore += 14;
+    concernSignals.push('Prior termination, bankruptcy, or card-brand risk-program answer requires manual review');
   }
   if (criticalMissing.length > 0) {
     baselineScore += Math.min(criticalMissing.length * 4, 20);
@@ -847,6 +1068,12 @@ function buildRuleBasedBaselineText(merchantData: MerchantDataLike): string {
   }
   if ((isInternational || isHighRisk) && !hasProvidedText(merchantData.targetGeography)) {
     ruleFindings.push('Target geography is missing for an international or higher-risk profile');
+  }
+  if (!hasProvidedText(merchantData.personaInvitePlan)) {
+    ruleFindings.push('Persona/KYC/KYB trigger plan is missing');
+  }
+  if (!hasProvidedText(merchantData.websitePrivacyPolicy) || !hasProvidedText(merchantData.websiteTerms) || !hasProvidedText(merchantData.websiteRefundPolicy)) {
+    ruleFindings.push('Website compliance basics are incomplete');
   }
   if (hasMitigatingCompliance && (isHighRisk || hasCrossBorderExposure)) {
     baselineScore -= 6;
@@ -975,10 +1202,93 @@ function buildUploadInventoryText(
   return lines.join('\n');
 }
 
+function normalizeWebsiteUrl(value: unknown): URL | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const raw = value.trim();
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const url = new URL(withProtocol);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+    return url;
+  } catch {
+    return undefined;
+  }
+}
+
+function isUnsafeWebsiteHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (host === 'localhost' || host.endsWith('.local')) return true;
+  if (/^(127|10|0)\./.test(host)) return true;
+  if (/^192\.168\./.test(host)) return true;
+  if (/^169\.254\./.test(host)) return true;
+  const private172 = host.match(/^172\.(\d+)\./);
+  return private172 ? Number(private172[1]) >= 16 && Number(private172[1]) <= 31 : false;
+}
+
+function htmlContainsAny(html: string, patterns: string[]): boolean {
+  const lower = html.toLowerCase();
+  return patterns.some((pattern) => lower.includes(pattern));
+}
+
+async function buildWebsiteReviewText(merchantData: MerchantDataLike): Promise<string> {
+  const url = normalizeWebsiteUrl(merchantData.website);
+  const declaredSignals = [
+    `- Merchant-supplied URL: ${typeof merchantData.website === 'string' && merchantData.website.trim() ? merchantData.website.trim() : 'not supplied'}`,
+    `- Privacy Policy declared: ${normalizeString(merchantData.websitePrivacyPolicy) || 'unknown'}`,
+    `- Terms declared: ${normalizeString(merchantData.websiteTerms) || 'unknown'}`,
+    `- Return / Refund Policy declared: ${normalizeString(merchantData.websiteRefundPolicy) || 'unknown'}`,
+    `- Customer service contact declared visible: ${normalizeString(merchantData.websiteContactInfo) || 'unknown'}`,
+    `- SSL / encrypted payment declared: ${normalizeString(merchantData.websiteSsl) || 'unknown'}`,
+    `- Stores card numbers: ${normalizeString(merchantData.storesCardNumbers) || 'unknown'}`,
+    `- Third-party cardholder-data apps: ${normalizeString(merchantData.thirdPartyCardApps) || 'none disclosed'}`,
+    `- Prior data breach / compromise: ${normalizeString(merchantData.dataBreachHistory) || 'unknown'}`,
+    `- Regulated / MSB business: ${normalizeString(merchantData.regulatedBusiness) || 'unknown'}`,
+  ];
+
+  if (!url) {
+    return ['Website reachability: not checked because no valid http(s) URL was supplied.', ...declaredSignals].join('\n');
+  }
+
+  if (isUnsafeWebsiteHost(url.hostname)) {
+    return ['Website reachability: skipped because the submitted hostname is not safe for server-side review.', ...declaredSignals].join('\n');
+  }
+
+  try {
+    const response = await fetch(url.href, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: createTimeoutSignal(WEBSITE_REVIEW_TIMEOUT_MS),
+      headers: {
+        'User-Agent': 'BCIT-BCP-underwriting-review/1.0',
+      },
+    });
+    const contentType = response.headers.get('content-type') ?? '';
+    const html = contentType.includes('text/html') ? (await response.text()).slice(0, 120_000) : '';
+    const detected = [
+      `- Reachable: ${response.ok ? 'yes' : 'no'} (HTTP ${response.status})`,
+      `- Final URL: ${response.url}`,
+      `- Homepage HTML inspected: ${html ? 'yes' : 'no'}`,
+      `- Privacy Policy detected in page text/links: ${html ? (htmlContainsAny(html, ['privacy policy', '/privacy']) ? 'yes' : 'no') : 'unknown'}`,
+      `- Terms detected in page text/links: ${html ? (htmlContainsAny(html, ['terms and conditions', 'terms of use', '/terms']) ? 'yes' : 'no') : 'unknown'}`,
+      `- Refund / return language detected: ${html ? (htmlContainsAny(html, ['refund', 'return policy', 'returns']) ? 'yes' : 'no') : 'unknown'}`,
+      `- Shipping language detected: ${html ? (htmlContainsAny(html, ['shipping', 'delivery', 'fulfillment']) ? 'yes' : 'no') : 'unknown'}`,
+      `- Contact/support language detected: ${html ? (htmlContainsAny(html, ['contact', 'support', 'customer service', 'mailto:']) ? 'yes' : 'no') : 'unknown'}`,
+      `- Currency language detected: ${html ? (htmlContainsAny(html, ['cad', 'usd', '$', 'currency']) ? 'yes' : 'no') : 'unknown'}`,
+    ];
+    return ['Structured Website Review:', ...detected, ...declaredSignals].join('\n');
+  } catch (error) {
+    return [
+      `Website reachability: failed or timed out (${truncateText(describeError(error), 120)}).`,
+      ...declaredSignals,
+    ].join('\n');
+  }
+}
+
 function buildPromptText(
   merchantData: MerchantDataLike,
   deliveredFields: Set<string> = new Set(),
-  skippedNotes: string[] = []
+  skippedNotes: string[] = [],
+  websiteReviewText = 'Website review was not performed.'
 ): string {
   return `You are an expert payment processing underwriter. Analyze the merchant profile and uploaded documents.
 
@@ -994,27 +1304,31 @@ ${buildDerivedRiskSignalsText(merchantData)}
 Rules-Based Screening Baseline:
 ${buildRuleBasedBaselineText(merchantData)}
 
+Website Review:
+${websiteReviewText}
+
 Uploaded Documents:
 ${buildUploadInventoryText(merchantData, deliveredFields, skippedNotes)}
 
 Tasks:
-1. Start from the rules-based screening baseline, then adjust the score using your own underwriting judgment from the full merchant context and uploaded evidence.
+1. Start from the rules-based screening baseline, then adjust the score using your own underwriting judgment from the full merchant context, Persona/KYC/KYB routing or results, website review, document readiness, and uploaded evidence.
 2. Return a numerical riskScore from 0 to 100.
 3. Return riskCategory as Low, Medium, or High.
 4. Return 2-5 riskFactors.
-5. Recommend one processor from Stripe, Adyen, Nuvei, HighRiskPay.
-6. Explain the recommendation in reason, citing the intake facts, completeness gaps, document evidence, and why your final score did or did not differ from the baseline.
+5. Recommend one processor from Nuvei, Payroc / Peoples, Chase.
+6. Explain the recommendation in reason, citing the intake facts, Persona/KYC/KYB status, website signals, completeness gaps, document evidence, and why your final score did or did not differ from the baseline.
 7. Summarize what the uploaded files appear to contain in documentSummary. If only metadata was available, say that clearly.
 8. Cross-check merchant profile, intake completeness, document metadata, and documents against each other and return verificationStatus and verificationNotes.
 9. Treat missing critical intake fields, missing expected documents, low-confidence uploads, extraction mismatches, recurring billing exposure, prior processor issues, and regulated-industry answers as real scoring signals.
-10. Do not return Verified if material intake gaps or expected-document gaps remain unresolved.
+10. Do not return Verified if material intake gaps, Persona/KYC/KYB gaps, website compliance gaps, or expected-document gaps remain unresolved.
+11. Make a readiness decision in the reason: ready for processor matching, hold for manual review, or missing items needed.
 
 Return JSON only with exactly these keys:
 {
   "riskScore": number,
   "riskCategory": "Low" | "Medium" | "High",
   "riskFactors": string[],
-  "recommendedProcessor": "Stripe" | "Adyen" | "Nuvei" | "HighRiskPay",
+  "recommendedProcessor": "Nuvei" | "Payroc / Peoples" | "Chase",
   "reason": string,
   "documentSummary": string,
   "verificationStatus": "Verified" | "Discrepancies Found" | "Unverified",
@@ -1158,6 +1472,7 @@ async function runUnderwriting(merchantData: MerchantDataLike): Promise<Underwri
   const uploadedFileIds: string[] = [];
   const deliveredFields = new Set<string>();
   const skippedNotes: string[] = [];
+  const websiteReviewText = await buildWebsiteReviewText(merchantData);
 
   try {
     const content: Array<Record<string, unknown>> = [];
@@ -1204,7 +1519,7 @@ async function runUnderwriting(merchantData: MerchantDataLike): Promise<Underwri
 
     content.unshift({
       type: 'input_text',
-      text: buildPromptText(merchantData, deliveredFields, skippedNotes),
+      text: buildPromptText(merchantData, deliveredFields, skippedNotes, websiteReviewText),
     });
 
     const response = await xaiFetch(

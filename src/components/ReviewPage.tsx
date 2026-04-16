@@ -129,15 +129,15 @@ export function ReviewPage({ data, documents, setCurrentView, onEdit, onSubmit }
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-lg">Business Basics</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => onEdit('companyDetailsForm')}><Edit2 className="w-4 h-4" /></Button>
+            <Button variant="ghost" size="sm" onClick={() => onEdit('legalBusinessForm')}><Edit2 className="w-4 h-4" /></Button>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Type</span> <span className="font-medium capitalize">{data.businessType?.replace('_', ' ')}</span></div>
             {data.legalName && <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Legal Name</span> <span className="font-medium">{data.legalName}</span></div>}
-            {data.taxId && <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Tax ID</span> <span className="font-medium">{data.taxId}</span></div>}
+            {data.businessRegistrationNumber && <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Registration</span> <span className="font-medium">{data.businessRegistrationNumber}</span></div>}
             <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Website</span> <span className="font-medium">{data.website}</span></div>
-            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Time in Business</span> <span className="font-medium">{data.timeInBusiness}</span></div>
-            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Staff Size</span> <span className="font-medium">{data.staffSize}</span></div>
+            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Established</span> <span className="font-medium">{data.establishedDate || data.timeInBusiness}</span></div>
+            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Legal Email</span> <span className="font-medium">{data.legalBusinessEmail || data.generalEmail}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Business Category</span> <span className="font-medium">{data.businessCategory}</span></div>
           </CardContent>
         </Card>
@@ -158,10 +158,11 @@ export function ReviewPage({ data, documents, setCurrentView, onEdit, onSubmit }
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-lg">Owner Identity</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => onEdit('ownerDetailsForm')}><Edit2 className="w-4 h-4" /></Button>
+            <Button variant="ghost" size="sm" onClick={() => onEdit('ownershipControlForm')}><Edit2 className="w-4 h-4" /></Button>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Full Name</span> <span className="font-medium">{data.ownerName}</span></div>
+            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Owners</span> <span className="font-medium">{data.beneficialOwners || data.ownerName}</span></div>
+            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Signer</span> <span className="font-medium">{data.authorizedSignerName || data.ownerName}</span></div>
             <div className="flex justify-between items-center">
               <span className="text-slate-500">ID Uploaded</span> 
               {data.idUpload ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <AlertCircle className="w-4 h-4 text-yellow-500" />}
@@ -178,37 +179,49 @@ export function ReviewPage({ data, documents, setCurrentView, onEdit, onSubmit }
           { label: 'Province', value: data.province },
         ])}
 
-        {renderSection('Business Operations', 'businessOperationsForm', [
-          { label: 'Avg Txn Count', value: data.avgTxnCount },
+        {renderSection('Business Model', 'businessModelForm', [
+          { label: 'Products / Services', value: data.productsServices },
+          { label: 'Business Description', value: data.businessDescription },
+          { label: 'Customer Type', value: data.customerType },
+          { label: 'Advance Payment', value: data.advancePayment },
+          { label: 'Recurring Billing', value: data.recurringBilling },
+          { label: 'Fulfillment Timeline', value: data.fulfillmentTimeline },
+        ])}
+
+        {renderSection('Sales Profile', 'salesProfileForm', [
           { label: 'Avg Ticket Size', value: data.avgTicketSize },
-          { label: 'Target Geography', value: data.targetGeography },
-          { label: 'Cross-border Split', value: data.domesticCrossBorderSplit },
+          { label: 'Highest Ticket', value: data.highestTicketAmount },
+          { label: 'Channel Split', value: data.transactionChannelSplit },
+          { label: 'Recurring %', value: data.recurringTransactionsPercent },
+          { label: 'Foreign Cards %', value: data.foreignCardsPercent },
           { label: 'Processing Currencies', value: data.processingCurrencies },
-          { label: 'Payment Products', value: data.paymentProducts },
         ])}
 
-        {renderSection('Owner Details', 'ownerDetailsForm', [
-          { label: 'Ownership %', value: data.ownershipPercentage },
-          { label: 'Role', value: data.ownerRole },
-          { label: 'Email', value: data.ownerEmail },
-          { label: 'ID Number', value: data.ownerIdNumber },
-          { label: 'ID Expiry', value: data.ownerIdExpiry },
-          { label: 'Country of Residence', value: data.ownerCountryOfResidence },
+        {renderSection('Processing History', 'processingHistoryForm', [
+          { label: 'Currently Processes Cards', value: data.currentlyProcessesCards },
+          { label: 'Current / Previous Processor', value: data.currentOrPreviousProcessor },
+          { label: 'Exit Reason', value: data.processorExitReason },
+          { label: 'Prior Termination', value: data.priorTermination },
+          { label: 'Bankruptcy', value: data.bankruptcyHistory },
+          { label: 'Risk Program History', value: data.riskProgramHistory },
         ])}
 
-        {renderSection('Bank Account', 'bankAccountForm', [
-          { label: 'Bank Name', value: data.bankName },
-          { label: 'Account Holder', value: data.accountHolderName },
-          { label: 'Account Number', value: data.accountNumber },
-          { label: 'Routing Number', value: data.routingNumber },
-          { label: 'Settlement Currency', value: data.settlementCurrency },
+        {renderSection('Website / PCI Basics', 'websiteComplianceForm', [
+          { label: 'Privacy Policy', value: data.websitePrivacyPolicy },
+          { label: 'Terms', value: data.websiteTerms },
+          { label: 'Refund Policy', value: data.websiteRefundPolicy },
+          { label: 'Contact Info', value: data.websiteContactInfo },
+          { label: 'SSL', value: data.websiteSsl },
+          { label: 'Stores Cards', value: data.storesCardNumbers },
         ])}
 
-        {renderSection('Industry Specific', 'subscriptionForm', [
-          { label: 'Recurring Billing', value: data.recurringBillingDetails },
-          { label: 'Refund Policy', value: data.refundPolicy },
-          { label: 'Shipping Policy', value: data.shippingPolicy },
-          { label: 'Compliance Details', value: data.complianceDetails },
+        {renderSection('Document Readiness', 'documentReadinessForm', [
+          { label: 'Registration / Articles', value: data.canProvideRegistration },
+          { label: 'Void Cheque / Bank Letter', value: data.canProvideVoidCheque },
+          { label: 'Bank Statements', value: data.canProvideBankStatements },
+          { label: 'Proof of Ownership', value: data.canProvideProofOfOwnership },
+          { label: 'Owner IDs', value: data.canProvideOwnerIds },
+          { label: 'Processing Statements', value: data.canProvideProcessingStatements },
         ])}
 
         <Card>
