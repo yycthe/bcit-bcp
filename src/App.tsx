@@ -89,6 +89,7 @@ export default function App() {
             setMerchantData={setMerchantData}
             documents={documents}
             aiRecommendation={aiRecommendation}
+            setAiRecommendation={setAiRecommendation}
             merchantNoticeFromAdmin={merchantNoticeFromAdmin}
             setMerchantNoticeFromAdmin={setMerchantNoticeFromAdmin}
             setVerificationIssues={setVerificationIssues}

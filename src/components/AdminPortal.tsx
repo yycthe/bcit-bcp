@@ -17,6 +17,7 @@ interface Props {
   setMerchantData: React.Dispatch<React.SetStateAction<MerchantData>>;
   documents: FileData[];
   aiRecommendation: any;
+  setAiRecommendation: (rec: any) => void;
   merchantNoticeFromAdmin: string;
   setMerchantNoticeFromAdmin: (msg: string) => void;
   setVerificationIssues: (items: VerificationIssue[]) => void;
@@ -29,6 +30,7 @@ export function AdminPortal({
   setMerchantData,
   documents,
   aiRecommendation,
+  setAiRecommendation,
   merchantNoticeFromAdmin,
   setMerchantNoticeFromAdmin,
   setVerificationIssues,
@@ -88,6 +90,14 @@ export function AdminPortal({
   };
 
   const savePersonaResults = () => {
+    if (personaKybStatus && !['passed', 'failed', 'pending'].includes(personaKybStatus)) {
+      toast.error('KYB status must be passed, failed, or pending.');
+      return;
+    }
+    if (!personaKybStatus && !personaKycStatuses && !personaVerificationIssues) {
+      toast.error('Enter at least one Persona result field before saving.');
+      return;
+    }
     setMerchantData((prev) => ({
       ...prev,
       personaKybStatus,
@@ -409,6 +419,25 @@ export function AdminPortal({
                 </CardContent>
               </Card>
             )}
+
+            {appStatus !== 'draft' && merchantData.processorSpecificAnswers?.trim() && (
+              <Card className="mt-6 border-emerald-200 bg-emerald-50/40">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <FileWarning className="w-4 h-4 text-emerald-600" />
+                    Processor-specific follow-up answers
+                  </CardTitle>
+                  <p className="text-xs text-slate-600 font-normal mt-1">
+                    Matched processor: <strong>{merchantData.matchedProcessor || 'Not yet matched'}</strong>
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <pre className="whitespace-pre-wrap text-sm text-slate-800 bg-white rounded-md border border-slate-200 p-3 max-h-64 overflow-y-auto">
+                    {merchantData.processorSpecificAnswers}
+                  </pre>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
 
@@ -416,6 +445,7 @@ export function AdminPortal({
           <AIUnderwriting
             data={merchantData}
             aiRecommendation={aiRecommendation}
+            setAiRecommendation={setAiRecommendation}
             documents={documents}
             documentChecklist={docChecklist}
             isApproved={appStatus === 'approved' || appStatus === 'signed'}

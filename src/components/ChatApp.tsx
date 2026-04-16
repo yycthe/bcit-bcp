@@ -79,18 +79,7 @@ type QuestionId =
   | 'websiteComplianceForm'
   | 'documentReadinessForm'
   | 'personaDecisionGate'
-  | 'processorSpecificFollowUpForm'
-  | 'companyDetailsForm'
-  | 'contactAddressForm'
-  | 'businessOperationsForm'
-  | 'ownerDetailsForm'
-  | 'bankAccountForm'
-  | 'subscriptionForm'
-  | 'retailForm'
-  | 'highRiskForm'
-  | 'cryptoForm'
-  | 'gamingForm'
-  | 'servicesForm';
+  | 'processorSpecificFollowUpForm';
 
 interface QuestionDef {
   id: QuestionId;
@@ -455,9 +444,7 @@ function getSmartGuide(questionId: QuestionId, data: MerchantData): SmartGuide {
           : `This section is tuned for ${getIndustryLabel(data.industry)} and ${businessName}. Fill the essentials now and we will keep the rest moving.`,
       tips: [
         'Short, plain-English answers are fine.',
-        questionId === 'businessOperationsForm'
-          ? 'If you process in more than one region, a rough domestic vs cross-border split is enough.'
-          : 'If one field is not finalized yet, use the most current working answer you have.',
+        'If one field is not finalized yet, use the most current working answer you have.',
       ],
     };
   }
@@ -583,51 +570,6 @@ const getQuestionText = (qId: QuestionId, data: MerchantData): string => {
       const processor = normalizeProcessorFit(data.matchedProcessor);
       return `AI matched this case to ${processor}. Now I will only ask the ${processor}-specific underwriting follow-up items, without repeating the common intake.`;
     },
-    
-    companyDetailsForm: () => {
-      if (data.businessType === 'sole_proprietorship') {
-        return "Let's get your business details. As a sole proprietor, some of these may overlap with your personal info.";
-      }
-      return "Now let's capture your company's core details.";
-    },
-    
-    contactAddressForm: () => "Where is your business located and how can we best reach you?",
-    
-    ownerDetailsForm: () => {
-      if (data.businessType === 'corporation') {
-        return "We need details about the primary beneficial owner (25%+ ownership).";
-      } else if (data.businessType === 'partnership') {
-        return "Please provide details for the managing partner.";
-      }
-      return "Please provide details about yourself as the business owner.";
-    },
-    
-    businessOperationsForm: () => {
-      if (['crypto', 'gaming', 'high_risk'].includes(industry)) {
-        return "Given your industry, we need detailed transaction information for proper risk assessment.";
-      }
-      return "Tell us about your typical transaction profile.";
-    },
-    
-    bankAccountForm: () => {
-      if (data.country !== 'CA' && data.country !== 'US') {
-        return "For international settlements, please provide your bank details. We support most major currencies.";
-      }
-      return "Where should we send your funds? Please provide your settlement account details.";
-    },
-    
-    // Industry-specific forms
-    subscriptionForm: () => "Since you run a SaaS/subscription business, we need some additional details about your billing model.",
-    
-    retailForm: () => "For e-commerce, shipping and returns are important. Please tell us about your fulfillment process.",
-    
-    cryptoForm: () => "Crypto businesses have specific compliance requirements. Please provide these additional details.",
-    
-    gamingForm: () => "Gaming has unique regulatory considerations. Please provide these additional details.",
-    
-    servicesForm: () => "For professional services, understanding your billing helps with risk assessment.",
-    
-    highRiskForm: () => "High-risk industries require additional due diligence. Please provide these compliance details.",
     
     // Document uploads - contextual
     idUpload: () => {
@@ -774,8 +716,11 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
     fields: [
       { id: 'legalName', label: 'What is your legal business name?', type: 'text' },
       { id: 'dbaName', label: 'Do you operate under a DBA, operating name, or trade name? If yes, what is it?', type: 'text', required: false },
+      { id: 'taxId', label: 'What is your Tax ID / EIN / Business Number?', type: 'text' },
       { id: 'businessRegistrationNumber', label: 'What is your business registration / corporation / GST/HST number?', type: 'text' },
       { id: 'establishedDate', label: 'When was the business established or incorporated?', type: 'text' },
+      { id: 'timeInBusiness', label: 'How long has the business been operating?', type: 'text' },
+      { id: 'staffSize', label: 'How many employees do you have?', type: 'text' },
       { id: 'legalBusinessAddress', label: 'What is your legal business address?', type: 'text' },
       { id: 'operatingAddressDifferent', label: 'Is your operating address different from your legal address?', type: 'select', options: YES_NO_OPTIONS },
       { id: 'operatingAddress', label: 'If yes, what is your operating address?', type: 'text', required: false },
@@ -857,6 +802,14 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
       { id: 'authorizedSignerTitle', label: 'Authorized signer title.', type: 'text' },
       { id: 'authorizedSignerEmail', label: 'Authorized signer email.', type: 'email' },
       { id: 'signerIsOwner', label: 'Is the signer one of the owners listed above?', type: 'select', options: YES_NO_OPTIONS },
+      { id: 'ownerName', label: 'Primary owner / principal full legal name.', type: 'text' },
+      { id: 'ownerEmail', label: 'Primary owner email.', type: 'email' },
+      { id: 'ownerRole', label: 'Primary owner role / title.', type: 'text' },
+      { id: 'ownershipPercentage', label: 'Primary owner ownership percentage.', type: 'number' },
+      { id: 'ownerCountryOfResidence', label: 'Primary owner country of residence.', type: 'text' },
+      { id: 'bankName', label: 'What bank do you use for business deposits?', type: 'text' },
+      { id: 'accountHolderName', label: 'Account holder name on the bank account.', type: 'text' },
+      { id: 'settlementCurrency', label: 'What settlement currency do you need?', type: 'text' },
     ],
   },
   processingHistoryForm: {
@@ -996,141 +949,6 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
     type: 'upload'
   },
   
-  // Core Forms
-  companyDetailsForm: {
-    id: 'companyDetailsForm',
-    text: "Please provide your company's core details.",
-    type: 'form',
-    fields: [
-      { id: 'legalName', label: 'Legal Business Name', type: 'text' },
-      { id: 'taxId', label: 'Tax ID / EIN', type: 'text' },
-      { id: 'website', label: 'Business Website', type: 'text' },
-      { id: 'timeInBusiness', label: 'Time in Business (e.g., 2 years)', type: 'text' },
-      { id: 'staffSize', label: 'Staff Size', type: 'text' },
-      { id: 'businessCategory', label: 'Business Subcategory', type: 'text' }
-    ]
-  },
-  contactAddressForm: {
-    id: 'contactAddressForm',
-    text: "Where is your business located and how can we reach you?",
-    type: 'form',
-    fields: [
-      { id: 'generalEmail', label: 'General Email', type: 'email' },
-      { id: 'phone', label: 'Phone Number', type: 'text' },
-      { id: 'registeredAddress', label: 'Registered Address', type: 'text' },
-      { id: 'operatingAddress', label: 'Operating Address', type: 'text' },
-      { id: 'city', label: 'City', type: 'text' },
-      { id: 'province', label: 'Province / State', type: 'text' }
-    ]
-  },
-  businessOperationsForm: {
-    id: 'businessOperationsForm',
-    text: "Tell us about your transaction profile.",
-    type: 'form',
-    fields: [
-      { id: 'avgTxnCount', label: 'Average Monthly Transactions', type: 'number' },
-      { id: 'avgTicketSize', label: 'Average Ticket Size ($)', type: 'number' },
-      { id: 'targetGeography', label: 'Target Customers Geography', type: 'text' },
-      { id: 'domesticCrossBorderSplit', label: 'Domestic / Cross-border Split (%)', type: 'text' },
-      { id: 'processingCurrencies', label: 'Processing Currencies (e.g., USD, EUR)', type: 'text' },
-      { id: 'paymentProducts', label: 'Payment Products Needed', type: 'text' }
-    ]
-  },
-  ownerDetailsForm: {
-    id: 'ownerDetailsForm',
-    text: "Please provide details about the primary business owner.",
-    type: 'form',
-    fields: [
-      { id: 'ownerName', label: 'Full Legal Name', type: 'text' },
-      { id: 'ownerEmail', label: 'Owner Email', type: 'email' },
-      { id: 'ownerRole', label: 'Role / Title', type: 'text' },
-      { id: 'ownershipPercentage', label: 'Ownership Percentage (%)', type: 'number' },
-      { id: 'ownerIdNumber', label: 'ID Number (Passport/Driver License)', type: 'text' },
-      { id: 'ownerIdExpiry', label: 'ID Expiry', type: 'date' },
-      { id: 'ownerCountryOfResidence', label: 'Country of Residence', type: 'text' }
-    ]
-  },
-  bankAccountForm: {
-    id: 'bankAccountForm',
-    text: "Please provide your settlement account details.",
-    type: 'form',
-    fields: [
-      { id: 'bankName', label: 'Bank Name', type: 'text' },
-      { id: 'accountHolderName', label: 'Account Holder Name', type: 'text' },
-      { id: 'accountNumber', label: 'Account Number / IBAN', type: 'text' },
-      { id: 'routingNumber', label: 'Routing Number / Branch Code', type: 'text' },
-      { id: 'settlementCurrency', label: 'Settlement Currency', type: 'text' }
-    ]
-  },
-  
-  // Industry-specific forms
-  subscriptionForm: {
-    id: 'subscriptionForm',
-    text: "Please provide details about your subscription business.",
-    type: 'form',
-    fields: [
-      { id: 'recurringBillingDetails', label: 'Billing Frequency (monthly/annual)', type: 'text' },
-      { id: 'trialPeriod', label: 'Trial Period (if any)', type: 'text' },
-      { id: 'refundPolicy', label: 'Cancellation / Refund Policy', type: 'text' },
-      { id: 'churnRate', label: 'Estimated Monthly Churn Rate (%)', type: 'text' }
-    ]
-  },
-  retailForm: {
-    id: 'retailForm',
-    text: "Please provide e-commerce fulfillment details.",
-    type: 'form',
-    fields: [
-      { id: 'deliveryMethod', label: 'Delivery Method (drop-ship, in-house, etc.)', type: 'text' },
-      { id: 'avgDeliveryTime', label: 'Average Delivery Time', type: 'text' },
-      { id: 'shippingPolicy', label: 'Shipping Policy', type: 'text' },
-      { id: 'refundPolicy', label: 'Return/Refund Policy', type: 'text' }
-    ]
-  },
-  cryptoForm: {
-    id: 'cryptoForm',
-    text: "Please provide crypto/Web3 compliance details.",
-    type: 'form',
-    fields: [
-      { id: 'cryptoServices', label: 'Services Offered (exchange, wallet, NFT, etc.)', type: 'text' },
-      { id: 'amlKycProcedures', label: 'AML/KYC Procedures', type: 'text' },
-      { id: 'cryptoLicenses', label: 'Licenses Held (MSB, MTL, etc.)', type: 'text' },
-      { id: 'custodyArrangement', label: 'Custody Arrangement', type: 'text' }
-    ]
-  },
-  gamingForm: {
-    id: 'gamingForm',
-    text: "Please provide gaming compliance details.",
-    type: 'form',
-    fields: [
-      { id: 'gamingType', label: 'Type of Gaming (skill, chance, esports, etc.)', type: 'text' },
-      { id: 'gamingLicenses', label: 'Gaming Licenses Held', type: 'text' },
-      { id: 'responsibleGaming', label: 'Responsible Gaming Measures', type: 'text' },
-      { id: 'ageVerification', label: 'Age Verification Methods', type: 'text' }
-    ]
-  },
-  servicesForm: {
-    id: 'servicesForm',
-    text: "Please provide details about your services business.",
-    type: 'form',
-    fields: [
-      { id: 'serviceType', label: 'Type of Services', type: 'text' },
-      { id: 'billingModel', label: 'Billing Model (hourly, project, retainer)', type: 'text' },
-      { id: 'contractLength', label: 'Typical Contract Length', type: 'text' },
-      { id: 'refundPolicy', label: 'Refund/Dispute Policy', type: 'text' }
-    ]
-  },
-  highRiskForm: {
-    id: 'highRiskForm',
-    text: "Please provide compliance details for your business.",
-    type: 'form',
-    fields: [
-      { id: 'businessDescription', label: 'Detailed Business Description', type: 'text' },
-      { id: 'regulatoryStatus', label: 'Regulatory Status/Licenses', type: 'text' },
-      { id: 'chargebackHistory', label: 'Historical Chargeback Rate (%)', type: 'text' },
-      { id: 'previousProcessors', label: 'Previous Payment Processors', type: 'text' }
-    ]
-  },
-
   // Document Uploads
   proofOfAddress: {
     id: 'proofOfAddress',
@@ -2173,8 +1991,8 @@ export function ChatApp({
 
   const getIcon = (qId?: QuestionId) => {
     if (!qId) return <Zap className="w-5 h-5" />;
-    if (qId === 'businessType' || qId === 'companyDetailsForm') return <Building2 className="w-5 h-5" />;
-    if (qId === 'country' || qId === 'contactAddressForm') return <Globe className="w-5 h-5" />;
+    if (qId === 'businessType') return <Building2 className="w-5 h-5" />;
+    if (qId === 'country') return <Globe className="w-5 h-5" />;
     if (qId === 'industry') return <Activity className="w-5 h-5" />;
     if (qId.includes('upload') || qId.includes('Upload') || qId === 'financials' || qId === 'bankStatement' || qId === 'proofOfAddress' || qId === 'registrationCertificate' || qId === 'complianceDocument' || qId === 'proofOfFunds' || qId === 'taxDocument' || qId === 'enhancedVerification') return <FileText className="w-5 h-5" />;
     if (qId === 'complianceDetails' || qId.includes('compliance') || qId.includes('Compliance')) return <ShieldCheck className="w-5 h-5" />;

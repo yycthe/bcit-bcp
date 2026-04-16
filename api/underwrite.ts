@@ -1354,8 +1354,17 @@ function isUnsafeWebsiteHost(hostname: string): boolean {
   return private172 ? Number(private172[1]) >= 16 && Number(private172[1]) <= 31 : false;
 }
 
-function htmlContainsAny(html: string, patterns: string[]): boolean {
-  const lower = html.toLowerCase();
+function stripHtmlTags(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function htmlContainsAny(text: string, patterns: string[]): boolean {
+  const lower = text.toLowerCase();
   return patterns.some((pattern) => lower.includes(pattern));
 }
 
@@ -1394,7 +1403,8 @@ async function buildWebsiteReviewText(merchantData: MerchantDataLike): Promise<s
       },
     });
     const contentType = response.headers.get('content-type') ?? '';
-    const html = contentType.includes('text/html') ? (await response.text()).slice(0, 120_000) : '';
+    const rawHtml = contentType.includes('text/html') ? (await response.text()).slice(0, 120_000) : '';
+    const html = rawHtml ? stripHtmlTags(rawHtml) : '';
     const detected = [
       `- Reachable: ${response.ok ? 'yes' : 'no'} (HTTP ${response.status})`,
       `- Final URL: ${response.url}`,

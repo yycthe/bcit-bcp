@@ -68,6 +68,7 @@ export function MerchantPortal({
     const file = e.target.files?.[0];
     const key = inlineUploadTargetRef.current;
     if (!file || !key) return;
+    const toastId = toast.loading(`Uploading ${file.name}...`);
     try {
       const prepared = await prepareFileForUpload(file);
       prepared.notices.forEach((n) => {
@@ -75,9 +76,9 @@ export function MerchantPortal({
         else toast.success(n.message);
       });
       setMerchantData({ ...merchantData, [key]: { ...prepared.fileData, uploadDate: new Date().toISOString(), documentType: key } });
-      toast.success(`${file.name} uploaded`, { description: `Saved to ${getMissingDocumentLabels({ ...merchantData, [key]: prepared.fileData as any } as any).length === 0 ? 'profile — all documents complete!' : 'profile.'}` });
+      toast.success(`${file.name} uploaded`, { id: toastId, description: `Saved to ${getMissingDocumentLabels({ ...merchantData, [key]: prepared.fileData as any } as any).length === 0 ? 'profile — all documents complete!' : 'profile.'}` });
     } catch (err) {
-      toast.error('Upload failed', { description: err instanceof Error ? err.message : 'Unknown error' });
+      toast.error('Upload failed', { id: toastId, description: err instanceof Error ? err.message : 'Unknown error' });
     } finally {
       e.target.value = '';
       inlineUploadTargetRef.current = null;
@@ -89,6 +90,17 @@ export function MerchantPortal({
     if (appStatus === 'under_review' && currentView === 'review') setCurrentView('status');
     if (appStatus === 'approved' && currentView === 'status') setCurrentView('agreement');
   }, [appStatus, currentView]);
+
+  // Warn before leaving with unsaved intake progress
+  useEffect(() => {
+    const hasProgress = currentView === 'intake' && !isFinished && merchantData.legalName?.trim();
+    if (!hasProgress) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [currentView, isFinished, merchantData.legalName]);
 
   const navItems = [
     { id: 'intake', label: 'Intake Assistant', icon: MessageSquare },

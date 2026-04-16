@@ -1,24 +1,50 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { MerchantData, FileData } from '@/src/types';
 import type { DocumentChecklistItem } from '@/src/lib/documentChecklist';
+import { getFallbackUnderwriting } from '@/src/lib/underwritingFallback';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/src/components/ui/card';
 import { Badge } from '@/src/components/ui/badge';
 import { Button } from '@/src/components/ui/button';
 import { FormattedSummary } from '@/src/components/ui/formatted-summary';
-import { Globe, AlertCircle, Building, Activity, FileText, CheckCircle2, FileSearch, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Globe, AlertCircle, Building, Activity, FileText, CheckCircle2, FileSearch, ShieldAlert, ShieldCheck, RefreshCcw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
 interface Props {
   data: MerchantData;
   aiRecommendation: any;
+  setAiRecommendation?: (rec: any) => void;
   documents: FileData[];
   documentChecklist?: DocumentChecklistItem[];
   onApprove?: () => void;
   isApproved?: boolean;
 }
 
-export function AIUnderwriting({ data, aiRecommendation, documents, documentChecklist, onApprove, isApproved }: Props) {
+export function AIUnderwriting({ data, aiRecommendation, setAiRecommendation, documents, documentChecklist, onApprove, isApproved }: Props) {
+  const [reAnalyzing, setReAnalyzing] = useState(false);
+
+  const handleReAnalyze = async () => {
+    if (!setAiRecommendation) return;
+    setReAnalyzing(true);
+    const toastId = toast.loading('Re-analyzing with AI underwriting...');
+    try {
+      const response = await fetch('/api/underwrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ merchantData: data }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = await response.json();
+      setAiRecommendation(result);
+      toast.success('AI underwriting re-analysis complete', { id: toastId });
+    } catch (err) {
+      const fallback = getFallbackUnderwriting(data);
+      setAiRecommendation(fallback);
+      toast.warning('xAI API unavailable — used rule-based fallback', { id: toastId });
+    } finally {
+      setReAnalyzing(false);
+    }
+  };
   if (!aiRecommendation) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
@@ -93,6 +119,19 @@ export function AIUnderwriting({ data, aiRecommendation, documents, documentChec
           <h1 className="text-2xl font-bold text-slate-900">AI Underwriting Summary</h1>
           <p className="text-slate-500">Comprehensive risk analysis and processor recommendation.</p>
         </div>
+        {setAiRecommendation && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={reAnalyzing}
+            onClick={handleReAnalyze}
+          >
+            <RefreshCcw className={`w-4 h-4 ${reAnalyzing ? 'animate-spin' : ''}`} />
+            {reAnalyzing ? 'Analyzing...' : 'Re-analyze'}
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
