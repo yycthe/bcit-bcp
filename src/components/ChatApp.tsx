@@ -1601,7 +1601,7 @@ export function ChatApp({
               </Button>
             </div>
           )}
-          <div className="border-t bg-white">
+          <div className="max-h-[calc(100vh-11rem)] overflow-y-auto overscroll-y-contain border-t bg-white">
             {smartGuide ? (
               <div className="border-b bg-slate-50/90 px-4 py-4">
                 <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1667,7 +1667,7 @@ export function ChatApp({
                   </div>
                 ))}
               </div>
-              <div className="flex justify-end pt-2">
+              <div className="sticky bottom-0 -mx-4 flex justify-end border-t border-slate-200 bg-white/95 px-4 py-3 pt-3 backdrop-blur">
                 <Button type="submit">Submit Details</Button>
               </div>
             </form>
