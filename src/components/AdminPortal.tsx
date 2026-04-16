@@ -37,6 +37,9 @@ export function AdminPortal({
   const [reminderCustom, setReminderCustom] = useState('');
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [lastVerification, setLastVerification] = useState<VerificationCheckResult | null>(null);
+  const [personaKybStatus, setPersonaKybStatus] = useState(merchantData.personaKybStatus || '');
+  const [personaKycStatuses, setPersonaKycStatuses] = useState(merchantData.personaKycStatuses || '');
+  const [personaVerificationIssues, setPersonaVerificationIssues] = useState(merchantData.personaVerificationIssues || '');
 
   const merchantName = merchantData.legalName || merchantData.ownerName || 'Unknown Merchant';
   const docChecklist = getMerchantDocumentChecklist(merchantData);
@@ -82,6 +85,23 @@ export function AdminPortal({
     } finally {
       setVerificationLoading(false);
     }
+  };
+
+  const savePersonaResults = () => {
+    setMerchantData((prev) => ({
+      ...prev,
+      personaKybStatus,
+      personaKycStatuses,
+      personaVerificationIssues,
+      personaVerificationSummary: [
+        personaKybStatus ? `KYB status: ${personaKybStatus}` : '',
+        personaKycStatuses ? `KYC status per person: ${personaKycStatuses}` : '',
+        personaVerificationIssues ? `Verification issues: ${personaVerificationIssues}` : '',
+      ]
+        .filter(Boolean)
+        .join('. ') || prev.personaVerificationSummary,
+    }));
+    toast.success('Persona verification results saved to merchant profile');
   };
 
   return (
@@ -269,6 +289,66 @@ export function AdminPortal({
                   </CardContent>
                 </Card>
               </div>
+            )}
+
+            {appStatus !== 'draft' && (
+              <Card className="mt-6 border-blue-200 bg-blue-50/40">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-blue-600" />
+                    Phase 3 — Persona verification results
+                  </CardTitle>
+                  <p className="text-xs text-slate-600 font-normal mt-1">
+                    Record the structured results returned by Persona after KYB / KYC invites are completed. These are attached to the merchant profile and included in AI underwriting.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">KYB status</label>
+                      <select
+                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                        value={personaKybStatus}
+                        onChange={(e) => setPersonaKybStatus(e.target.value)}
+                      >
+                        <option value="">— not yet received —</option>
+                        <option value="passed">Passed</option>
+                        <option value="failed">Failed</option>
+                        <option value="pending">Pending</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">KYC status per person</label>
+                      <textarea
+                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm min-h-[72px]"
+                        placeholder={"Jane Doe (owner 60%): passed\nJohn Smith (signer): pending"}
+                        value={personaKycStatuses}
+                        onChange={(e) => setPersonaKycStatuses(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Verification issues / mismatches</label>
+                    <textarea
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm min-h-[72px]"
+                      placeholder={"identity mismatch, address mismatch, document mismatch, signer mismatch, business registration inconsistency, incomplete verification — leave blank if none"}
+                      value={personaVerificationIssues}
+                      onChange={(e) => setPersonaVerificationIssues(e.target.value)}
+                    />
+                  </div>
+                  <Button type="button" size="sm" className="bg-blue-700 hover:bg-blue-800 gap-1" onClick={savePersonaResults}>
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Save Persona results to merchant profile
+                  </Button>
+                  {(merchantData.personaKybStatus || merchantData.personaKycStatuses) && (
+                    <p className="text-xs text-slate-500 border-t pt-2">
+                      <span className="font-medium text-slate-600">Saved:</span>{' '}
+                      KYB {merchantData.personaKybStatus || 'not set'} •{' '}
+                      {merchantData.personaKycStatuses ? merchantData.personaKycStatuses.slice(0, 80) + (merchantData.personaKycStatuses.length > 80 ? '…' : '') : 'KYC not set'}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
             )}
 
             {appStatus !== 'draft' && (

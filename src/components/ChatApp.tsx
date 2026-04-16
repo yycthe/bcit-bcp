@@ -384,7 +384,7 @@ function getFieldPlaceholder(fieldId: keyof MerchantData, data: MerchantData): s
     riskProgramHistory: 'Yes / No',
     riskProgramExplanation: 'Explain if yes',
     highestTicketAmount: 'Example: 2500',
-    transactionChannelSplit: 'Card present 20%, e-commerce 70%, MOTO 10%',
+    transactionChannelSplit: 'e.g. Card present 20%, e-commerce 70%, MOTO 10%',
     paymentTypesWanted: 'Visa, Mastercard, Amex, Interac, ACH',
     recurringTransactionsPercent: 'Example: 25%',
     foreignCardsPercent: 'Example: 15%',
@@ -882,19 +882,7 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
     fields: [
       { id: 'avgTicketSize', label: 'What is your average transaction amount?', type: 'number' },
       { id: 'highestTicketAmount', label: 'What is your highest transaction amount?', type: 'number' },
-      {
-        id: 'transactionChannelSplit',
-        label: 'What is your main transaction channel mix?',
-        type: 'select',
-        options: [
-          { label: 'Mostly card-present', value: 'Mostly card-present' },
-          { label: 'Mostly e-commerce', value: 'Mostly e-commerce' },
-          { label: 'Mostly MOTO / keyed', value: 'Mostly MOTO / keyed' },
-          { label: 'Mixed card-present and e-commerce', value: 'Mixed card-present and e-commerce' },
-          { label: 'Mixed e-commerce and MOTO', value: 'Mixed e-commerce and MOTO' },
-          { label: 'Not sure', value: 'Not sure' },
-        ],
-      },
+      { id: 'transactionChannelSplit', label: 'What percentage of your transactions are card present, e-commerce, and MOTO / keyed?', type: 'text' },
       {
         id: 'paymentTypesWanted',
         label: 'Which payment types do you want to accept?',

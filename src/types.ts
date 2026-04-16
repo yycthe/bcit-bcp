@@ -185,6 +185,11 @@ export interface MerchantData {
   personaInvitePlan: string;
   personaVerificationSummary: string;
   websiteReviewSummary: string;
+
+  // Phase 3 — structured Persona verification results (set by admin after Persona returns results).
+  personaKybStatus: string; // 'passed' | 'failed' | 'pending'
+  personaKycStatuses: string; // per-person KYC status, one entry per line
+  personaVerificationIssues: string; // mismatches: identity, address, document, signer, registration, incomplete
   matchedProcessor: string;
   processorSpecificAnswers: string;
   processorReadyPackageSummary: string;
@@ -341,6 +346,10 @@ export const initialMerchantData: MerchantData = {
   personaInvitePlan: '',
   personaVerificationSummary: '',
   websiteReviewSummary: '',
+
+  personaKybStatus: '',
+  personaKycStatuses: '',
+  personaVerificationIssues: '',
   matchedProcessor: '',
   processorSpecificAnswers: '',
   processorReadyPackageSummary: '',

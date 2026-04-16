@@ -122,7 +122,18 @@ export function decidePersonaInvites(data: MerchantData): PersonaInviteDecision 
 export function buildPersonaSummary(data: MerchantData): string {
   const decision = decidePersonaInvites(data);
   const reasonText = decision.reasons.length > 0 ? ` Reasons: ${decision.reasons.join(' ')}` : '';
-  return `${decision.summary}${reasonText} Verification result capture: KYB/KYC passed, failed, pending, mismatches, and incomplete checks should be attached here when available.`;
+
+  const resultParts: string[] = [];
+  if (hasText(data.personaKybStatus)) resultParts.push(`KYB status: ${data.personaKybStatus}`);
+  if (hasText(data.personaKycStatuses)) resultParts.push(`KYC status per person: ${data.personaKycStatuses}`);
+  if (hasText(data.personaVerificationIssues)) resultParts.push(`Verification issues: ${data.personaVerificationIssues}`);
+
+  const resultsText =
+    resultParts.length > 0
+      ? ` Persona results: ${resultParts.join('. ')}.`
+      : ' Verification result capture: KYB/KYC passed, failed, pending, mismatches, and incomplete checks should be attached here when available.';
+
+  return `${decision.summary}${reasonText}${resultsText}`;
 }
 
 export function buildWebsiteSignalSummary(data: MerchantData): string {
