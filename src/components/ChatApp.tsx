@@ -157,6 +157,10 @@ function getVolumeLabel(volume: string): string {
   return VOLUME_LABELS[volume] || 'your expected volume';
 }
 
+function hasCompletedProcessorFollowUp(data: MerchantData): boolean {
+  return Boolean(data.processorSpecificAnswers?.trim() && data.processorReadyPackageSummary?.trim());
+}
+
 function buildQuestionSequence(data: MerchantData): QuestionId[] {
   const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(data.industry);
   const isInternational = data.country !== 'CA' && data.country !== 'US' && data.country !== '';
@@ -193,7 +197,7 @@ function buildQuestionSequence(data: MerchantData): QuestionId[] {
     ...uploadSequence,
   ];
 
-  if (data.matchedProcessor && !data.processorSpecificAnswers?.trim()) {
+  if (data.matchedProcessor && !hasCompletedProcessorFollowUp(data)) {
     sequence.push('processorSpecificFollowUpForm');
   }
 
@@ -1319,9 +1323,13 @@ export function ChatApp({
 
   const openProcessorFollowUp = (finalData: MerchantData, recommendation: any) => {
     const matchedProcessor = normalizeProcessorFit(recommendation?.recommendedProcessor);
+    const previousProcessor = finalData.matchedProcessor ? normalizeProcessorFit(finalData.matchedProcessor) : '';
+    const processorChanged = Boolean(previousProcessor && previousProcessor !== matchedProcessor);
     const enrichedData = {
       ...finalData,
       matchedProcessor,
+      processorSpecificAnswers: processorChanged ? '' : finalData.processorSpecificAnswers,
+      processorReadyPackageSummary: '',
       personaInvitePlan: finalData.personaInvitePlan || buildPersonaSummary(finalData),
       personaVerificationSummary:
         finalData.personaVerificationSummary ||
@@ -1334,6 +1342,7 @@ export function ChatApp({
       ...recommendation,
       recommendedProcessor: matchedProcessor,
     });
+    setIsFinished(false);
     setCurrentQuestion('processorSpecificFollowUpForm');
     setMessages(prev => [
       ...prev,
@@ -1453,7 +1462,12 @@ export function ChatApp({
         verificationStatus,
         verificationNotes,
       };
-      if (!analysisData.processorSpecificAnswers?.trim()) {
+      const recommendedProcessor = normalizeProcessorFit(recommendation.recommendedProcessor);
+      const followUpAlreadyPackaged =
+        hasCompletedProcessorFollowUp(analysisData) &&
+        normalizeProcessorFit(analysisData.matchedProcessor) === recommendedProcessor;
+
+      if (!followUpAlreadyPackaged) {
         openProcessorFollowUp(analysisData, recommendation);
         return;
       }
@@ -1467,7 +1481,12 @@ export function ChatApp({
       const short = errMsg.length > 140 ? `${errMsg.slice(0, 140)}…` : errMsg;
       toast.error(`Analysis failed: ${short} (using fallback)`);
       const fallback = getFallbackUnderwriting(analysisData);
-      if (!analysisData.processorSpecificAnswers?.trim()) {
+      const fallbackProcessor = normalizeProcessorFit(fallback.recommendedProcessor);
+      const followUpAlreadyPackaged =
+        hasCompletedProcessorFollowUp(analysisData) &&
+        normalizeProcessorFit(analysisData.matchedProcessor) === fallbackProcessor;
+
+      if (!followUpAlreadyPackaged) {
         openProcessorFollowUp(analysisData, fallback);
         return;
       }
