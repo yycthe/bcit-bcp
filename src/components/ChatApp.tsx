@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Upload, CheckCircle2, FileText, ShieldCheck, AlertCircle, Building, Zap, Globe, RefreshCcw, Activity, Building2, Lightbulb, X, ArrowRight, Bot, User } from 'lucide-react';
+import { Send, Upload, CheckCircle2, FileText, ShieldCheck, AlertCircle, Building, Zap, Globe, RefreshCcw, Activity, Building2, Lightbulb, X, ArrowRight, Bot, User, Sparkles } from 'lucide-react';
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import { Select } from '@/src/components/ui/select';
@@ -34,6 +34,7 @@ import {
   getNextMissingInTourOrder,
   type MerchantDocumentKey,
 } from '@/src/lib/documentChecklist';
+import { requestIntakePlan, type IntakePlan } from '@/src/lib/intake/aiPlan';
 
 const MERCHANT_FILE_QUESTION_ID_SET = new Set<string>(MERCHANT_FILE_QUESTION_KEYS);
 
@@ -141,7 +142,8 @@ function getVolumeLabel(volume: string): string {
   return VOLUME_LABELS[volume] || 'your expected volume';
 }
 
-function buildQuestionSequence(data: MerchantData): QuestionId[] {
+/** Legacy deterministic path (no AI plan). */
+function buildLegacyQuestionSequence(data: MerchantData): QuestionId[] {
   const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(data.industry);
   const isInternational = data.country !== 'CA' && data.country !== 'US' && data.country !== '';
   const isHighVolume = data.monthlyVolume === '>250k' || data.monthlyVolume === '50k-250k';
@@ -173,6 +175,31 @@ function buildQuestionSequence(data: MerchantData): QuestionId[] {
 
   sequence.push('done');
   return sequence;
+}
+
+function buildQuestionSequenceFromAiPlan(plan: IntakePlan): QuestionId[] {
+  const anchor: QuestionId[] = [
+    'businessType',
+    'country',
+    'industry',
+    'monthlyVolume',
+    'monthlyTransactions',
+  ];
+  const tail: QuestionId[] = [];
+  for (const s of plan.sections) {
+    if (s.kind === 'common_form') tail.push(s.id as QuestionId);
+    else if (s.kind === 'persona_gate') tail.push('personaDecisionGate');
+    else if (s.kind === 'document') tail.push(s.id as QuestionId);
+  }
+  tail.push('done');
+  return [...anchor, ...tail];
+}
+
+function buildQuestionSequence(data: MerchantData, plan: IntakePlan | null): QuestionId[] {
+  if (!plan?.sections?.length) {
+    return buildLegacyQuestionSequence(data);
+  }
+  return buildQuestionSequenceFromAiPlan(plan);
 }
 
 const COMMON_FORM_QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = Object.fromEntries(
@@ -761,23 +788,29 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
 };
 
 // Smart question flow based on context
-const getNextQuestion = (currentId: QuestionId, data: MerchantData): QuestionId => {
-  const fullSequence = buildQuestionSequence(data);
+const getNextQuestion = (currentId: QuestionId, data: MerchantData, plan: IntakePlan | null): QuestionId => {
+  const fullSequence = buildQuestionSequence(data, plan);
   const followUpSequence = fullSequence.slice(5);
 
   // Main question flow
   switch (currentId) {
-    case 'businessType': return 'country';
-    case 'country': return 'industry';
-    case 'industry': return 'monthlyVolume';
-    case 'monthlyVolume': return 'monthlyTransactions';
-    case 'monthlyTransactions': return followUpSequence[0];
-    default:
+    case 'businessType':
+      return 'country';
+    case 'country':
+      return 'industry';
+    case 'industry':
+      return 'monthlyVolume';
+    case 'monthlyVolume':
+      return 'monthlyTransactions';
+    case 'monthlyTransactions':
+      return followUpSequence[0] ?? 'done';
+    default: {
       const index = followUpSequence.indexOf(currentId);
       if (index !== -1 && index < followUpSequence.length - 1) {
         return followUpSequence[index + 1];
       }
       return 'done';
+    }
   }
 };
 
@@ -803,6 +836,8 @@ interface ChatAppProps {
   guidedTourOrder?: MerchantDocumentKey[] | null;
   onGuidedFlowComplete?: () => void;
   onGuidedFlowAbort?: () => void;
+  /** Fired when the user applies AI-extracted field values from a document upload. */
+  onAiDocumentExtractApplied?: (fieldKeys: string[]) => void;
 }
 
 export function ChatApp({
@@ -818,6 +853,7 @@ export function ChatApp({
   guidedTourOrder = null,
   onGuidedFlowComplete,
   onGuidedFlowAbort,
+  onAiDocumentExtractApplied,
 }: ChatAppProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState<QuestionId>('businessType');
@@ -826,6 +862,15 @@ export function ChatApp({
   const [isEditing, setIsEditing] = useState(false);
   const [guidedAwaitContinue, setGuidedAwaitContinue] = useState(false);
   const [guidedAfterData, setGuidedAfterData] = useState<MerchantData | null>(null);
+  const [intakePlan, setIntakePlan] = useState<IntakePlan | null>(null);
+  const [intakePlanLoading, setIntakePlanLoading] = useState(false);
+  const [pendingDocExtract, setPendingDocExtract] = useState<{
+    slot: string;
+    fileName: string;
+    extracted: Record<string, string>;
+    confidence: number;
+    notes: string;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -845,7 +890,7 @@ export function ChatApp({
       setInputValue('');
     }
   }, [currentQuestion]);
-  const questionSequence = buildQuestionSequence(data);
+  const questionSequence = buildQuestionSequence(data, intakePlan);
   const currentStepIndex = currentQuestion === 'done' ? questionSequence.length : Math.max(questionSequence.indexOf(currentQuestion), 0) + 1;
   const progressPercent = Math.min(100, Math.max(6, Math.round((currentStepIndex / questionSequence.length) * 100)));
   const smartGuide = currentQuestion && currentQuestion !== 'done' ? getSmartGuide(currentQuestion, data) : null;
@@ -968,6 +1013,50 @@ export function ChatApp({
 
     setInputValue('');
 
+    if (!isEditing && currentQuestion === 'monthlyTransactions') {
+      setIntakePlanLoading(true);
+      setIsTyping(true);
+      void requestIntakePlan({
+        businessType: String(newData.businessType ?? ''),
+        country: String(newData.country ?? ''),
+        industry: String(newData.industry ?? ''),
+        monthlyVolume: String(newData.monthlyVolume ?? ''),
+        monthlyTransactions: String(newData.monthlyTransactions ?? ''),
+      })
+        .then((plan) => {
+          if (plan.summary) {
+            toast.success('Tailored intake path ready', { description: plan.summary });
+          }
+          if (plan._warning) toast.warning(plan._warning);
+          setIntakePlan(plan);
+          const seq = buildQuestionSequence(newData, plan);
+          const nextQ = seq[5];
+          setCurrentQuestion(nextQ);
+          setIsTyping(false);
+          setIntakePlanLoading(false);
+          if (nextQ === 'done') {
+            finishFlow(newData);
+          } else {
+            askQuestion(nextQ);
+          }
+        })
+        .catch(() => {
+          toast.warning('Could not load AI intake plan — using default question path.');
+          setIntakePlan(null);
+          const seq = buildQuestionSequence(newData, null);
+          const nextQ = seq[5];
+          setCurrentQuestion(nextQ);
+          setIsTyping(false);
+          setIntakePlanLoading(false);
+          if (nextQ === 'done') {
+            finishFlow(newData);
+          } else {
+            askQuestion(nextQ);
+          }
+        });
+      return;
+    }
+
     if (currentQuestion === 'processorSpecificFollowUpForm') {
       const packagedData = {
         ...newData,
@@ -1005,7 +1094,7 @@ export function ChatApp({
       setIsEditing(false);
       nextQ = 'done';
     } else {
-      nextQ = getNextQuestion(currentQuestion, newData);
+      nextQ = getNextQuestion(currentQuestion, newData, intakePlan);
     }
 
     setCurrentQuestion(nextQ);
@@ -1086,7 +1175,38 @@ export function ChatApp({
 
   const [isDragOver, setIsDragOver] = useState(false);
 
+  const buildExtractContext = (d: MerchantData) => ({
+    legalName: d.legalName,
+    ownerName: d.ownerName,
+    country: d.country,
+    businessType: d.businessType,
+    industry: d.industry,
+  });
+
+  const applyDocExtract = () => {
+    if (!pendingDocExtract) return;
+    const { extracted } = pendingDocExtract;
+    const keys = Object.keys(extracted);
+    if (keys.length === 0) {
+      setPendingDocExtract(null);
+      return;
+    }
+    setData((prev) => {
+      const next = { ...prev } as MerchantData;
+      for (const k of keys) {
+        if (k in next) {
+          (next as unknown as Record<string, string>)[k] = extracted[k];
+        }
+      }
+      return next;
+    });
+    onAiDocumentExtractApplied?.(keys);
+    setPendingDocExtract(null);
+    toast.success('Applied AI-suggested values to your application');
+  };
+
   const handleUploadFile = async (file: File) => {
+    const uploadSlot = currentQuestion;
     try {
       const prepared = await prepareFileForUpload(file);
       prepared.notices.forEach((notice) => {
@@ -1095,6 +1215,45 @@ export function ChatApp({
       });
       setDocuments((prev) => [...prev, prepared.fileData]);
       handleAnswer(prepared.fileData, `Uploaded: ${prepared.fileData.name}`);
+
+      const url = prepared.fileData.data;
+      const extractSlots = new Set(['idUpload', 'registrationCertificate', 'bankStatement', 'proofOfAddress']);
+      if (
+        extractSlots.has(String(uploadSlot)) &&
+        typeof url === 'string' &&
+        url.startsWith('http')
+      ) {
+        void fetch('/api/intake/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            blobUrl: url,
+            mimeType: prepared.fileData.mimeType,
+            slot: uploadSlot,
+            knownContext: buildExtractContext(data),
+          }),
+        })
+          .then(async (r) => {
+            if (!r.ok) return;
+            const json = (await r.json()) as {
+              extracted?: Record<string, string>;
+              confidence?: number;
+              notes?: string;
+            };
+            const ex = json.extracted && typeof json.extracted === 'object' ? json.extracted : {};
+            if (Object.keys(ex).length === 0) return;
+            setPendingDocExtract({
+              slot: String(uploadSlot),
+              fileName: prepared.fileData.name,
+              extracted: ex,
+              confidence: typeof json.confidence === 'number' ? json.confidence : 0,
+              notes: typeof json.notes === 'string' ? json.notes : '',
+            });
+          })
+          .catch(() => {
+            /* silent — extraction is best-effort */
+          });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : `Failed to prepare ${file.name}`;
       toast.error(message);
@@ -1636,7 +1795,9 @@ export function ChatApp({
                     {currentStageLabel}
                   </span>
                   <span className="text-xs text-foreground-muted">
-                    Step {currentStepIndex} of {questionSequence.length}
+                    {intakePlanLoading
+                      ? 'Tailoring your application with AI…'
+                      : `Step ${currentStepIndex} of ${questionSequence.length}`}
                   </span>
                 </div>
                 <span className="text-xs font-medium text-foreground-muted">
@@ -1678,6 +1839,38 @@ export function ChatApp({
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-3 py-5 sm:px-6">
           <div className="mx-auto flex max-w-3xl flex-col gap-4">
+            {pendingDocExtract && (
+              <Card className="border-brand/30 bg-brand-soft/25 shadow-xs">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <Sparkles className="h-4 w-4 text-brand" /> AI read your document
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    {pendingDocExtract.fileName} · {Math.round(pendingDocExtract.confidence * 100)}% confidence
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2 text-xs">
+                  <ul className="space-y-1 text-foreground">
+                    {Object.entries(pendingDocExtract.extracted).map(([k, v]) => (
+                      <li key={k}>
+                        <span className="font-medium">{k}</span>: {v}
+                      </li>
+                    ))}
+                  </ul>
+                  {pendingDocExtract.notes ? (
+                    <p className="text-foreground-muted">{pendingDocExtract.notes}</p>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Button size="sm" variant="brand" type="button" onClick={applyDocExtract}>
+                      Apply to form
+                    </Button>
+                    <Button size="sm" variant="outline" type="button" onClick={() => setPendingDocExtract(null)}>
+                      Ignore
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             <AnimatePresence>
               {messages.map((msg) => {
                 const isUser = msg.sender === 'user';

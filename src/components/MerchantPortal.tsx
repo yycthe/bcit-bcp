@@ -101,6 +101,8 @@ export function MerchantPortal({
   const [editSection, setEditSection] = useState<string | null>(null);
   const [intakeSessionKey, setIntakeSessionKey] = useState(0);
   const [guidedTourOrder, setGuidedTourOrder] = useState<MerchantDocumentKey[] | null>(null);
+  /** Keys of MerchantData prefilled via document AI extraction (merchant snapshot sparkles). */
+  const [aiFieldHints, setAiFieldHints] = useState<Record<string, boolean>>({});
 
   const inlineUploadRef = useRef<HTMLInputElement>(null);
   const inlineUploadTargetRef = useRef<MerchantDocumentKey | null>(null);
@@ -253,6 +255,7 @@ export function MerchantPortal({
 
   const autofillDemoData = () => {
     setMerchantData({ ...demoMerchantData });
+    setAiFieldHints({});
     setDocuments([]);
     setUnderwritingResult(null);
     setAppStatus('draft');
@@ -270,6 +273,7 @@ export function MerchantPortal({
 
   const clearIntakeData = () => {
     setMerchantData({ ...initialMerchantData, additionalDocuments: [] });
+    setAiFieldHints({});
     setDocuments([]);
     setUnderwritingResult(null);
     setAppStatus('draft');
@@ -542,6 +546,13 @@ export function MerchantPortal({
                   guidedTourOrder={guidedTourOrder}
                   onGuidedFlowComplete={endGuidedUpload}
                   onGuidedFlowAbort={abortGuidedUpload}
+                  onAiDocumentExtractApplied={(keys) => {
+                    setAiFieldHints((prev) => {
+                      const next = { ...prev };
+                      for (const k of keys) next[k] = true;
+                      return next;
+                    });
+                  }}
                 />
               </div>
             )}
@@ -588,7 +599,7 @@ export function MerchantPortal({
               </div>
             )}
           </div>
-          <MerchantSummaryRail data={merchantData} appStatus={appStatus} />
+          <MerchantSummaryRail data={merchantData} appStatus={appStatus} aiFieldHints={aiFieldHints} />
         </div>
       </div>
     </div>

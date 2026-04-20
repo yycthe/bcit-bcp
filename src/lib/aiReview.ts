@@ -31,6 +31,8 @@ export type AiReviewResult = {
   adminNotes: string;
   merchantMessage: string;
   docConsistencyNotes: string[];
+  /** Claim → intake field path or document name (+ page if known). */
+  evidenceCitations?: { claim: string; source: string }[];
 };
 
 export type CombinedReview = {
@@ -119,5 +121,11 @@ export async function requestAiReview(
     throw new Error(errBody?.error || `AI review failed (${response.status})`);
   }
 
-  return (await response.json()) as AiReviewResult;
+  const raw = (await response.json()) as AiReviewResult & {
+    evidenceCitations?: { claim: string; source: string }[];
+  };
+  return {
+    ...raw,
+    evidenceCitations: raw.evidenceCitations ?? [],
+  };
 }

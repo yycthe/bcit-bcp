@@ -16,9 +16,11 @@ import { StatusPill } from '@/src/components/ui/status-pill';
 interface Props {
   data: MerchantData;
   appStatus: ApplicationStatus;
+  /** MerchantData keys that were filled via “Apply” on AI document extraction */
+  aiFieldHints?: Record<string, boolean>;
 }
 
-type Field = { label: string; value?: string };
+type Field = { label: string; value?: string; hintKey?: keyof MerchantData };
 
 const normalizeValue = (raw?: string): string | undefined => {
   if (!raw) return undefined;
@@ -50,14 +52,18 @@ const maskAccount = (acc?: string): string | undefined => {
   return `••${normalized.slice(-4)}`;
 };
 
-export function MerchantSummaryRail({ data, appStatus }: Props) {
+export function MerchantSummaryRail({ data, appStatus, aiFieldHints = {} }: Props) {
   const checklist = getMerchantDocumentChecklist(data);
   const total = checklist.length;
   const present = checklist.filter((c) => c.present).length;
   const pct = total > 0 ? Math.round((present / total) * 100) : 0;
 
   const businessFields: Field[] = [
-    { label: 'Legal name', value: normalizeValue(data.legalName || data.ownerName) },
+    {
+      label: 'Legal name',
+      value: normalizeValue(data.legalName || data.ownerName),
+      hintKey: data.legalName ? 'legalName' : 'ownerName',
+    },
     { label: 'DBA name', value: normalizeValue(data.dbaName && data.dbaName !== data.legalName ? data.dbaName : '') },
     { label: 'Business type', value: titleCase(data.businessType) },
     { label: 'Industry', value: titleCase(data.industry) },
@@ -78,12 +84,12 @@ export function MerchantSummaryRail({ data, appStatus }: Props) {
   ];
 
   const contactFields: Field[] = [
-    { label: 'Owner', value: normalizeValue(data.ownerName) },
+    { label: 'Owner', value: normalizeValue(data.ownerName), hintKey: 'ownerName' },
     { label: 'Authorized signer', value: normalizeValue(data.authorizedSignerName) },
     { label: 'Business phone', value: normalizeValue(data.businessPhone || data.phone) },
     { label: 'Email', value: normalizeValue(data.legalBusinessEmail || data.generalEmail || data.supportEmail) },
-    { label: 'Bank', value: normalizeValue(data.bankName) },
-    { label: 'Account', value: maskAccount(data.accountNumber) },
+    { label: 'Bank', value: normalizeValue(data.bankName), hintKey: 'bankName' },
+    { label: 'Account', value: maskAccount(data.accountNumber), hintKey: 'accountNumber' },
     { label: 'Settlement currency', value: normalizeValue(data.settlementCurrency) },
   ];
 
@@ -178,6 +184,7 @@ export function MerchantSummaryRail({ data, appStatus }: Props) {
                   title="Business profile"
                   fields={businessFields}
                   filledCount={businessFilled}
+                  aiFieldHints={aiFieldHints}
                 />
               )}
               {opsFilled > 0 && (
@@ -186,6 +193,7 @@ export function MerchantSummaryRail({ data, appStatus }: Props) {
                   title="Volume & processing"
                   fields={operationsFields}
                   filledCount={opsFilled}
+                  aiFieldHints={aiFieldHints}
                 />
               )}
               {contactFilled > 0 && (
@@ -194,6 +202,7 @@ export function MerchantSummaryRail({ data, appStatus }: Props) {
                   title="Contacts & banking"
                   fields={contactFields}
                   filledCount={contactFilled}
+                  aiFieldHints={aiFieldHints}
                 />
               )}
             </>
@@ -284,9 +293,10 @@ interface FieldGroupProps {
   title: string;
   fields: Field[];
   filledCount: number;
+  aiFieldHints?: Record<string, boolean>;
 }
 
-function FieldGroup({ icon: Icon, title, fields, filledCount }: FieldGroupProps) {
+function FieldGroup({ icon: Icon, title, fields, filledCount, aiFieldHints = {} }: FieldGroupProps) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-surface p-3 shadow-xs">
       <div className="mb-2 flex min-w-0 items-center justify-between gap-3">
@@ -306,8 +316,11 @@ function FieldGroup({ icon: Icon, title, fields, filledCount }: FieldGroupProps)
               key={f.label}
               className="grid grid-cols-[minmax(0,112px)_minmax(0,1fr)] items-start gap-3 border-b border-border/60 pb-1.5 text-xs last:border-b-0 last:pb-0"
             >
-              <dt className="min-w-0 text-[11px] font-medium text-foreground-muted">
-                {f.label}
+              <dt className="flex min-w-0 items-center gap-1 text-[11px] font-medium text-foreground-muted">
+                {f.hintKey && aiFieldHints[String(f.hintKey)] ? (
+                  <Sparkles className="h-3 w-3 shrink-0 text-brand" aria-hidden title="AI-prefilled" />
+                ) : null}
+                <span>{f.label}</span>
               </dt>
               <dd
                 className={

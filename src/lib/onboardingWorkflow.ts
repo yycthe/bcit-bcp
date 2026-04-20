@@ -357,6 +357,6 @@ export function buildProcessorReadyPackageSummary(data: MerchantData): string {
     `Matched processor: ${processor}`,
     `KYC / KYB plan: ${decision.action.replace('_', ' ')}`,
     `Readiness: ${readiness}`,
-    `Package contents: common intake, KYC / KYB decision/results, website compliance signals, AI review summary, policy-check baseline, ${processor} follow-up answers, document checklist, and missing items.`,
+    `Package contents: common intake, KYC / KYB decision/results, website compliance signals, AI review summary (policy fallback only if AI unavailable), ${processor} follow-up answers, document checklist, and missing items.`,
   ].join('\n');
 }

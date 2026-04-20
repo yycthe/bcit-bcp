@@ -18,10 +18,10 @@ const ONBOARDING_POLICY_PROMPT = [
   'Global rules (enforced regardless of AI output):',
   '- Do not ask Nuvei, Payroc / Peoples, or Chase-specific questions during Common Intake.',
   '- Do not route to a processor until Common Intake and KYC / KYB readiness checks are sufficiently complete.',
-  '- AI is used as a review assistant only. Every final underwriting decision, processor assignment, and merchant-facing message is confirmed by a human admin before it takes effect.',
-  '- Policy checks (deterministic rules over merchant answers and uploaded-document status) run alongside AI as an auditable baseline. AI may overrule the policy check only when the model provides a concrete reason.',
+  '- AI produces all underwriting recommendations; every final processor assignment and merchant-facing message must be explicitly confirmed by a human admin.',
+  '- The same onboarding policy also defines a deterministic fallback when the model is unavailable. Under normal operation the live workbench does not block on that baseline after a successful AI run.',
   '- Prefer dropdowns and short structured answers. Use free text only for names, addresses, explanations, contacts, and narrative business descriptions.',
-  '- Admin may override processor routing, but the AI recommendation, policy-check baseline, and missing-item reasons must remain visible.',
+  '- Admin advanced overrides remain available; the policy text is the audit source of truth.',
   '',
   'Processor routing guide for AI and policy checks:',
   '- Nuvei: standard Canadian merchants, clean KYC / KYB, low-to-mid risk.',
@@ -49,6 +49,8 @@ type ReviewRequest = {
   documents?: DocumentRef[];
 };
 
+type EvidenceCitation = { claim: string; source: string };
+
 type ReviewResponse = {
   riskScore: number;
   riskCategory: 'Low' | 'Medium' | 'High';
@@ -60,6 +62,7 @@ type ReviewResponse = {
   adminNotes: string;
   merchantMessage: string;
   docConsistencyNotes: string[];
+  evidenceCitations: EvidenceCitation[];
 };
 
 // Gemini inline_data caps — keep total request payload safe inside the serverless limit.
@@ -83,6 +86,7 @@ You will receive:
 
 Your job:
 - Produce an independent decision: risk score, risk category, recommended processor, recommended action, confidence.
+- Whenever you cite a substantive finding (risk factor, contradiction, inconsistency), add an evidenceCitation entry naming the intake field path (e.g. merchantData.legalName) or the document filename (page number if discernible from the PDF viewer context).
 - Explicitly check uploaded documents against intake answers (legal name, address, ownership, bank account, tax ID, processing volume). Surface every inconsistency in docConsistencyNotes.
 - Surface red flags the policy check may have missed (subtle inconsistencies in answers, vague descriptions, unusual patterns, claims not supported by uploaded docs, misleading website).
 - Surface strengths that mitigate risk.
@@ -117,6 +121,18 @@ const RESPONSE_SCHEMA = {
       items: { type: Type.STRING },
       description: 'Notes about whether uploaded documents align with intake answers',
     },
+    evidenceCitations: {
+      type: Type.ARRAY,
+      description: 'Each substantive claim mapped to intake field path or document filename (+ page if known)',
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          claim: { type: Type.STRING },
+          source: { type: Type.STRING },
+        },
+        required: ['claim', 'source'],
+      },
+    },
   },
   required: [
     'riskScore',
@@ -129,6 +145,7 @@ const RESPONSE_SCHEMA = {
     'adminNotes',
     'merchantMessage',
     'docConsistencyNotes',
+    'evidenceCitations',
   ],
 };
 
@@ -168,7 +185,7 @@ export default async function handler(req: any, res: any) {
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-pro',
       contents: [
         {
           role: 'user',

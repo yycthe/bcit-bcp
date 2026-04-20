@@ -38,7 +38,6 @@ import {
   ScrollText,
   ChevronRight,
   Wand2,
-  RefreshCcw,
   ArrowLeft,
   Zap,
   Ban,
@@ -214,17 +213,6 @@ export function AdminPortal({
     }
   }, [hasApplication, currentView]);
 
-  const runRuleBasedUnderwriting = (silent = false) => {
-    const result = getFallbackUnderwriting(merchantData);
-    setUnderwritingResult(result);
-    if (!silent) {
-      toast.success('Policy checks refreshed', {
-        description: `Score ${result.riskScore}/100 · ${result.riskCategory} risk`,
-      });
-    }
-    return result;
-  };
-
   const runVerificationSilent = () => {
     setVerificationLoading(true);
     try {
@@ -253,13 +241,10 @@ export function AdminPortal({
     setAiElapsedMs(0);
     const toastId = opts.silent ? undefined : toast.loading('AI reviewing application...');
     try {
-      let rule = underwritingResult;
-      if (!rule) {
-        rule = getFallbackUnderwriting(merchantData);
-        setUnderwritingResult(rule);
-      }
+      const rule = underwritingResult ?? getFallbackUnderwriting(merchantData);
       const result = await requestAiReview(merchantData, rule, documents);
       setAiReview(result);
+      setUnderwritingResult(null);
       const elapsed = Date.now() - startedAt;
       setAiLastDurationMs(elapsed);
       if (toastId !== undefined) {
@@ -272,6 +257,7 @@ export function AdminPortal({
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setAiError(msg);
+      setUnderwritingResult(getFallbackUnderwriting(merchantData));
       if (toastId !== undefined) {
         toast.error('AI review failed', { id: toastId, description: msg });
       }
@@ -295,7 +281,6 @@ export function AdminPortal({
     if (!hasApplication) return;
     if (autoTriggered) return;
     setAutoTriggered(true);
-    if (!underwritingResult) runRuleBasedUnderwriting(true);
     runVerificationSilent();
     if (!aiReview && !aiLoading) {
       void runAiReview({ silent: true });
@@ -321,28 +306,33 @@ export function AdminPortal({
     setCurrentView('queue');
   };
 
-  const acceptAiPlan = () => {
+  const acceptAiPlan = (overrides?: {
+    merchantMessage?: string;
+    processor?: AiReviewResult['recommendedProcessor'];
+  }) => {
     if (!aiReview) {
       toast.error('No AI plan available yet. Run AI review first.');
       return;
     }
     const action = aiReview.recommendedAction as ActionKind;
+    const processor = overrides?.processor ?? aiReview.recommendedProcessor;
+    const message = overrides?.merchantMessage ?? aiReview.merchantMessage;
 
     setMerchantData((prev) => ({
       ...prev,
-      matchedProcessor: aiReview.recommendedProcessor,
+      matchedProcessor: processor,
     }));
 
-    if (aiReview.merchantMessage) {
-      setMerchantNoticeFromAdmin(aiReview.merchantMessage);
+    if (message) {
+      setMerchantNoticeFromAdmin(message);
     }
 
     if (action === 'approve' || action === 'approve_with_conditions') {
       setAppStatus('approved');
       toast.success(
         action === 'approve'
-          ? `Approved & routed to ${aiReview.recommendedProcessor}`
-          : `Approved with conditions · routed to ${aiReview.recommendedProcessor}`
+          ? `Approved & routed to ${processor}`
+          : `Approved with conditions · routed to ${processor}`
       );
       return;
     }
@@ -471,7 +461,6 @@ export function AdminPortal({
             merchantData={merchantData}
             merchantName={merchantName}
             statusPill={statusPill}
-            underwritingResult={underwritingResult}
             aiReview={aiReview}
             aiLoading={aiLoading}
             missing={missing.length}
@@ -510,9 +499,8 @@ export function AdminPortal({
             setPersonaVerificationIssues={setPersonaVerificationIssues}
             onBack={backToQueue}
             onRunAi={() => runAiReview()}
-            onRunRule={() => runRuleBasedUnderwriting()}
             onRunVerification={runVerificationSilent}
-            onAcceptPlan={acceptAiPlan}
+            onAcceptPlan={(overrides) => acceptAiPlan(overrides)}
             onSavePersona={savePersonaResults}
             onAutoReminder={postAutoReminder}
             onCustomReminder={postCustomReminder}
@@ -544,7 +532,6 @@ interface QueueListProps {
   merchantData: MerchantData;
   merchantName: string;
   statusPill: { intent: StatusIntent; label: string };
-  underwritingResult: UnderwritingDisplayResult | null;
   aiReview: AiReviewResult | null;
   aiLoading: boolean;
   missing: number;
@@ -558,7 +545,6 @@ function QueueList({
   merchantData,
   merchantName,
   statusPill,
-  underwritingResult,
   aiReview,
   aiLoading,
   missing,
@@ -637,13 +623,6 @@ function QueueList({
                   <Badge variant="info" className="w-fit">
                     <Sparkles className="h-3 w-3" /> AI thinking…
                   </Badge>
-                ) : underwritingResult ? (
-                  <>
-                    <Badge variant="neutral" className="w-fit">Policy only</Badge>
-                    <p className="truncate text-[11px] text-foreground-muted">
-                      {underwritingResult.riskCategory} · {underwritingResult.riskScore}/100
-                    </p>
-                  </>
                 ) : (
                   <Badge variant="neutral" className="w-fit">
                     Pending AI
@@ -695,9 +674,11 @@ interface WorkbenchProps {
   setPersonaVerificationIssues: (v: string) => void;
   onBack: () => void;
   onRunAi: () => void;
-  onRunRule: () => void;
   onRunVerification: () => void;
-  onAcceptPlan: () => void;
+  onAcceptPlan: (overrides?: {
+    merchantMessage?: string;
+    processor?: AiReviewResult['recommendedProcessor'];
+  }) => void;
   onSavePersona: () => void;
   onAutoReminder: () => void;
   onCustomReminder: () => void;
@@ -725,9 +706,19 @@ function Workbench(props: WorkbenchProps) {
     merchantNoticeFromAdmin,
     onBack,
     onRunAi,
-    onRunRule,
     onAcceptPlan,
   } = props;
+
+  const [editPlanOpen, setEditPlanOpen] = useState(false);
+  const [editMessage, setEditMessage] = useState('');
+  const [editProcessor, setEditProcessor] = useState<AiReviewResult['recommendedProcessor']>('Nuvei');
+
+  const openEditModal = () => {
+    if (!aiReview) return;
+    setEditMessage(aiReview.merchantMessage || '');
+    setEditProcessor(aiReview.recommendedProcessor);
+    setEditPlanOpen(true);
+  };
 
   const aiMeta = aiReview ? ACTION_META[aiReview.recommendedAction as ActionKind] : null;
   const isApproved = appStatus === 'approved' || appStatus === 'signed';
@@ -784,10 +775,6 @@ function Workbench(props: WorkbenchProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={onRunRule}>
-              <RefreshCcw className="h-3.5 w-3.5" />
-              Re-run policy checks
-            </Button>
             <Button type="button" variant="outline" size="sm" onClick={onRunAi} disabled={aiLoading}>
               <Sparkles className="h-3.5 w-3.5" />
               {aiLoading ? 'AI reviewing…' : aiReview ? 'Re-run AI' : 'Run AI'}
@@ -799,25 +786,34 @@ function Workbench(props: WorkbenchProps) {
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-6 py-6 sm:px-10">
         <div className="mx-auto max-w-6xl space-y-6 pb-24">
+          {aiError && underwritingResult && (
+            <Banner
+              intent="warning"
+              title="AI unavailable — deterministic baseline shown"
+              description={`${aiError} Local policy-check output is restored below so you can still decide. Re-run AI when the service recovers.`}
+            />
+          )}
+
           <AiVerdict
             aiReview={aiReview}
             aiLoading={aiLoading}
             aiError={aiError}
-            underwritingResult={underwritingResult}
             onRunAi={onRunAi}
+            isApproved={isApproved}
+            onConfirmDecision={() => onAcceptPlan()}
+            onEditBeforeSend={openEditModal}
           />
 
           <ActionPlan
             aiReview={aiReview}
-            underwritingResult={underwritingResult}
             missing={missing}
             merchantNoticeFromAdmin={merchantNoticeFromAdmin}
             isApproved={isApproved}
             onAcceptPlan={onAcceptPlan}
+            onEditBeforeSend={openEditModal}
           />
 
           <Evidence
-            underwritingResult={underwritingResult}
             aiReview={aiReview}
             merchantData={merchantData}
             documents={documents}
@@ -829,49 +825,91 @@ function Workbench(props: WorkbenchProps) {
         </div>
       </div>
 
+      {editPlanOpen && aiReview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-plan-title"
+        >
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-surface p-6 shadow-xl">
+            <h2 id="edit-plan-title" className="text-lg font-semibold text-foreground">
+              Edit before confirming
+            </h2>
+            <p className="mt-1 text-sm text-foreground-muted">
+              Adjust the merchant-visible message and routing processor, then confirm the AI decision.
+            </p>
+            <label className="mt-4 block space-y-1">
+              <span className="text-xs font-medium text-foreground-subtle">Merchant message</span>
+              <textarea
+                className="min-h-[100px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-brand"
+                value={editMessage}
+                onChange={(e) => setEditMessage(e.target.value)}
+              />
+            </label>
+            <label className="mt-4 block space-y-1">
+              <span className="text-xs font-medium text-foreground-subtle">Processor</span>
+              <select
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-brand"
+                value={editProcessor}
+                onChange={(e) =>
+                  setEditProcessor(e.target.value as AiReviewResult['recommendedProcessor'])
+                }
+              >
+                <option value="Nuvei">Nuvei</option>
+                <option value="Payroc / Peoples">Payroc / Peoples</option>
+                <option value="Chase">Chase</option>
+              </select>
+            </label>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setEditPlanOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="brand"
+                onClick={() => {
+                  onAcceptPlan({
+                    merchantMessage: editMessage,
+                    processor: editProcessor,
+                  });
+                  setEditPlanOpen(false);
+                }}
+              >
+                Apply & confirm decision
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sticky footer */}
       <div className="sticky bottom-0 z-20 border-t border-border bg-surface/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl flex-col items-stretch gap-2 px-6 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-10">
           <div className="flex flex-wrap items-center gap-2 text-xs text-foreground-muted">
-            {underwritingResult && (
-              <>
-                <Badge
-                  variant={
-                    underwritingResult.riskCategory === 'Low'
-                      ? 'success'
-                      : underwritingResult.riskCategory === 'Medium'
-                      ? 'warning'
-                      : 'danger'
-                  }
-                >
-                  {underwritingResult.riskCategory} · {underwritingResult.riskScore}/100
-                </Badge>
-                <span>·</span>
-                <span>{underwritingResult.recommendedProcessor}</span>
-              </>
-            )}
             {missing.length > 0 && (
-              <>
-                <span>·</span>
-                <span className="text-warning-foreground">{missing.length} docs missing</span>
-              </>
+              <span className="text-warning-foreground">{missing.length} required uploads still missing</span>
             )}
+            {missing.length === 0 && <span>Document checklist complete for current rules.</span>}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" size="lg" variant="outline" disabled={isApproved || !aiReview} onClick={openEditModal}>
+              Edit before confirming
+            </Button>
             <Button
               type="button"
               size="lg"
               variant={isApproved ? 'secondary' : 'brand'}
               disabled={isApproved || !aiReview}
-              onClick={onAcceptPlan}
+              onClick={() => onAcceptPlan()}
             >
               {isApproved ? (
                 <>
-                  <CheckCircle2 className="h-4 w-4" /> Plan applied
+                  <CheckCircle2 className="h-4 w-4" /> Decision recorded
                 </>
               ) : (
                 <>
-                  <Wand2 className="h-4 w-4" /> Accept AI plan
+                  <Wand2 className="h-4 w-4" /> Confirm AI decision
                 </>
               )}
             </Button>
@@ -890,21 +928,25 @@ function AiVerdict({
   aiReview,
   aiLoading,
   aiError,
-  underwritingResult,
   onRunAi,
+  isApproved,
+  onConfirmDecision,
+  onEditBeforeSend,
 }: {
   aiReview: AiReviewResult | null;
   aiLoading: boolean;
   aiError: string | null;
-  underwritingResult: UnderwritingDisplayResult | null;
   onRunAi: () => void;
+  isApproved: boolean;
+  onConfirmDecision: () => void;
+  onEditBeforeSend: () => void;
 }) {
   if (aiLoading && !aiReview) {
     return (
       <Section
         icon={Sparkles}
         title="AI reviewing application"
-        description="Running policy checks, cross-referencing documents, and drafting a recommendation."
+        description="Gemini 2.5 Pro is reading intake fields, attached PDFs/images, and your policy rules."
       >
         <div className="space-y-3">
           <div className="h-3 w-full animate-pulse rounded-full bg-surface-subtle" />
@@ -945,7 +987,12 @@ function AiVerdict({
       <Section
         icon={Sparkles}
         title="AI verdict"
-        description="Gemini's recommendation based on rule signals, document evidence, and intake answers."
+        description="Powered by Gemini 2.5 Pro — recommendation from documents, intake answers, and onboarding policy."
+        actions={
+          <span className="text-[10px] font-medium uppercase tracking-wider text-foreground-subtle">
+            Multimodal review
+          </span>
+        }
       >
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
           <div className="flex flex-col gap-3">
@@ -974,12 +1021,6 @@ function AiVerdict({
               {aiReview.recommendedProcessor === 'Chase' && <Globe className="h-4 w-4 text-info" />}
               Route → {aiReview.recommendedProcessor}
             </div>
-            {underwritingResult &&
-              underwritingResult.recommendedProcessor !== aiReview.recommendedProcessor && (
-                <p className="text-xs text-warning-foreground">
-                  Rules suggest {underwritingResult.recommendedProcessor}. AI overruled.
-                </p>
-              )}
           </div>
 
           <div className="space-y-4">
@@ -1007,6 +1048,21 @@ function AiVerdict({
             <div className="rounded-xl border border-border bg-surface-subtle px-4 py-3 text-sm leading-relaxed text-foreground">
               {aiReview.adminNotes}
             </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="brand"
+                size="lg"
+                disabled={isApproved}
+                onClick={onConfirmDecision}
+              >
+                <CheckCircle2 className="h-4 w-4" /> Confirm · {meta.label}
+              </Button>
+              <Button type="button" variant="outline" size="lg" disabled={isApproved} onClick={onEditBeforeSend}>
+                Edit before confirming
+              </Button>
+            </div>
           </div>
         </div>
       </Section>
@@ -1020,18 +1076,21 @@ function AiVerdict({
 
 function ActionPlan({
   aiReview,
-  underwritingResult,
   missing,
   merchantNoticeFromAdmin,
   isApproved,
   onAcceptPlan,
+  onEditBeforeSend,
 }: {
   aiReview: AiReviewResult | null;
-  underwritingResult: UnderwritingDisplayResult | null;
   missing: ReturnType<typeof getMerchantDocumentChecklist>;
   merchantNoticeFromAdmin: string;
   isApproved: boolean;
-  onAcceptPlan: () => void;
+  onAcceptPlan: (overrides?: {
+    merchantMessage?: string;
+    processor?: AiReviewResult['recommendedProcessor'];
+  }) => void;
+  onEditBeforeSend: () => void;
 }) {
   if (!aiReview) return null;
   const meta = ACTION_META[aiReview.recommendedAction as ActionKind];
@@ -1049,10 +1108,7 @@ function ActionPlan({
   steps.push({
     label: `Route to ${aiReview.recommendedProcessor}`,
     status: 'pending',
-    detail:
-      underwritingResult && underwritingResult.recommendedProcessor !== aiReview.recommendedProcessor
-        ? `Overrides policy-check suggestion (${underwritingResult.recommendedProcessor}).`
-        : 'Matches policy-check suggestion.',
+    detail: 'Processor assignment follows the AI recommendation unless you edit before confirming.',
   });
 
   if (missing.length > 0) {
@@ -1081,12 +1137,17 @@ function ActionPlan({
     <Section
       icon={LayoutDashboard}
       title="Action plan"
-      description={`AI recommends the following steps. Run them one by one, or apply them all at once.`}
+      description="Checklist mirrors the AI recommendation. Use Confirm in the verdict card or footer, or edit first."
       actions={
-        <Button type="button" size="sm" variant="brand" disabled={isApproved} onClick={onAcceptPlan}>
-          <Wand2 className="h-3.5 w-3.5" />
-          {isApproved ? 'Applied' : 'Accept AI plan'}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant="outline" disabled={isApproved} onClick={onEditBeforeSend}>
+            Edit before confirming
+          </Button>
+          <Button type="button" size="sm" variant="brand" disabled={isApproved} onClick={() => onAcceptPlan()}>
+            <Wand2 className="h-3.5 w-3.5" />
+            {isApproved ? 'Applied' : 'Confirm decision'}
+          </Button>
+        </div>
       }
     >
       <ol className="space-y-2">
@@ -1176,13 +1237,11 @@ function collectAdminDocuments(merchantData: MerchantData, extra: FileData[]): A
 }
 
 function Evidence({
-  underwritingResult,
   aiReview,
   merchantData,
   documents,
   missing,
 }: {
-  underwritingResult: UnderwritingDisplayResult | null;
   aiReview: AiReviewResult | null;
   merchantData: MerchantData;
   documents: FileData[];
@@ -1200,7 +1259,7 @@ function Evidence({
           <div>
             <p className="text-sm font-semibold text-foreground">Evidence & reasoning</p>
             <p className="text-[11px] text-foreground-muted">
-              Rule signals, AI observations, and document inventory that drove the verdict.
+              AI observations, evidence citations, KYC snapshot, and files on record.
             </p>
           </div>
         </div>
@@ -1257,124 +1316,33 @@ function Evidence({
           </Banner>
         )}
 
-        {/* Policy checks baseline */}
-        {underwritingResult && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground-subtle">
-                  Policy checks · risk factors
-                </p>
-                <ul className="mt-2 space-y-2">
-                  {underwritingResult.riskFactors.map((factor, idx) => (
-                    <li
-                      key={idx}
-                      className="flex items-start gap-2 rounded-lg border border-border bg-surface-subtle px-3 py-2 text-sm"
-                    >
-                      <AlertCircle
-                        className={cn(
-                          'mt-0.5 h-4 w-4 shrink-0',
-                          underwritingResult.riskCategory === 'High'
-                            ? 'text-danger'
-                            : underwritingResult.riskCategory === 'Medium'
-                            ? 'text-warning'
-                            : 'text-info'
-                        )}
-                      />
-                      <span className="text-foreground leading-relaxed">{factor}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground-subtle">
-                  Readiness decision
-                </p>
-                <div className="mt-2 rounded-xl border border-border bg-surface-subtle px-4 py-3">
-                  <p className="text-sm font-semibold text-foreground">
-                    {underwritingResult.readinessDecision || 'No readiness decision.'}
-                  </p>
-                  {underwritingResult.missingItems.length > 0 ? (
-                    <ul className="mt-3 space-y-1.5">
-                      {underwritingResult.missingItems.map((item, idx) => (
-                        <li key={idx} className="flex items-start gap-2 text-sm text-foreground">
-                          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-2 text-sm text-foreground-muted">No blocking missing items.</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground-subtle flex items-center gap-1">
-                <FileSearch className="h-3 w-3" /> Cross-reference audit
-              </p>
-              <div
-                className={cn(
-                  'mt-2 rounded-xl border px-4 py-3',
-                  underwritingResult.verificationStatus === 'Verified'
-                    ? 'border-success/25 bg-success-soft'
-                    : underwritingResult.verificationStatus === 'Discrepancies Found'
-                    ? 'border-danger/25 bg-danger-soft'
-                    : 'border-border bg-surface-subtle'
-                )}
-              >
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
-                  {underwritingResult.verificationStatus === 'Verified' && (
-                    <ShieldCheck className="h-4 w-4 text-success" />
-                  )}
-                  {underwritingResult.verificationStatus === 'Discrepancies Found' && (
-                    <ShieldAlert className="h-4 w-4 text-danger" />
-                  )}
-                  {underwritingResult.verificationStatus !== 'Verified' &&
-                    underwritingResult.verificationStatus !== 'Discrepancies Found' && (
-                      <AlertCircle className="h-4 w-4 text-foreground-muted" />
-                    )}
-                  <span className="text-foreground">{underwritingResult.verificationStatus}</span>
-                </div>
-                {underwritingResult.verificationNotes.length > 0 ? (
-                  <ul className="mt-2 space-y-1.5 text-sm text-foreground">
-                    {underwritingResult.verificationNotes.map((note, idx) => (
-                      <li key={idx} className="flex items-start gap-2">
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
-                        <span className="leading-relaxed">{note}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-2 text-sm text-foreground-muted">No specific audit notes.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground-subtle">
-                  Merchant summary
-                </p>
-                <div className="mt-2">
-                  <FormattedSummary text={underwritingResult.merchantSummary} emptyText="No merchant summary." />
-                </div>
-              </div>
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground-subtle">
-                  KYC / KYB routing
-                </p>
-                <div className="mt-2">
-                  <FormattedSummary
-                    text={merchantData.personaInvitePlan || merchantData.personaVerificationSummary}
-                    emptyText="No KYC / KYB routing plan attached."
-                  />
-                </div>
-              </div>
-            </div>
+        {aiReview && (aiReview.evidenceCitations?.length ?? 0) > 0 && (
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground-subtle flex items-center gap-1">
+              <FileSearch className="h-3 w-3" /> Evidence citations
+            </p>
+            <ul className="mt-2 space-y-2">
+              {(aiReview.evidenceCitations ?? []).map((c, idx) => (
+                <li key={idx} className="rounded-lg border border-border bg-surface-subtle px-3 py-2 text-sm text-foreground">
+                  <span className="font-medium">{c.claim}</span>
+                  <span className="text-foreground-muted"> — {c.source}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
+
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground-subtle">
+            KYC / KYB on file
+          </p>
+          <div className="mt-2">
+            <FormattedSummary
+              text={merchantData.personaInvitePlan || merchantData.personaVerificationSummary}
+              emptyText="No KYC / KYB routing summary yet."
+            />
+          </div>
+        </div>
 
         {/* Document inventory */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1486,9 +1454,9 @@ function ManualOverride({
             <ShieldAlert className="h-4 w-4" />
           </span>
           <div>
-            <p className="text-sm font-semibold text-foreground">Manual override</p>
+            <p className="text-sm font-semibold text-foreground">Advanced override (rare)</p>
             <p className="text-[11px] text-foreground-muted">
-              Record Persona results, pick a different processor, send a custom notice, or approve manually.
+              Persona fields, custom notices, processor override, or manual approve — only when the AI path is insufficient.
             </p>
           </div>
         </div>
@@ -1638,7 +1606,7 @@ function ManualOverride({
         <details className="rounded-xl border border-border bg-surface-subtle">
           <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm font-semibold text-foreground [&::-webkit-details-marker]:hidden">
             <span className="flex items-center gap-2">
-              <Gauge className="h-4 w-4 text-foreground-muted" /> Policy prompt (shared with AI)
+              <Gauge className="h-4 w-4 text-foreground-muted" /> Policy audit prompt (mirrors Gemini)
             </span>
             <ChevronRight className="h-4 w-4 text-foreground-subtle transition-transform group-open:rotate-90" />
           </summary>

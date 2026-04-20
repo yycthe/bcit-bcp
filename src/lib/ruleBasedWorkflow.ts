@@ -1,3 +1,10 @@
+/**
+ * Onboarding policy text: used as the system contract for every Gemini call, for the
+ * in-app “Policy prompt” panel, and as the input to the silent deterministic
+ * `getFallbackUnderwriting` path (see `src/lib/underwritingFallback.ts`) when the
+ * model is down—kept in source as a single spec, with a minimal copy in
+ * `api/ai-review.ts` for the serverless bundle.
+ */
 import {
   COMMON_INTAKE_FORM_SEQUENCE,
   COMMON_INTAKE_FORMS,
@@ -19,10 +26,10 @@ export const ONBOARDING_WORKFLOW_STEPS = [
 export const ONBOARDING_POLICY_RULES = [
   'Do not ask Nuvei, Payroc / Peoples, or Chase-specific questions during Common Intake.',
   'Do not route to a processor until Common Intake and KYC / KYB readiness checks are sufficiently complete.',
-  'AI is used as a review assistant only. Every final underwriting decision, processor assignment, and merchant-facing message is confirmed by a human admin before it takes effect.',
-  'Policy checks (deterministic rules over merchant answers and uploaded-document status) run alongside AI as an auditable baseline. AI may overrule the policy check only when the model provides a concrete reason.',
+  'AI produces all underwriting recommendations; every final processor assignment and merchant-facing message must be explicitly confirmed by a human admin.',
+  'The same onboarding policy runs as a deterministic fallback only when Gemini is unavailable (recovery path). Under normal operation the workbench hides that baseline once AI succeeds.',
   'Prefer dropdowns and short structured answers. Use free text only for names, addresses, explanations, contacts, and narrative business descriptions.',
-  'Admin may override processor routing, but the AI recommendation, policy-check baseline, and missing-item reasons must remain visible.',
+  'Admin advanced overrides remain available for disputes; the verbatim policy prompt stays exposed for audit.',
 ];
 
 function formatCommonQuestionBlocks(): string {

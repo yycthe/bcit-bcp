@@ -1,90 +1,92 @@
 # BCIT BCP
 
-BCIT **Business Consulting Project** — an AI-assisted payment-processing onboarding platform for merchant intake, KYC / KYB readiness, document review, processor routing, and package approval. Gemini 2.5 Flash does the heavy-lifting review; a deterministic policy-check layer runs alongside as an auditable baseline; a human admin always confirms the final decision.
+BCIT **Business Consulting Project** — an AI-assisted payment-processing onboarding platform for merchant intake, KYC / KYB readiness, document review, processor routing, and package approval. **Gemini 2.5 Pro** runs the underwriting review over PDFs/images and intake data; lighter models handle intake planning and field extraction; a **silent deterministic fallback** (`getFallbackUnderwriting`) only activates when the model fails; a human admin always confirms the final decision.
 
 ## Features
 
-- **Merchant Portal** — guided Common Intake, PDF / image upload to Vercel Blob, application review, status tracking, dynamic processor-specific follow-up, and agreement flow.
-- **Admin AI Workbench** — application queue plus a per-application workbench where AI produces a verdict (risk score, recommended processor, action plan, red flags, document consistency). Admin can accept the AI plan one-click, or override any field (KYC / KYB, processor, decision, merchant message).
-- **Multimodal AI review** — Gemini 2.5 Flash reads the merchant's answers, policy-check baseline, **uploaded PDFs and images directly (as `inlineData`)**, and the merchant's website URL, then returns a structured JSON verdict.
-- **Policy-check baseline** — deterministic rules over intake answers, document coverage, and KYC / KYB readiness. Always visible as a second opinion next to the AI output (`src/lib/underwritingFallback.ts`).
-- **Onboarding policy prompt** — one source of truth (`src/lib/ruleBasedWorkflow.ts` → `ONBOARDING_POLICY_PROMPT`) that the Admin UI displays verbatim and a mirrored copy inside `api/ai-review.ts` injects into every Gemini call.
-- **Dynamic KYC / KYB forms** — once a processor is matched, only that processor's follow-up questions are rendered (Nuvei, Payroc / Peoples, or Chase).
-- **Multi-file blob upload** — PDFs / images upload directly to Vercel Blob via a signed client-upload token (up to 25 MB per file).
-- **Processor-ready package** — common answers, KYC / KYB status, routing result, AI review summary, policy-check summary, processor-specific answers, document checklist, missing items, and readiness status.
+- **Merchant Portal** — guided Common Intake, PDF / image upload to Vercel Blob, AI-tailored question path (after volume gate), AI document field extraction preview (Apply / Ignore), application review, status tracking, processor-specific follow-up, agreement flow.
+- **Admin AI Workbench** — queue plus per-application workspace: AI verdict hero (Gemini 2.5 Pro), confirm / edit-before-send, action checklist, evidence with citations; **no baseline panel on success** — if AI errors, deterministic scores return as a warning banner until you re-run AI.
+- **Multimodal AI review** — `POST /api/ai-review`: reads intake JSON, deterministic baseline (payload only), **HTTPS Blob documents as inlineData**, merchant website URL, onboarding policy prompt; returns structured JSON (`evidenceCitations`, red flags, routing, merchant message).
+- **AI intake planner** — `POST /api/intake/plan` (Gemini 2.5 Flash): after the five anchor answers, returns an ordered plan of common forms, persona gate, and document slots under the same policy text.
+- **AI document extraction** — `POST /api/intake/extract` (Gemini 2.5 Pro): for selected upload slots (`idUpload`, registration, bank statement, proof of address), returns suggested `MerchantData` keys; merchants apply explicitly (no silent overwrite).
+- **Onboarding policy prompt** — source in `src/lib/ruleBasedWorkflow.ts` (`ONBOARDING_POLICY_PROMPT`), mirrored minimally in `api/ai-review.ts` for bundling.
+
+## Serverless APIs (Vercel)
+
+| Route | Model | Purpose |
+| --- | --- | --- |
+| `POST /api/ai-review` | `gemini-2.5-pro` | Full application review + multimodal docs |
+| `POST /api/intake/plan` | `gemini-2.5-flash` | Ordered intake sections after anchor answers |
+| `POST /api/intake/extract` | `gemini-2.5-pro` | Extract field suggestions from one uploaded doc |
+
+Rough cost expectation (order of magnitude): Flash calls are cents; each Pro review with a few MB of PDF is typically **sub‑USD** per run depending on region pricing—monitor usage in Google AI Studio.
 
 ## Deploy on Vercel
 
 ### 1. Required environment variables
 
-Add these in **Vercel Dashboard → Project → Settings → Environment Variables** (apply to Production, Preview, and Development):
+Add these in **Vercel Dashboard → Project → Settings → Environment Variables** (Production, Preview, Development):
 
 | Variable | Value | Where to get it |
 |---|---|---|
 | `GOOGLE_API_KEY` | Your Google Gemini API key | https://aistudio.google.com/apikey |
-| `BLOB_READ_WRITE_TOKEN` | Auto-populated | Dashboard → **Storage** → create a Blob store → connect it to this project; Vercel injects the token automatically |
+| `BLOB_READ_WRITE_TOKEN` | Auto-populated | Dashboard → **Storage** → Blob → connect to project |
 
-After saving env vars, redeploy (Deployments → latest → **Redeploy**) so the serverless functions pick them up.
+Redeploy after changing env vars.
 
 ### 2. Steps
 
 1. Push to GitHub.
 2. Import the repo in Vercel.
-3. Framework preset: **Vite** (auto-detected).
-4. Add `GOOGLE_API_KEY` in Environment Variables.
-5. Storage → **Create → Blob** → connect to project.
+3. Framework preset: **Vite**.
+4. Add `GOOGLE_API_KEY`.
+5. Storage → **Blob** → connect.
 6. Redeploy.
 
 ### 3. Local dev
 
-Create a `.env.local`:
+`.env.local`:
 
 ```
 GOOGLE_API_KEY=your_gemini_key
 BLOB_READ_WRITE_TOKEN=your_blob_token
 ```
 
-Then:
-
 ```
 npm install
 npm run dev
 ```
 
-Use `vercel dev` for full parity (serverless functions in `api/`).
+Use `vercel dev` for full parity with `/api/*`.
 
 ## Stack
 
 - React 19 · TypeScript · Vite 6 · Tailwind CSS 4
-- Lucide icons · Sonner toasts
-- `@google/genai` (Gemini 2.5 Flash, multimodal)
-- `@vercel/blob` (client-upload)
-- Vercel static + serverless functions
+- `@google/genai` (Gemini 2.5 Flash + Pro)
+- `@vercel/blob`
+- Vercel static + Node serverless functions
 
 ## Workflow
 
-1. Merchant completes Common Intake.
-2. Policy checks decide KYB / KYC / both / KYB-first.
-3. Admin records KYC / KYB verification results.
-4. **AI (Gemini 2.5 Flash)** reviews the whole application — intake answers + policy-check baseline + uploaded PDFs/images (inline) + website URL — and returns a structured verdict.
-5. Admin reviews the AI verdict and either accepts the plan or overrides any step.
-6. Merchant completes only the matched processor-specific follow-up questions.
-7. Admin approves the processor-ready package.
+1. Merchant completes anchor questions → **AI planner** tailors forms + uploads.
+2. Merchant uploads docs; optional **extract** preview fills fields after confirmation.
+3. Merchant submits → status **under review**.
+4. Admin opens workbench → **Gemini Pro** reviews everything (multimodal).
+5. Admin **confirms** or edits message/processor → merchant / routing updated.
+6. Merchant completes processor-specific follow-up → package ready.
 
 ## Onboarding Policy Prompt
 
-The in-app source of truth lives in `src/lib/ruleBasedWorkflow.ts`, exported as `ONBOARDING_POLICY_PROMPT` (backwards-compatible alias: `RULE_BASED_MASTER_PROMPT`). It is:
-
-- Shown verbatim inside the Admin Workbench (Manual override → Policy prompt).
-- Mirrored as a constant inside `api/ai-review.ts` so the serverless function injects it into the Gemini system instruction on every call — the AI and the UI cannot drift.
+Defined in `src/lib/ruleBasedWorkflow.ts` as `ONBOARDING_POLICY_PROMPT`. A duplicate constant lives in `api/ai-review.ts` so Vercel esbuild never has to chase `src/` aliases.
 
 Supporting modules:
 
 - Common Intake question bank: `src/lib/intake/commonQuestionBank.ts`
+- AI intake plan client: `src/lib/intake/aiPlan.ts`
 - KYC / KYB trigger rules: `src/lib/intake/personaTriggerRules.ts`
-- Processor follow-up master lists: `src/lib/onboardingWorkflow.ts`
-- Policy-check scoring: `src/lib/underwritingFallback.ts`
-- AI review client: `src/lib/aiReview.ts` → serverless function `api/ai-review.ts`
+- Processor follow-up lists: `src/lib/onboardingWorkflow.ts`
+- Silent fallback scoring: `src/lib/underwritingFallback.ts`
+- AI review client: `src/lib/aiReview.ts` → `api/ai-review.ts`
 
 ## Scripts
 
@@ -92,8 +94,8 @@ Supporting modules:
 | --- | --- |
 | `npm run dev` | Dev server on port `3000`. |
 | `npm run build` | Production build to `dist/`. |
-| `npm run preview` | Preview the production build locally. |
-| `npm run lint` | Typecheck with `tsc --noEmit`. |
+| `npm run preview` | Preview production build. |
+| `npm run lint` | `tsc --noEmit`. |
 
 ## Repository
 
