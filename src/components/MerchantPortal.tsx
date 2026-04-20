@@ -4,7 +4,7 @@ import { ReviewPage } from './ReviewPage';
 import { MerchantStatus } from './MerchantStatus';
 import { AgreementPage } from './AgreementPage';
 import { MerchantSummaryRail } from './MerchantSummaryRail';
-import { MerchantData, FileData, ApplicationStatus } from '@/src/types';
+import { MerchantData, FileData, ApplicationStatus, initialMerchantData } from '@/src/types';
 import { demoMerchantData } from '@/src/lib/demoMerchantData';
 import {
   getMerchantDocumentChecklist,
@@ -23,6 +23,7 @@ import {
   RotateCcw,
   Zap,
   Upload,
+  Wand2,
 } from 'lucide-react';
 import { Button } from '@/src/components/ui/button';
 import { Banner } from '@/src/components/ui/banner';
@@ -250,8 +251,25 @@ export function MerchantPortal({
     setCurrentView('intake');
   }, []);
 
-  const resetDemoIntake = () => {
-    setMerchantData(demoMerchantData);
+  const autofillDemoData = () => {
+    setMerchantData({ ...demoMerchantData });
+    setDocuments([]);
+    setUnderwritingResult(null);
+    setAppStatus('draft');
+    setIsFinished(true);
+    setEditSection(null);
+    setGuidedTourOrder(null);
+    setIntakeSessionKey((k) => k + 1);
+    setCurrentView('intake');
+    onDismissMerchantNotice();
+    onClearVerificationIssues();
+    toast.message('Demo data loaded', {
+      description: 'All intake fields filled with sample data. Open Review when ready.',
+    });
+  };
+
+  const clearIntakeData = () => {
+    setMerchantData({ ...initialMerchantData, additionalDocuments: [] });
     setDocuments([]);
     setUnderwritingResult(null);
     setAppStatus('draft');
@@ -262,8 +280,8 @@ export function MerchantPortal({
     setCurrentView('intake');
     onDismissMerchantNotice();
     onClearVerificationIssues();
-    toast.message('Demo reset', {
-      description: 'Wizard restarted with sample data. Use Skip on uploads as needed.',
+    toast.message('Intake cleared', {
+      description: 'All fields reset. Start a fresh application from Intake.',
     });
   };
 
@@ -385,10 +403,20 @@ export function MerchantPortal({
             variant="outline"
             size="sm"
             className="w-full justify-start gap-2 text-xs"
-            onClick={resetDemoIntake}
+            onClick={autofillDemoData}
+          >
+            <Wand2 className="h-3.5 w-3.5 shrink-0" />
+            Autofill demo data
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full justify-start gap-2 text-xs"
+            onClick={clearIntakeData}
           >
             <RotateCcw className="h-3.5 w-3.5 shrink-0" />
-            Reset wizard & demo data
+            Clear all fields
           </Button>
           <Button
             type="button"
