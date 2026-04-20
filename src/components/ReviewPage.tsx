@@ -402,7 +402,7 @@ export function ReviewPage({ data, documents, onEdit, onSubmit }: Props) {
         <div className="mx-auto flex max-w-5xl flex-col items-stretch justify-between gap-2 sm:flex-row sm:items-center">
           <p className="text-xs text-foreground-muted">
             {isComplete
-              ? 'Looks good. Submit to start verification & rule-based routing.'
+              ? 'Looks good. Submit to start verification & AI review.'
               : 'Fill in the missing required answers to enable submit.'}
           </p>
           <div className="flex items-center gap-2">

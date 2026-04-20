@@ -15,7 +15,7 @@ import {
   type UnderwritingDisplayResult,
 } from '@/src/lib/underwritingFallback';
 import { requestAiReview, type AiReviewResult } from '@/src/lib/aiReview';
-import { RULE_BASED_MASTER_PROMPT } from '@/src/lib/ruleBasedWorkflow';
+import { ONBOARDING_POLICY_PROMPT } from '@/src/lib/ruleBasedWorkflow';
 import { FormattedSummary } from '@/src/components/ui/formatted-summary';
 import {
   ShieldCheck,
@@ -200,7 +200,7 @@ export function AdminPortal({
     const result = getFallbackUnderwriting(merchantData);
     setUnderwritingResult(result);
     if (!silent) {
-      toast.success('Rule review refreshed', {
+      toast.success('Policy checks refreshed', {
         description: `Score ${result.riskScore}/100 · ${result.riskCategory} risk`,
       });
     }
@@ -595,7 +595,7 @@ function QueueList({
                   </Badge>
                 ) : underwritingResult ? (
                   <>
-                    <Badge variant="neutral" className="w-fit">Rule only</Badge>
+                    <Badge variant="neutral" className="w-fit">Policy only</Badge>
                     <p className="truncate text-[11px] text-foreground-muted">
                       {underwritingResult.riskCategory} · {underwritingResult.riskScore}/100
                     </p>
@@ -723,7 +723,7 @@ function Workbench(props: WorkbenchProps) {
           <div className="flex items-center gap-2">
             <Button type="button" variant="outline" size="sm" onClick={onRunRule}>
               <RefreshCcw className="h-3.5 w-3.5" />
-              Re-run rules
+              Re-run policy checks
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={onRunAi} disabled={aiLoading}>
               <Sparkles className="h-3.5 w-3.5" />
@@ -988,8 +988,8 @@ function ActionPlan({
     status: 'pending',
     detail:
       underwritingResult && underwritingResult.recommendedProcessor !== aiReview.recommendedProcessor
-        ? `Overrides rule suggestion (${underwritingResult.recommendedProcessor}).`
-        : 'Matches rule engine suggestion.',
+        ? `Overrides policy-check suggestion (${underwritingResult.recommendedProcessor}).`
+        : 'Matches policy-check suggestion.',
   });
 
   if (missing.length > 0) {
@@ -1151,13 +1151,13 @@ function Evidence({
           </Banner>
         )}
 
-        {/* Rule engine */}
+        {/* Policy checks baseline */}
         {underwritingResult && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground-subtle">
-                  Rule engine · risk factors
+                  Policy checks · risk factors
                 </p>
                 <ul className="mt-2 space-y-2">
                   {underwritingResult.riskFactors.map((factor, idx) => (
@@ -1506,12 +1506,12 @@ function ManualOverride({
         <details className="rounded-xl border border-border bg-surface-subtle">
           <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm font-semibold text-foreground [&::-webkit-details-marker]:hidden">
             <span className="flex items-center gap-2">
-              <Gauge className="h-4 w-4 text-foreground-muted" /> Master prompt
+              <Gauge className="h-4 w-4 text-foreground-muted" /> Policy prompt (shared with AI)
             </span>
             <ChevronRight className="h-4 w-4 text-foreground-subtle transition-transform group-open:rotate-90" />
           </summary>
           <pre className="max-h-[340px] overflow-auto whitespace-pre-wrap border-t border-border px-4 py-3 text-xs leading-relaxed text-foreground">
-            {RULE_BASED_MASTER_PROMPT}
+            {ONBOARDING_POLICY_PROMPT}
           </pre>
         </details>
       </div>

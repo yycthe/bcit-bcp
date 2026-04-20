@@ -374,7 +374,7 @@ function getSmartGuide(questionId: QuestionId, data: MerchantData): SmartGuide {
         'These first answers determine which follow-up sections and documents actually matter for you, so we avoid asking every merchant the same long list.',
       tips: [
         'First we collect processor-neutral common intake.',
-        'After rule-based processor routing, I will only ask the selected processor-specific questions.',
+        'After AI-assisted processor routing, I will only ask the selected processor-specific questions.',
       ],
     };
   }
@@ -520,7 +520,7 @@ const getQuestionText = (qId: QuestionId, data: MerchantData): string => {
 
     personaDecisionGate: () => {
       const decision = decidePersonaInvites(data);
-      return `${decision.summary} I will attach this KYC / KYB routing plan to the merchant profile before final rule-based review.`;
+      return `${decision.summary} I will attach this KYC / KYB routing plan to the merchant profile before the AI review.`;
     },
 
     processorSpecificFollowUpForm: () => {
@@ -979,7 +979,7 @@ export function ChatApp({
         {
           id: Math.random().toString(36).substring(2, 15),
           sender: 'system',
-          content: 'Processor-ready package assembled with common intake, KYC / KYB routing, rule-based review, website signals, document checklist, missing items, and processor-specific answers.',
+          content: 'Processor-ready package assembled with common intake, KYC / KYB routing, AI review summary, website signals, document checklist, missing items, and processor-specific answers.',
         }
       ]);
       setIsFinished(true);
@@ -1036,7 +1036,7 @@ export function ChatApp({
       {
         id: Math.random().toString(36).substring(2, 15),
         sender: 'system',
-        content: 'Common intake complete. Please review your application on the next page, then submit for verification and rule-based routing review.',
+        content: 'Common intake complete. Please review your application on the next page, then submit for verification and AI review.',
       }
     ]);
 
@@ -1224,7 +1224,7 @@ export function ChatApp({
               </ul>
             ) : null}
             <p className="mt-4 rounded-lg border border-border bg-surface px-3 py-2 text-[11px] leading-relaxed text-foreground-muted">
-              This routing follows the strict common-question rules. No external KYC / KYB API is called here; the plan is attached to the merchant profile and verification results can be added before final rule-based review when available.
+              This routing follows the onboarding policy rules. No external KYC / KYB API is called here; the plan is attached to the merchant profile and verification results can be added before the AI review when available.
             </p>
             <div className="mt-4 flex justify-end">
               <Button

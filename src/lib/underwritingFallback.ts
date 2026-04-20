@@ -65,7 +65,7 @@ function countUploadedFiles(finalData: MerchantData): number {
   return slotCount + additionalCount;
 }
 
-/** Rule-based review engine: scores risk, recommends processor, and audits documents. */
+/** Policy checks: deterministic baseline that scores risk, recommends processor, and audits documents alongside the AI review. */
 export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDisplayResult {
   const checklist = getMerchantDocumentChecklist(finalData);
   const missingDocuments = getMissingDocumentLabels(finalData);
@@ -205,7 +205,7 @@ export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDi
 
   const topFactors = riskFactors.slice(0, 4);
   const reasonParts = [
-    `Rule-based engine scored this merchant at ${riskScore}/100 using intake answers, document coverage, and KYC / KYB review issues.`,
+    `Policy checks scored this merchant at ${riskScore}/100 using intake answers, document coverage, and KYC / KYB review issues.`,
     `KYC / KYB routing: ${personaDecision.action.replace('_', ' ')}.`,
   ];
   if (topFactors.length > 0) {

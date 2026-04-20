@@ -237,7 +237,7 @@ export function MerchantPortal({
         processorSpecificAnswersJson: '',
         processorReadyPackageSummary: '',
       });
-      toast.success('Application submitted for rule-based review', {
+      toast.success('Application submitted for AI review', {
         description: `Suggested route: ${result.recommendedProcessor}. Admin must confirm before follow-up.`,
       });
     },

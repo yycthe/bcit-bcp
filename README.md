@@ -1,41 +1,43 @@
 # BCIT BCP
 
-BCIT **Business Consulting Project** — a hybrid AI + rule-based payment-processing onboarding platform for merchant intake, KYC / KYB readiness, document review, processor routing, and package approval.
+BCIT **Business Consulting Project** — an AI-assisted payment-processing onboarding platform for merchant intake, KYC / KYB readiness, document review, processor routing, and package approval. Gemini 2.5 Flash does the heavy-lifting review; a deterministic policy-check layer runs alongside as an auditable baseline; a human admin always confirms the final decision.
 
 ## Features
 
 - **Merchant Portal** — guided Common Intake, PDF / image upload to Vercel Blob, application review, status tracking, dynamic processor-specific follow-up, and agreement flow.
-- **Admin Portal** — review submitted applications, run deterministic rule engine **and** AI review (Gemini), record KYC / KYB results, confirm processor routing, and approve the final package.
-- **AI review layer** — Gemini 2.5 Flash cross-checks the rule-engine output, surfaces red flags + strengths, and drafts a merchant-facing message. Rule engine remains the deterministic audit layer.
-- **Dynamic KYC / KYB forms** — once a processor is matched, only that processor's follow-up questions are rendered (Nuvei, Payroc / Peoples, or Chase), with conditional fields based on prior answers.
-- **Multi-PDF blob upload** — PDFs upload directly to Vercel Blob via a signed client-upload token, bypassing function payload limits (up to 25 MB per file).
-- **Processor-ready package** — common answers, KYC / KYB status, routing result, processor-specific answers, document checklist, missing items, and readiness status.
+- **Admin AI Workbench** — application queue plus a per-application workbench where AI produces a verdict (risk score, recommended processor, action plan, red flags, document consistency). Admin can accept the AI plan one-click, or override any field (KYC / KYB, processor, decision, merchant message).
+- **Multimodal AI review** — Gemini 2.5 Flash reads the merchant's answers, policy-check baseline, **uploaded PDFs and images directly (as `inlineData`)**, and the merchant's website URL, then returns a structured JSON verdict.
+- **Policy-check baseline** — deterministic rules over intake answers, document coverage, and KYC / KYB readiness. Always visible as a second opinion next to the AI output (`src/lib/underwritingFallback.ts`).
+- **Onboarding policy prompt** — one source of truth (`src/lib/ruleBasedWorkflow.ts` → `ONBOARDING_POLICY_PROMPT`) that the Admin UI displays verbatim and a mirrored copy inside `api/ai-review.ts` injects into every Gemini call.
+- **Dynamic KYC / KYB forms** — once a processor is matched, only that processor's follow-up questions are rendered (Nuvei, Payroc / Peoples, or Chase).
+- **Multi-file blob upload** — PDFs / images upload directly to Vercel Blob via a signed client-upload token (up to 25 MB per file).
+- **Processor-ready package** — common answers, KYC / KYB status, routing result, AI review summary, policy-check summary, processor-specific answers, document checklist, missing items, and readiness status.
 
 ## Deploy on Vercel
 
 ### 1. Required environment variables
 
-Add these in **Vercel Dashboard → your project → Settings → Environment Variables** (apply to Production, Preview, and Development):
+Add these in **Vercel Dashboard → Project → Settings → Environment Variables** (apply to Production, Preview, and Development):
 
 | Variable | Value | Where to get it |
 |---|---|---|
 | `GOOGLE_API_KEY` | Your Google Gemini API key | https://aistudio.google.com/apikey |
-| `BLOB_READ_WRITE_TOKEN` | Auto-populated | Vercel Dashboard → **Storage** tab → create a Blob store → connect it to this project; Vercel will inject `BLOB_READ_WRITE_TOKEN` automatically |
+| `BLOB_READ_WRITE_TOKEN` | Auto-populated | Dashboard → **Storage** → create a Blob store → connect it to this project; Vercel injects the token automatically |
 
-After saving env vars, redeploy (Vercel → Deployments → pick latest → **Redeploy**) so the server functions pick them up.
+After saving env vars, redeploy (Deployments → latest → **Redeploy**) so the serverless functions pick them up.
 
 ### 2. Steps
 
 1. Push to GitHub.
 2. Import the repo in Vercel.
 3. Framework preset: **Vite** (auto-detected).
-4. Add `GOOGLE_API_KEY` in Settings → Environment Variables.
-5. Storage → **Create → Blob** → connect to project (auto-sets `BLOB_READ_WRITE_TOKEN`).
+4. Add `GOOGLE_API_KEY` in Environment Variables.
+5. Storage → **Create → Blob** → connect to project.
 6. Redeploy.
 
-### 3. Local dev (optional)
+### 3. Local dev
 
-Create a `.env.local` at the repo root:
+Create a `.env.local`:
 
 ```
 GOOGLE_API_KEY=your_gemini_key
@@ -43,52 +45,46 @@ BLOB_READ_WRITE_TOKEN=your_blob_token
 ```
 
 Then:
+
 ```
 npm install
 npm run dev
 ```
 
-Serverless functions in `api/` will run via Vercel CLI (`vercel dev`) if you want full parity; `npm run dev` alone runs the Vite frontend only.
+Use `vercel dev` for full parity (serverless functions in `api/`).
 
 ## Stack
 
-- React 19
-- TypeScript
-- Vite 6
-- Tailwind CSS 4
-- Lucide icons
-- Sonner toasts
-- Vercel static deployment
+- React 19 · TypeScript · Vite 6 · Tailwind CSS 4
+- Lucide icons · Sonner toasts
+- `@google/genai` (Gemini 2.5 Flash, multimodal)
+- `@vercel/blob` (client-upload)
+- Vercel static + serverless functions
 
 ## Workflow
 
-1. Merchant completes Common Intake only.
-2. Rules decide whether KYB, KYC, both, or KYB-first should be requested.
-3. Admin records KYC / KYB verification results and runs the local rules check.
-4. Rule-based review scores readiness, risk drivers, document gaps, website/compliance signals, and processor fit.
-5. Admin confirms processor routing.
+1. Merchant completes Common Intake.
+2. Policy checks decide KYB / KYC / both / KYB-first.
+3. Admin records KYC / KYB verification results.
+4. **AI (Gemini 2.5 Flash)** reviews the whole application — intake answers + policy-check baseline + uploaded PDFs/images (inline) + website URL — and returns a structured verdict.
+5. Admin reviews the AI verdict and either accepts the plan or overrides any step.
 6. Merchant completes only the matched processor-specific follow-up questions.
 7. Admin approves the processor-ready package.
 
-## Rule-Based Master Prompt
+## Onboarding Policy Prompt
 
-The in-app source of truth lives in `src/lib/ruleBasedWorkflow.ts`. It assembles the master prompt from:
+The in-app source of truth lives in `src/lib/ruleBasedWorkflow.ts`, exported as `ONBOARDING_POLICY_PROMPT` (backwards-compatible alias: `RULE_BASED_MASTER_PROMPT`). It is:
+
+- Shown verbatim inside the Admin Workbench (Manual override → Policy prompt).
+- Mirrored as a constant inside `api/ai-review.ts` so the serverless function injects it into the Gemini system instruction on every call — the AI and the UI cannot drift.
+
+Supporting modules:
 
 - Common Intake question bank: `src/lib/intake/commonQuestionBank.ts`
 - KYC / KYB trigger rules: `src/lib/intake/personaTriggerRules.ts`
 - Processor follow-up master lists: `src/lib/onboardingWorkflow.ts`
-- Review scoring and routing rules: `src/lib/underwritingFallback.ts`
-
-Admin Portal also exposes this prompt in the queue view so the demo can show exactly how the flow is governed.
-
-## Setup
-
-```bash
-npm install
-npm run dev
-```
-
-Open the URL shown in the terminal, usually `http://localhost:3000`.
+- Policy-check scoring: `src/lib/underwritingFallback.ts`
+- AI review client: `src/lib/aiReview.ts` → serverless function `api/ai-review.ts`
 
 ## Scripts
 
@@ -98,16 +94,6 @@ Open the URL shown in the terminal, usually `http://localhost:3000`.
 | `npm run build` | Production build to `dist/`. |
 | `npm run preview` | Preview the production build locally. |
 | `npm run lint` | Typecheck with `tsc --noEmit`. |
-
-## Deploy On Vercel
-
-The app is a static Vite build. No secret API keys are required for the rule-based version.
-
-1. Push to GitHub.
-2. Import the repo in Vercel.
-3. Keep the default build command `npm run build`.
-4. Keep the output directory `dist`.
-5. Deploy.
 
 ## Repository
 

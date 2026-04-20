@@ -99,7 +99,7 @@ export function AgreementPage({ data, onSign }: Props) {
                 Provider's acceptable use policy. Provider reserves the right to hold funds,
                 suspend processing, or terminate this Agreement immediately if Merchant engages in
                 prohibited activities, experiences excessive chargebacks, or exceeds acceptable
-                risk thresholds as determined by Provider's rule-based review process.
+                risk thresholds as determined by Provider's AI-assisted review process.
               </p>
             </section>
 

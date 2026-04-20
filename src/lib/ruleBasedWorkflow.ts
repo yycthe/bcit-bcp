@@ -7,21 +7,22 @@ import { getProcessorQuestionSet, type ProcessorFit } from '@/src/lib/onboarding
 
 const PROCESSOR_SEQUENCE: ProcessorFit[] = ['Nuvei', 'Payroc / Peoples', 'Chase'];
 
-export const RULE_BASED_WORKFLOW_STEPS = [
+export const ONBOARDING_WORKFLOW_STEPS = [
   'Merchant Portal collects only the Common Questions first.',
-  'Rules decide whether KYB, KYC, both, or KYB-first should be requested.',
+  'Policy checks decide whether KYB, KYC, both, or KYB-first should be requested before any processor routing.',
   'Admin Portal records local KYC / KYB verification status and follow-up issues.',
-  'Rule-based review scores readiness, risk drivers, document gaps, website/compliance signals, and processor fit.',
+  'AI reviews the application end-to-end (intake answers, uploaded documents, website, policy-check output) and produces a risk score, recommended processor, and recommended action.',
   'Merchant Portal asks only the matched processor-specific second-layer questions.',
-  'System assembles a processor-ready package for Admin approval and routing.',
+  'System assembles a processor-ready package for Admin approval and routing — admin has final say.',
 ];
 
-export const RULE_BASED_PORTAL_RULES = [
+export const ONBOARDING_POLICY_RULES = [
   'Do not ask Nuvei, Payroc / Peoples, or Chase-specific questions during Common Intake.',
-  'Do not route to a processor until Common Intake and KYC / KYB readiness rules are sufficiently complete.',
-  'Do not use AI or external identity APIs in this demo; all decisions are deterministic rules over merchant answers and uploaded-document status.',
+  'Do not route to a processor until Common Intake and KYC / KYB readiness checks are sufficiently complete.',
+  'AI is used as a review assistant only. Every final underwriting decision, processor assignment, and merchant-facing message is confirmed by a human admin before it takes effect.',
+  'Policy checks (deterministic rules over merchant answers and uploaded-document status) run alongside AI as an auditable baseline. AI may overrule the policy check only when the model provides a concrete reason.',
   'Prefer dropdowns and short structured answers. Use free text only for names, addresses, explanations, contacts, and narrative business descriptions.',
-  'Admin may override processor routing, but the rule-based recommendation and missing-item reasons must remain visible.',
+  'Admin may override processor routing, but the AI recommendation, policy-check baseline, and missing-item reasons must remain visible.',
 ];
 
 function formatCommonQuestionBlocks(): string {
@@ -47,14 +48,19 @@ function formatProcessorBlocks(): string {
   }).join('\n\n');
 }
 
-export const RULE_BASED_MASTER_PROMPT = [
-  'Design and operate this merchant onboarding app as a deterministic rule-based workflow. Do not call AI models and do not depend on external KYC / KYB APIs.',
+export const ONBOARDING_POLICY_PROMPT = [
+  'Operate this merchant onboarding app as an AI-assisted workflow governed by explicit policy rules. AI reviews every submitted application; a human admin always confirms the final decision.',
   '',
   'Required app flow:',
-  RULE_BASED_WORKFLOW_STEPS.map((step, index) => `${index + 1}. ${step}`).join('\n'),
+  ONBOARDING_WORKFLOW_STEPS.map((step, index) => `${index + 1}. ${step}`).join('\n'),
   '',
-  'Global rules:',
-  RULE_BASED_PORTAL_RULES.map((rule) => `- ${rule}`).join('\n'),
+  'Global rules (enforced regardless of AI output):',
+  ONBOARDING_POLICY_RULES.map((rule) => `- ${rule}`).join('\n'),
+  '',
+  'Processor routing guide for AI and policy checks:',
+  '- Nuvei: standard Canadian merchants, clean KYC / KYB, low-to-mid risk.',
+  '- Payroc / Peoples: adverse history, higher risk, needs manual review or specialized underwriting.',
+  '- Chase: larger enterprise, card-not-present heavy, advance-payment, structured ownership, international.',
   '',
   'Common Intake master list:',
   formatCommonQuestionBlocks(),
@@ -62,3 +68,8 @@ export const RULE_BASED_MASTER_PROMPT = [
   'Processor-specific follow-up master list:',
   formatProcessorBlocks(),
 ].join('\n');
+
+// Backwards-compatible aliases — old names still resolve while consumers migrate.
+export const RULE_BASED_MASTER_PROMPT = ONBOARDING_POLICY_PROMPT;
+export const RULE_BASED_PORTAL_RULES = ONBOARDING_POLICY_RULES;
+export const RULE_BASED_WORKFLOW_STEPS = ONBOARDING_WORKFLOW_STEPS;

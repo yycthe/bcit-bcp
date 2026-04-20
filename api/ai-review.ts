@@ -1,6 +1,33 @@
 import { GoogleGenAI, Type } from '@google/genai';
 
-export const config = { runtime: 'nodejs', maxDuration: 30 };
+export const config = { runtime: 'nodejs', maxDuration: 60 };
+
+// Kept inline to guarantee the serverless bundler never needs to resolve src/ path aliases.
+// Mirrors src/lib/ruleBasedWorkflow.ts. Update both sides if policy changes.
+const ONBOARDING_POLICY_PROMPT = [
+  'Operate this merchant onboarding app as an AI-assisted workflow governed by explicit policy rules. AI reviews every submitted application; a human admin always confirms the final decision.',
+  '',
+  'Required app flow:',
+  '1. Merchant Portal collects only the Common Questions first.',
+  '2. Policy checks decide whether KYB, KYC, both, or KYB-first should be requested before any processor routing.',
+  '3. Admin Portal records local KYC / KYB verification status and follow-up issues.',
+  '4. AI reviews the application end-to-end (intake answers, uploaded documents, website, policy-check output) and produces a risk score, recommended processor, and recommended action.',
+  '5. Merchant Portal asks only the matched processor-specific second-layer questions.',
+  '6. System assembles a processor-ready package for Admin approval and routing — admin has final say.',
+  '',
+  'Global rules (enforced regardless of AI output):',
+  '- Do not ask Nuvei, Payroc / Peoples, or Chase-specific questions during Common Intake.',
+  '- Do not route to a processor until Common Intake and KYC / KYB readiness checks are sufficiently complete.',
+  '- AI is used as a review assistant only. Every final underwriting decision, processor assignment, and merchant-facing message is confirmed by a human admin before it takes effect.',
+  '- Policy checks (deterministic rules over merchant answers and uploaded-document status) run alongside AI as an auditable baseline. AI may overrule the policy check only when the model provides a concrete reason.',
+  '- Prefer dropdowns and short structured answers. Use free text only for names, addresses, explanations, contacts, and narrative business descriptions.',
+  '- Admin may override processor routing, but the AI recommendation, policy-check baseline, and missing-item reasons must remain visible.',
+  '',
+  'Processor routing guide for AI and policy checks:',
+  '- Nuvei: standard Canadian merchants, clean KYC / KYB, low-to-mid risk.',
+  '- Payroc / Peoples: adverse history, higher risk, needs manual review or specialized underwriting.',
+  '- Chase: larger enterprise, card-not-present heavy, advance-payment, structured ownership, international.',
+].join('\n');
 
 type DocumentRef = {
   name: string;
@@ -35,31 +62,40 @@ type ReviewResponse = {
   docConsistencyNotes: string[];
 };
 
-const SYSTEM_INSTRUCTION = `You are an expert payments underwriting analyst reviewing a merchant onboarding application.
+// Gemini inline_data caps — keep total request payload safe inside the serverless limit.
+const MAX_DOC_BYTES = 6 * 1024 * 1024; // per document (6MB)
+const MAX_TOTAL_DOC_BYTES = 15 * 1024 * 1024; // aggregate (15MB)
+const SUPPORTED_INLINE_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]);
 
-You are given:
-1. A rule-based engine's preliminary assessment (risk score, factors, processor recommendation).
-2. The full merchant intake answers (business details, ownership, processing history, sales profile, website, documents readiness).
-3. Any uploaded document references.
+const SYSTEM_INSTRUCTION = `You are the senior underwriting analyst for a payments onboarding platform. You review every submitted merchant application end-to-end and recommend a decision — but a human admin always has the final say.
+
+You will receive:
+1. The policy rules that govern the workflow (authoritative — you must never contradict them).
+2. A policy-check baseline (deterministic rule output: preliminary risk score, risk factors, recommended processor, missing items). Treat it as a second opinion, not a ground truth.
+3. The full merchant intake answers (business details, ownership, processing history, sales profile, website URL, banking, documents status).
+4. The actual contents of any uploaded documents (PDFs or images) — inspect them directly.
+5. Optional merchant website URL for additional signal (reason about the domain / what the merchant says they sell).
 
 Your job:
-- Independently assess the merchant's risk and processor fit.
-- Either confirm the rule-based result or explain disagreement.
-- Surface red flags the rules may have missed (subtle inconsistencies in answers, vague descriptions, unusual patterns).
+- Produce an independent decision: risk score, risk category, recommended processor, recommended action, confidence.
+- Explicitly check uploaded documents against intake answers (legal name, address, ownership, bank account, tax ID, processing volume). Surface every inconsistency in docConsistencyNotes.
+- Surface red flags the policy check may have missed (subtle inconsistencies in answers, vague descriptions, unusual patterns, claims not supported by uploaded docs, misleading website).
 - Surface strengths that mitigate risk.
-- Recommend a concrete next action for the admin.
-- Write a short professional message the merchant can read.
+- If you disagree with the policy check (score, processor, or action), briefly explain why in adminNotes.
+- If required data or documents are missing, set recommendedAction to request_more_info and enumerate the exact missing items in redFlags.
+- Never invent facts. If data is incomplete, say so.
+- Admin notes: 3-6 sentences covering what you saw and why you recommend the action.
+- Merchant message: 1-2 sentences, polite and actionable — this will be shown to the merchant if admin accepts your plan.
 
-Processor routing guide:
-- Nuvei: standard Canadian merchants, clean KYC/KYB, low-to-mid risk.
-- Payroc / Peoples: adverse history, higher risk, needs manual review or specialized underwriting.
-- Chase: larger enterprise, card-not-present heavy, advance-payment, structured ownership, international.
-
-Rules:
-- Base your decision on provided data only. Do not invent facts.
-- If data is incomplete, say so and request specific missing items.
-- Be concise. Admin notes: 2-4 sentences. Merchant message: 1-2 sentences, polite and actionable.
-- Red flags and strengths: 2-5 short bullet points each.`;
+POLICY PROMPT (authoritative):
+---
+${ONBOARDING_POLICY_PROMPT}
+---`;
 
 const RESPONSE_SCHEMA = {
   type: Type.OBJECT,
@@ -74,7 +110,7 @@ const RESPONSE_SCHEMA = {
       type: Type.STRING,
       enum: ['approve', 'approve_with_conditions', 'hold_for_review', 'request_more_info', 'decline'],
     },
-    adminNotes: { type: Type.STRING, description: '2-4 sentence summary for the admin' },
+    adminNotes: { type: Type.STRING, description: '3-6 sentence summary for the admin' },
     merchantMessage: { type: Type.STRING, description: '1-2 sentence message to show the merchant' },
     docConsistencyNotes: {
       type: Type.ARRAY,
@@ -122,13 +158,23 @@ export default async function handler(req: any, res: any) {
     return json(res, 400, { error: 'merchantData and ruleResult are required' });
   }
 
-  const userPrompt = buildUserPrompt(body);
+  // Build parts: a) header text, b) inlined document contents, c) footer instruction.
+  const headerText = buildUserHeader(body);
+  const { parts: docParts, inspected, skipped } = await loadDocumentParts(body.documents || []);
+  const footerText = `\n\nINSPECTION SUMMARY:\n- documents_inlined: ${inspected}\n- documents_skipped: ${skipped.length}${
+    skipped.length ? `\n- skipped_reasons: ${skipped.join('; ')}` : ''
+  }\n\nProduce your independent review now as JSON per schema.`;
 
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: userPrompt,
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: headerText }, ...docParts, { text: footerText }],
+        },
+      ],
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: 'application/json',
@@ -156,30 +202,94 @@ export default async function handler(req: any, res: any) {
   }
 }
 
-function buildUserPrompt(body: ReviewRequest): string {
+function buildUserHeader(body: ReviewRequest): string {
   const { merchantData, ruleResult, documents = [] } = body;
 
   const merchantJson = JSON.stringify(merchantData, redactSensitive, 2);
   const ruleJson = JSON.stringify(ruleResult, null, 2);
-  const docLines = documents.length
+  const docManifest = documents.length
     ? documents
         .map(
           (d) =>
-            `- ${d.name} (${d.mimeType || 'unknown type'})${d.documentType ? ` — ${d.documentType}` : ''}${d.url ? ` [stored]` : ''}`
+            `- ${d.name} · ${d.mimeType || 'unknown type'}${d.documentType ? ` · ${d.documentType}` : ''}${d.url ? ' · [content attached below]' : ' · [reference only, no content]'}`
         )
         .join('\n')
     : '(no documents uploaded)';
+  const website = (merchantData as { website?: string })?.website || '';
+  const websiteLine = website ? `MERCHANT WEBSITE: ${website}` : 'MERCHANT WEBSITE: (not provided)';
 
-  return `RULE-BASED ENGINE RESULT:
+  return `POLICY-CHECK BASELINE (deterministic, preliminary):
 ${ruleJson}
 
-MERCHANT INTAKE DATA:
+MERCHANT INTAKE DATA (sensitive fields redacted):
 ${merchantJson}
 
-UPLOADED DOCUMENTS:
-${docLines}
+${websiteLine}
 
-Produce your independent review now.`;
+UPLOADED DOCUMENTS MANIFEST:
+${docManifest}
+
+`;
+}
+
+async function loadDocumentParts(
+  documents: DocumentRef[]
+): Promise<{ parts: any[]; inspected: number; skipped: string[] }> {
+  const parts: any[] = [];
+  const skipped: string[] = [];
+  let inspected = 0;
+  let used = 0;
+
+  for (const d of documents) {
+    if (!d.url) {
+      skipped.push(`${d.name}: no URL`);
+      continue;
+    }
+    const mime = (d.mimeType || 'application/pdf').toLowerCase();
+    if (!SUPPORTED_INLINE_TYPES.has(mime)) {
+      skipped.push(`${d.name}: unsupported mime ${mime}`);
+      continue;
+    }
+    if (used >= MAX_TOTAL_DOC_BYTES) {
+      skipped.push(`${d.name}: aggregate size cap reached`);
+      continue;
+    }
+
+    try {
+      const resp = await fetch(d.url);
+      if (!resp.ok) {
+        skipped.push(`${d.name}: fetch ${resp.status}`);
+        continue;
+      }
+      const buf = await resp.arrayBuffer();
+      const size = buf.byteLength;
+      if (size > MAX_DOC_BYTES) {
+        skipped.push(`${d.name}: ${Math.round(size / 1024 / 1024)}MB exceeds per-doc cap`);
+        continue;
+      }
+      if (used + size > MAX_TOTAL_DOC_BYTES) {
+        skipped.push(`${d.name}: would exceed aggregate cap`);
+        continue;
+      }
+      used += size;
+      inspected += 1;
+
+      parts.push({
+        text: `---\nBEGIN DOCUMENT: ${d.name}${d.documentType ? ` (${d.documentType})` : ''}\n---`,
+      });
+      parts.push({
+        inlineData: {
+          mimeType: mime,
+          data: Buffer.from(buf).toString('base64'),
+        },
+      });
+      parts.push({ text: `---\nEND DOCUMENT: ${d.name}\n---` });
+    } catch (err: any) {
+      skipped.push(`${d.name}: ${err?.message || 'fetch error'}`);
+    }
+  }
+
+  return { parts, inspected, skipped };
 }
 
 function redactSensitive(key: string, value: unknown): unknown {
