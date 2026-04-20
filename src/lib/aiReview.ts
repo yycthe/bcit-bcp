@@ -1,8 +1,8 @@
 import type { MerchantData, FileData } from '@/src/types';
-import type { UnderwritingDisplayResult } from '@/src/lib/underwritingFallback';
+import { buildAiReviewContext } from '@/src/lib/aiReviewContext';
 
 // Structured slots inside merchantData that may hold a FileData blob.
-// Keep this in sync with FILE_FIELDS in underwritingFallback.ts.
+// Keep this in sync with FILE_FIELDS in aiReviewContext.ts.
 const MERCHANT_FILE_SLOTS = [
   'idUpload',
   'proofOfAddress',
@@ -36,7 +36,7 @@ export type AiReviewResult = {
 };
 
 export type CombinedReview = {
-  rule: UnderwritingDisplayResult;
+  context: ReturnType<typeof buildAiReviewContext>;
   ai: AiReviewResult | null;
   aiError?: string;
 };
@@ -94,19 +94,11 @@ function collectAllDocuments(merchantData: MerchantData, extra: FileData[]): Doc
 
 export async function requestAiReview(
   merchantData: MerchantData,
-  ruleResult: UnderwritingDisplayResult,
   documents: FileData[]
 ): Promise<AiReviewResult> {
   const payload = {
     merchantData,
-    ruleResult: {
-      riskScore: ruleResult.riskScore,
-      riskCategory: ruleResult.riskCategory,
-      riskFactors: ruleResult.riskFactors,
-      recommendedProcessor: ruleResult.recommendedProcessor,
-      missingItems: ruleResult.missingItems,
-      reason: ruleResult.reason,
-    },
+    aiContext: buildAiReviewContext(merchantData),
     documents: collectAllDocuments(merchantData, documents),
   };
 

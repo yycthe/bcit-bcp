@@ -142,7 +142,7 @@ function getVolumeLabel(volume: string): string {
   return VOLUME_LABELS[volume] || 'your expected volume';
 }
 
-/** Legacy deterministic path (no AI plan). */
+/** Default collection path used only if the AI intake planner is unavailable. */
 function buildLegacyQuestionSequence(data: MerchantData): QuestionId[] {
   const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(data.industry);
   const isInternational = data.country !== 'CA' && data.country !== 'US' && data.country !== '';
@@ -537,7 +537,7 @@ const getQuestionText = (qId: QuestionId, data: MerchantData): string => {
       "A few processing-history questions help detect early risk before we ask for any processor-specific details.",
 
     salesProfileForm: () =>
-      "Let's capture the common sales profile so the routing rules can evaluate ticket size, channel mix, recurring exposure, and foreign-card exposure.",
+      "Let's capture the common sales profile so the AI review has ticket size, channel mix, recurring exposure, and foreign-card context.",
 
     websiteComplianceForm: () =>
       'Now we will capture website, security, and PCI basics for the strict common-review layer.',
@@ -1068,7 +1068,7 @@ export function ChatApp({
         {
           id: Math.random().toString(36).substring(2, 15),
           sender: 'system',
-          content: 'Processor-ready package assembled with common intake, KYC / KYB routing, AI review summary, website signals, document checklist, missing items, and processor-specific answers.',
+          content: 'Processor-ready package assembled with common intake, KYC / KYB context, AI review summary, website signals, document checklist, missing items, and processor-specific answers.',
         }
       ]);
       setIsFinished(true);
@@ -1114,8 +1114,8 @@ export function ChatApp({
       personaVerificationSummary:
         finalData.personaVerificationSummary ||
         (localVerification.status === 'clear'
-          ? `Local KYC / KYB result: passed. ${localVerification.summary}`
-          : `Local KYC / KYB result: pending follow-up. ${localVerification.summary}`),
+          ? `KYC / KYB readiness context: clear. ${localVerification.summary}`
+          : `KYC / KYB readiness context: needs follow-up. ${localVerification.summary}`),
       websiteReviewSummary: finalData.websiteReviewSummary || buildWebsiteSignalSummary(finalData),
     };
     setData(enrichedData);
@@ -1383,7 +1383,7 @@ export function ChatApp({
               </ul>
             ) : null}
             <p className="mt-4 rounded-lg border border-border bg-surface px-3 py-2 text-[11px] leading-relaxed text-foreground-muted">
-              This routing follows the onboarding policy rules. No external KYC / KYB API is called here; the plan is attached to the merchant profile and verification results can be added before the AI review when available.
+              This readiness plan follows the onboarding policy context. No external KYC / KYB API is called here; the plan is attached to the merchant profile and verification results can be added before the AI review when available.
             </p>
             <div className="mt-4 flex justify-end">
               <Button

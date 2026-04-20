@@ -3,27 +3,27 @@ import { GoogleGenAI, Type } from '@google/genai';
 export const config = { runtime: 'nodejs', maxDuration: 60 };
 
 // Kept inline to guarantee the serverless bundler never needs to resolve src/ path aliases.
-// Mirrors src/lib/ruleBasedWorkflow.ts. Update both sides if policy changes.
+// Mirrors src/lib/aiPolicyWorkflow.ts. Update both sides if policy changes.
 const ONBOARDING_POLICY_PROMPT = [
   'Operate this merchant onboarding app as an AI-assisted workflow governed by explicit policy rules. AI reviews every submitted application; a human admin always confirms the final decision.',
   '',
   'Required app flow:',
   '1. Merchant Portal collects only the Common Questions first.',
-  '2. Policy checks decide whether KYB, KYC, both, or KYB-first should be requested before any processor routing.',
-  '3. Admin Portal records local KYC / KYB verification status and follow-up issues.',
-  '4. AI reviews the application end-to-end (intake answers, uploaded documents, website, policy-check output) and produces a risk score, recommended processor, and recommended action.',
+  '2. App readiness checks collect KYB/KYC routing context, missing intake fields, and document coverage for AI review.',
+  '3. Admin Portal records KYC / KYB verification status and follow-up issues as evidence for the AI review.',
+  '4. AI reviews the application end-to-end (intake answers, uploaded documents, website, and policy/context packet) and produces the risk score, recommended processor, recommended action, and merchant message.',
   '5. Merchant Portal asks only the matched processor-specific second-layer questions.',
   '6. System assembles a processor-ready package for Admin approval and routing — admin has final say.',
   '',
   'Global rules (enforced regardless of AI output):',
   '- Do not ask Nuvei, Payroc / Peoples, or Chase-specific questions during Common Intake.',
   '- Do not route to a processor until Common Intake and KYC / KYB readiness checks are sufficiently complete.',
-  '- AI produces all underwriting recommendations; every final processor assignment and merchant-facing message must be explicitly confirmed by a human admin.',
-  '- The same onboarding policy also defines a deterministic fallback when the model is unavailable. Under normal operation the live workbench does not block on that baseline after a successful AI run.',
+  '- AI produces all underwriting recommendations: risk score, risk category, processor route, action, admin notes, and merchant-facing message.',
+  '- App-side checks are context only. They must never become a local risk score, local processor route, approval decision, or fallback recommendation.',
   '- Prefer dropdowns and short structured answers. Use free text only for names, addresses, explanations, contacts, and narrative business descriptions.',
   '- Admin advanced overrides remain available; the policy text is the audit source of truth.',
   '',
-  'Processor routing guide for AI and policy checks:',
+  'Processor routing guide for AI:',
   '- Nuvei: standard Canadian merchants, clean KYC / KYB, low-to-mid risk.',
   '- Payroc / Peoples: adverse history, higher risk, needs manual review or specialized underwriting.',
   '- Chase: larger enterprise, card-not-present heavy, advance-payment, structured ownership, international.',
@@ -38,14 +38,7 @@ type DocumentRef = {
 
 type ReviewRequest = {
   merchantData: Record<string, unknown>;
-  ruleResult: {
-    riskScore: number;
-    riskCategory: string;
-    riskFactors: string[];
-    recommendedProcessor: string;
-    missingItems: string[];
-    reason: string;
-  };
+  aiContext?: Record<string, unknown>;
   documents?: DocumentRef[];
 };
 
@@ -79,18 +72,18 @@ const SYSTEM_INSTRUCTION = `You are the senior underwriting analyst for a paymen
 
 You will receive:
 1. The policy rules that govern the workflow (authoritative — you must never contradict them).
-2. A policy-check baseline (deterministic rule output: preliminary risk score, risk factors, recommended processor, missing items). Treat it as a second opinion, not a ground truth.
+2. An app-generated AI context packet: policy constraints, KYC / KYB readiness signals, document checklist, missing-upload facts, and website signals. Treat it as evidence/context only, not as a recommendation.
 3. The full merchant intake answers (business details, ownership, processing history, sales profile, website URL, banking, documents status).
 4. The actual contents of any uploaded documents (PDFs or images) — inspect them directly.
 5. Optional merchant website URL for additional signal (reason about the domain / what the merchant says they sell).
 
 Your job:
-- Produce an independent decision: risk score, risk category, recommended processor, recommended action, confidence.
+- Produce the only underwriting recommendation: risk score, risk category, recommended processor, recommended action, confidence, admin notes, and merchant message.
 - Whenever you cite a substantive finding (risk factor, contradiction, inconsistency), add an evidenceCitation entry naming the intake field path (e.g. merchantData.legalName) or the document filename (page number if discernible from the PDF viewer context).
 - Explicitly check uploaded documents against intake answers (legal name, address, ownership, bank account, tax ID, processing volume). Surface every inconsistency in docConsistencyNotes.
-- Surface red flags the policy check may have missed (subtle inconsistencies in answers, vague descriptions, unusual patterns, claims not supported by uploaded docs, misleading website).
+- Surface red flags the context packet may have missed (subtle inconsistencies in answers, vague descriptions, unusual patterns, claims not supported by uploaded docs, misleading website).
 - Surface strengths that mitigate risk.
-- If you disagree with the policy check (score, processor, or action), briefly explain why in adminNotes.
+- Do not copy any app-side context blindly. The context packet has no authority to recommend a risk score, processor, or action.
 - If required data or documents are missing, set recommendedAction to request_more_info and enumerate the exact missing items in redFlags.
 - Never invent facts. If data is incomplete, say so.
 - Admin notes: 3-6 sentences covering what you saw and why you recommend the action.
@@ -220,8 +213,8 @@ export default async function handler(req: any, res: any) {
     return json(res, 400, { error: 'Invalid JSON body' });
   }
 
-  if (!body?.merchantData || !body?.ruleResult) {
-    return json(res, 400, { error: 'merchantData and ruleResult are required' });
+  if (!body?.merchantData) {
+    return json(res, 400, { error: 'merchantData is required' });
   }
 
   // Build parts: a) header text, b) inlined document contents, c) footer instruction.
@@ -255,10 +248,10 @@ export default async function handler(req: any, res: any) {
 }
 
 function buildUserHeader(body: ReviewRequest): string {
-  const { merchantData, ruleResult, documents = [] } = body;
+  const { merchantData, aiContext = {}, documents = [] } = body;
 
   const merchantJson = JSON.stringify(merchantData, redactSensitive, 2);
-  const ruleJson = JSON.stringify(ruleResult, null, 2);
+  const contextJson = JSON.stringify(aiContext, null, 2);
   const docManifest = documents.length
     ? documents
         .map(
@@ -270,8 +263,8 @@ function buildUserHeader(body: ReviewRequest): string {
   const website = (merchantData as { website?: string })?.website || '';
   const websiteLine = website ? `MERCHANT WEBSITE: ${website}` : 'MERCHANT WEBSITE: (not provided)';
 
-  return `POLICY-CHECK BASELINE (deterministic, preliminary):
-${ruleJson}
+  return `AI REVIEW CONTEXT PACKET (facts and policy context only; no local recommendation):
+${contextJson}
 
 MERCHANT INTAKE DATA (sensitive fields redacted):
 ${merchantJson}

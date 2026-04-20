@@ -86,9 +86,9 @@ export function MerchantStatus({
     },
     {
       id: 'under_review',
-      title: 'Verification & routing review',
+      title: 'AI underwriting review',
       description:
-        'Our team is checking KYC / KYB readiness, supporting documents, and processor routing.',
+        'AI is reviewing KYC / KYB context, supporting documents, and processor fit before our team confirms the decision.',
       icon: Clock,
       status:
         status === 'approved' || status === 'signed'
@@ -145,7 +145,7 @@ export function MerchantStatus({
         <PageHeader
           eyebrow="Application status"
           title="Track your application"
-          description="Watch progress as our review team verifies KYC / KYB, documents, and processor fit."
+          description="Watch progress as AI reviews the application and our team confirms the decision."
         />
 
         {status === 'under_review' && !adminNotice?.trim() && (
@@ -182,7 +182,7 @@ export function MerchantStatus({
             <Banner
               intent="info"
               title="Strengthen your application"
-              description="These documents are optional right now, but may speed up review."
+              description="These documents are optional right now, but may give the AI review stronger evidence."
             >
               <MissingDocsList items={missingDocuments} onUpload={onInlineUpload} />
             </Banner>

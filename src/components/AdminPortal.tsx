@@ -10,12 +10,8 @@ import {
   type VerificationIssue,
 } from '@/src/lib/localVerification';
 import { buildPersonaSummary } from '@/src/lib/onboardingWorkflow';
-import {
-  getFallbackUnderwriting,
-  type UnderwritingDisplayResult,
-} from '@/src/lib/underwritingFallback';
 import { requestAiReview, type AiReviewResult } from '@/src/lib/aiReview';
-import { ONBOARDING_POLICY_PROMPT } from '@/src/lib/ruleBasedWorkflow';
+import { ONBOARDING_POLICY_PROMPT } from '@/src/lib/aiPolicyWorkflow';
 import { usePersistentState } from '@/src/lib/persistentState';
 import { FormattedSummary } from '@/src/components/ui/formatted-summary';
 import {
@@ -62,8 +58,6 @@ interface Props {
   merchantData: MerchantData;
   setMerchantData: React.Dispatch<React.SetStateAction<MerchantData>>;
   documents: FileData[];
-  underwritingResult: UnderwritingDisplayResult | null;
-  setUnderwritingResult: (res: UnderwritingDisplayResult | null) => void;
   merchantNoticeFromAdmin: string;
   setMerchantNoticeFromAdmin: (msg: string) => void;
   setVerificationIssues: (items: VerificationIssue[]) => void;
@@ -155,8 +149,6 @@ export function AdminPortal({
   merchantData,
   setMerchantData,
   documents,
-  underwritingResult,
-  setUnderwritingResult,
   merchantNoticeFromAdmin,
   setMerchantNoticeFromAdmin,
   setVerificationIssues,
@@ -224,8 +216,8 @@ export function AdminPortal({
         personaInvitePlan: prev.personaInvitePlan || buildPersonaSummary(prev),
         personaVerificationSummary:
           result.status === 'clear'
-            ? `Local KYC / KYB result: passed. ${result.summary}`
-            : `Local KYC / KYB result: pending follow-up. ${result.summary}`,
+            ? `KYC / KYB readiness context: clear. ${result.summary}`
+            : `KYC / KYB readiness context: needs follow-up. ${result.summary}`,
       }));
     } finally {
       setVerificationLoading(false);
@@ -241,10 +233,8 @@ export function AdminPortal({
     setAiElapsedMs(0);
     const toastId = opts.silent ? undefined : toast.loading('AI reviewing application...');
     try {
-      const rule = underwritingResult ?? getFallbackUnderwriting(merchantData);
-      const result = await requestAiReview(merchantData, rule, documents);
+      const result = await requestAiReview(merchantData, documents);
       setAiReview(result);
-      setUnderwritingResult(null);
       const elapsed = Date.now() - startedAt;
       setAiLastDurationMs(elapsed);
       if (toastId !== undefined) {
@@ -257,7 +247,6 @@ export function AdminPortal({
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setAiError(msg);
-      setUnderwritingResult(getFallbackUnderwriting(merchantData));
       if (toastId !== undefined) {
         toast.error('AI review failed', { id: toastId, description: msg });
       }
@@ -479,7 +468,6 @@ export function AdminPortal({
             documents={documents}
             docChecklist={docChecklist}
             missing={missing}
-            underwritingResult={underwritingResult}
             aiReview={aiReview}
             aiLoading={aiLoading}
             aiError={aiError}
@@ -654,7 +642,6 @@ interface WorkbenchProps {
   documents: FileData[];
   docChecklist: ReturnType<typeof getMerchantDocumentChecklist>;
   missing: ReturnType<typeof getMerchantDocumentChecklist>;
-  underwritingResult: UnderwritingDisplayResult | null;
   aiReview: AiReviewResult | null;
   aiLoading: boolean;
   aiError: string | null;
@@ -696,7 +683,6 @@ function Workbench(props: WorkbenchProps) {
     documents,
     docChecklist,
     missing,
-    underwritingResult,
     aiReview,
     aiLoading,
     aiError,
@@ -786,11 +772,11 @@ function Workbench(props: WorkbenchProps) {
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-6 py-6 sm:px-10">
         <div className="mx-auto max-w-6xl space-y-6 pb-24">
-          {aiError && underwritingResult && (
+          {aiError && (
             <Banner
               intent="warning"
-              title="AI unavailable — deterministic baseline shown"
-              description={`${aiError} Local policy-check output is restored below so you can still decide. Re-run AI when the service recovers.`}
+              title="AI unavailable — no recommendation generated"
+              description={`${aiError} The policy/context packet is ready, but final risk, routing, action, and merchant message must come from AI. Re-run AI when the service recovers.`}
             />
           )}
 
@@ -890,7 +876,7 @@ function Workbench(props: WorkbenchProps) {
             {missing.length > 0 && (
               <span className="text-warning-foreground">{missing.length} required uploads still missing</span>
             )}
-            {missing.length === 0 && <span>Document checklist complete for current rules.</span>}
+            {missing.length === 0 && <span>Document context complete for the AI review.</span>}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" size="lg" variant="outline" disabled={isApproved || !aiReview} onClick={openEditModal}>
@@ -946,7 +932,7 @@ function AiVerdict({
       <Section
         icon={Sparkles}
         title="AI reviewing application"
-        description="Gemini is reading intake fields, attached PDFs/images, and your policy rules."
+        description="Gemini is reading intake fields, attached PDFs/images, and the policy context packet."
       >
         <div className="space-y-3">
           <div className="h-3 w-full animate-pulse rounded-full bg-surface-subtle" />
@@ -1514,7 +1500,7 @@ function ManualOverride({
               disabled={verificationLoading}
               onClick={onRunVerification}
             >
-              <Activity className="h-3.5 w-3.5" /> Re-run local check
+              <Activity className="h-3.5 w-3.5" /> Refresh readiness context
             </Button>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">

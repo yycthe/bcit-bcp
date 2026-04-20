@@ -116,7 +116,7 @@ export function MerchantSummaryRail({ data, appStatus, aiFieldHints = {} }: Prop
     },
     {
       id: 'review',
-      title: 'Verification & routing',
+      title: 'AI review',
       status:
         appStatus === 'approved' || appStatus === 'signed'
           ? 'complete'
@@ -263,7 +263,7 @@ export function MerchantSummaryRail({ data, appStatus, aiFieldHints = {} }: Prop
             <div className="rounded-xl border border-brand/20 bg-brand-soft p-4 shadow-xs">
               <p className="flex items-center gap-2 text-xs font-semibold text-brand-strong">
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                Routed processor
+                AI-routed processor
               </p>
               <p className="mt-1 text-sm font-semibold text-foreground">{data.matchedProcessor}</p>
               {data.processorSpecificAnswers?.trim() ? (

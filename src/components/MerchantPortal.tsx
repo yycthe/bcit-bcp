@@ -12,7 +12,6 @@ import {
   getMissingDocumentKeys,
   type MerchantDocumentKey,
 } from '@/src/lib/documentChecklist';
-import { getFallbackUnderwriting, type UnderwritingDisplayResult } from '@/src/lib/underwritingFallback';
 import { prepareFileForUpload } from '@/src/lib/uploadPreparation';
 import type { VerificationIssue } from '@/src/lib/localVerification';
 import {
@@ -40,8 +39,6 @@ interface Props {
   setMerchantData: (data: MerchantData) => void;
   documents: FileData[];
   setDocuments: (docs: FileData[]) => void;
-  underwritingResult: UnderwritingDisplayResult | null;
-  setUnderwritingResult: (res: UnderwritingDisplayResult | null) => void;
   merchantNoticeFromAdmin: string;
   onDismissMerchantNotice: () => void;
   verificationIssues: VerificationIssue[];
@@ -89,8 +86,6 @@ export function MerchantPortal({
   setMerchantData,
   documents,
   setDocuments,
-  underwritingResult,
-  setUnderwritingResult,
   merchantNoticeFromAdmin,
   onDismissMerchantNotice,
   verificationIssues,
@@ -228,10 +223,8 @@ export function MerchantPortal({
     setCurrentView('status');
   };
 
-  const runUnderwritingOnSubmit = useCallback(
+  const submitForAiReview = useCallback(
     (data: MerchantData) => {
-      const result = getFallbackUnderwriting(data);
-      setUnderwritingResult(result);
       setMerchantData({
         ...data,
         matchedProcessor: '',
@@ -240,10 +233,10 @@ export function MerchantPortal({
         processorReadyPackageSummary: '',
       });
       toast.success('Application submitted for AI review', {
-        description: `Suggested route: ${result.recommendedProcessor}. Admin must confirm before follow-up.`,
+        description: 'Gemini will read the rules, intake answers, and documents before any recommendation is made.',
       });
     },
-    [setUnderwritingResult, setMerchantData]
+    [setMerchantData]
   );
 
   const openProcessorFollowUp = useCallback(() => {
@@ -257,7 +250,6 @@ export function MerchantPortal({
     setMerchantData({ ...demoMerchantData });
     setAiFieldHints({});
     setDocuments([]);
-    setUnderwritingResult(null);
     setAppStatus('draft');
     setIsFinished(true);
     setEditSection(null);
@@ -275,7 +267,6 @@ export function MerchantPortal({
     setMerchantData({ ...initialMerchantData, additionalDocuments: [] });
     setAiFieldHints({});
     setDocuments([]);
-    setUnderwritingResult(null);
     setAppStatus('draft');
     setIsFinished(false);
     setEditSection(null);
@@ -292,7 +283,6 @@ export function MerchantPortal({
   const jumpToReviewWithDemo = () => {
     setMerchantData({ ...demoMerchantData });
     setDocuments([]);
-    setUnderwritingResult(null);
     setGuidedTourOrder(null);
     onClearVerificationIssues();
     setIsFinished(true);
@@ -570,7 +560,7 @@ export function MerchantPortal({
                   onSubmit={() => {
                     setAppStatus('under_review');
                     setCurrentView('status');
-                    runUnderwritingOnSubmit(merchantData);
+                    submitForAiReview(merchantData);
                   }}
                 />
               </div>

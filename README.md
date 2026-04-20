@@ -1,15 +1,15 @@
 # BCIT BCP
 
-BCIT **Business Consulting Project** — an AI-assisted payment-processing onboarding platform for merchant intake, KYC / KYB readiness, document review, processor routing, and package approval. **Gemini 2.5 Flash** (default) runs multimodal underwriting review and document field extraction; **Gemini 2.5 Pro** is optional via env when your Google AI project has Pro quota. **Gemini 2.5 Flash** also powers intake planning. A **silent deterministic fallback** (`getFallbackUnderwriting`) only activates when the model fails; a human admin always confirms the final decision.
+BCIT **Business Consulting Project** — an AI-first payment-processing onboarding platform for merchant intake, KYC / KYB readiness context, document review, processor routing, and package approval. **Gemini 2.5 Flash** (default) runs multimodal underwriting review and document field extraction; **Gemini 2.5 Pro** is optional via env when your Google AI project has Pro quota. **Gemini 2.5 Flash** also powers intake planning. App-side policy checks are fed to AI as context only; risk score, processor route, recommended action, admin notes, and merchant message all come from AI, with a human admin confirming the final decision.
 
 ## Features
 
 - **Merchant Portal** — guided Common Intake, PDF / image upload to Vercel Blob, AI-tailored question path (after volume gate), AI document field extraction preview (Apply / Ignore), application review, status tracking, processor-specific follow-up, agreement flow.
-- **Admin AI Workbench** — queue plus per-application workspace: AI verdict hero (Gemini, default Flash), confirm / edit-before-send, action checklist, evidence with citations; **no baseline panel on success** — if AI errors, deterministic scores return as a warning banner until you re-run AI.
-- **Multimodal AI review** — `POST /api/ai-review`: reads intake JSON, deterministic baseline (payload only), **HTTPS Blob documents as inlineData**, merchant website URL, onboarding policy prompt; returns structured JSON (`evidenceCitations`, red flags, routing, merchant message).
+- **Admin AI Workbench** — queue plus per-application workspace: AI verdict hero (Gemini, default Flash), confirm / edit-before-send, action checklist, evidence with citations; if AI errors, no local recommendation is shown until you re-run AI.
+- **Multimodal AI review** — `POST /api/ai-review`: reads intake JSON, AI review context packet, **HTTPS Blob documents as inlineData**, merchant website URL, onboarding policy prompt; returns structured JSON (`evidenceCitations`, red flags, routing, merchant message).
 - **AI intake planner** — `POST /api/intake/plan` (Gemini 2.5 Flash): after the five anchor answers, returns an ordered plan of common forms, persona gate, and document slots under the same policy text.
 - **AI document extraction** — `POST /api/intake/extract` (default Flash, multimodal): for selected upload slots (`idUpload`, registration, bank statement, proof of address), returns suggested `MerchantData` keys; merchants apply explicitly (no silent overwrite).
-- **Onboarding policy prompt** — source in `src/lib/ruleBasedWorkflow.ts` (`ONBOARDING_POLICY_PROMPT`), mirrored minimally in `api/ai-review.ts` for bundling.
+- **Onboarding policy prompt** — source in `src/lib/aiPolicyWorkflow.ts` (`ONBOARDING_POLICY_PROMPT`), mirrored minimally in `api/ai-review.ts` for bundling. The rules are guardrails for AI, not a local decision engine.
 
 ## Serverless APIs (Vercel)
 
@@ -84,15 +84,15 @@ Use `vercel dev` for full parity with `/api/*`.
 
 ## Onboarding Policy Prompt
 
-Defined in `src/lib/ruleBasedWorkflow.ts` as `ONBOARDING_POLICY_PROMPT`. A duplicate constant lives in `api/ai-review.ts` so Vercel esbuild never has to chase `src/` aliases.
+Defined in `src/lib/aiPolicyWorkflow.ts` as `ONBOARDING_POLICY_PROMPT`. A duplicate constant lives in `api/ai-review.ts` so Vercel esbuild never has to chase `src/` aliases.
 
 Supporting modules:
 
 - Common Intake question bank: `src/lib/intake/commonQuestionBank.ts`
 - AI intake plan client: `src/lib/intake/aiPlan.ts`
-- KYC / KYB trigger rules: `src/lib/intake/personaTriggerRules.ts`
+- KYC / KYB trigger context: `src/lib/intake/personaTriggerRules.ts`
 - Processor follow-up lists: `src/lib/onboardingWorkflow.ts`
-- Silent fallback scoring: `src/lib/underwritingFallback.ts`
+- AI review context packet: `src/lib/aiReviewContext.ts`
 - AI review client: `src/lib/aiReview.ts` → `api/ai-review.ts`
 
 ## Scripts

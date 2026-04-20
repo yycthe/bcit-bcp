@@ -5,14 +5,12 @@ import { AdminPortal } from './components/AdminPortal';
 import { AppShell, type ViewMode } from './components/AppShell';
 import { MerchantData, FileData, ApplicationStatus, initialMerchantData } from './types';
 import type { VerificationIssue } from './lib/localVerification';
-import type { UnderwritingDisplayResult } from './lib/underwritingFallback';
 import { usePersistentState } from './lib/persistentState';
 
 const STORAGE_KEYS = {
   appStatus: 'bcp:appStatus',
   merchantData: 'bcp:merchantData',
   documents: 'bcp:documents',
-  underwritingResult: 'bcp:underwritingResult',
   merchantNoticeFromAdmin: 'bcp:merchantNoticeFromAdmin',
   verificationIssues: 'bcp:verificationIssues',
 } as const;
@@ -25,10 +23,6 @@ export default function App() {
     additionalDocuments: [],
   }));
   const [documents, setDocuments] = usePersistentState<FileData[]>(STORAGE_KEYS.documents, []);
-  const [underwritingResult, setUnderwritingResult] = usePersistentState<UnderwritingDisplayResult | null>(
-    STORAGE_KEYS.underwritingResult,
-    null
-  );
   /** Shown to merchant while under review (set from Admin). */
   const [merchantNoticeFromAdmin, setMerchantNoticeFromAdmin] = usePersistentState<string>(
     STORAGE_KEYS.merchantNoticeFromAdmin,
@@ -58,8 +52,6 @@ export default function App() {
             setMerchantData={setMerchantData}
             documents={documents}
             setDocuments={setDocuments}
-            underwritingResult={underwritingResult}
-            setUnderwritingResult={setUnderwritingResult}
             merchantNoticeFromAdmin={merchantNoticeFromAdmin}
             onDismissMerchantNotice={() => setMerchantNoticeFromAdmin('')}
             verificationIssues={verificationIssues}
@@ -72,8 +64,6 @@ export default function App() {
             merchantData={merchantData}
             setMerchantData={setMerchantData}
             documents={documents}
-            underwritingResult={underwritingResult}
-            setUnderwritingResult={setUnderwritingResult}
             merchantNoticeFromAdmin={merchantNoticeFromAdmin}
             setMerchantNoticeFromAdmin={setMerchantNoticeFromAdmin}
             setVerificationIssues={setVerificationIssues}
