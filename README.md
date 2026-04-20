@@ -1,14 +1,54 @@
 # BCIT BCP
 
-BCIT **Business Consulting Project** — a rule-based payment-processing onboarding demo for merchant intake, KYC / KYB readiness, document review, processor routing, and package approval.
+BCIT **Business Consulting Project** — a hybrid AI + rule-based payment-processing onboarding platform for merchant intake, KYC / KYB readiness, document review, processor routing, and package approval.
 
 ## Features
 
-- **Merchant Portal** — guided Common Intake, document upload, application review, status tracking, processor-specific follow-up, and agreement flow.
-- **Admin Portal** — review submitted applications, record KYC / KYB results, run deterministic rules checks, confirm processor routing, and approve the final package.
-- **Rule-based workflow** — no AI model call and no external identity API dependency in this demo.
-- **Processor routing** — rules recommend **Nuvei**, **Payroc / Peoples**, or **Chase** from intake answers, verification status, website/compliance signals, and document readiness.
+- **Merchant Portal** — guided Common Intake, PDF / image upload to Vercel Blob, application review, status tracking, dynamic processor-specific follow-up, and agreement flow.
+- **Admin Portal** — review submitted applications, run deterministic rule engine **and** AI review (Gemini), record KYC / KYB results, confirm processor routing, and approve the final package.
+- **AI review layer** — Gemini 2.5 Flash cross-checks the rule-engine output, surfaces red flags + strengths, and drafts a merchant-facing message. Rule engine remains the deterministic audit layer.
+- **Dynamic KYC / KYB forms** — once a processor is matched, only that processor's follow-up questions are rendered (Nuvei, Payroc / Peoples, or Chase), with conditional fields based on prior answers.
+- **Multi-PDF blob upload** — PDFs upload directly to Vercel Blob via a signed client-upload token, bypassing function payload limits (up to 25 MB per file).
 - **Processor-ready package** — common answers, KYC / KYB status, routing result, processor-specific answers, document checklist, missing items, and readiness status.
+
+## Deploy on Vercel
+
+### 1. Required environment variables
+
+Add these in **Vercel Dashboard → your project → Settings → Environment Variables** (apply to Production, Preview, and Development):
+
+| Variable | Value | Where to get it |
+|---|---|---|
+| `GOOGLE_API_KEY` | Your Google Gemini API key | https://aistudio.google.com/apikey |
+| `BLOB_READ_WRITE_TOKEN` | Auto-populated | Vercel Dashboard → **Storage** tab → create a Blob store → connect it to this project; Vercel will inject `BLOB_READ_WRITE_TOKEN` automatically |
+
+After saving env vars, redeploy (Vercel → Deployments → pick latest → **Redeploy**) so the server functions pick them up.
+
+### 2. Steps
+
+1. Push to GitHub.
+2. Import the repo in Vercel.
+3. Framework preset: **Vite** (auto-detected).
+4. Add `GOOGLE_API_KEY` in Settings → Environment Variables.
+5. Storage → **Create → Blob** → connect to project (auto-sets `BLOB_READ_WRITE_TOKEN`).
+6. Redeploy.
+
+### 3. Local dev (optional)
+
+Create a `.env.local` at the repo root:
+
+```
+GOOGLE_API_KEY=your_gemini_key
+BLOB_READ_WRITE_TOKEN=your_blob_token
+```
+
+Then:
+```
+npm install
+npm run dev
+```
+
+Serverless functions in `api/` will run via Vercel CLI (`vercel dev`) if you want full parity; `npm run dev` alone runs the Vite frontend only.
 
 ## Stack
 

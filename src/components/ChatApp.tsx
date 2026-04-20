@@ -19,6 +19,8 @@ import {
   getProcessorQuestionPrompt,
   normalizeProcessorFit,
 } from '@/src/lib/onboardingWorkflow';
+import { ProcessorFollowUpForm } from '@/src/components/ProcessorFollowUpForm';
+import { getProcessorFollowUpSpec } from '@/src/lib/intake/processorFollowUpForms';
 import {
   COMMON_INTAKE_FORM_SEQUENCE,
   getCommonIntakeFormSpec,
@@ -1177,7 +1179,16 @@ export function ChatApp({
 
     if (qDef.type === 'form') {
       if (currentQuestion === 'processorSpecificFollowUpForm') {
-        const processorQuestionSet = getProcessorQuestionSet(data.matchedProcessor || 'Nuvei');
+        const processorFit = normalizeProcessorFit(data.matchedProcessor || 'Nuvei');
+        const spec = getProcessorFollowUpSpec(processorFit);
+        let initialAnswers: Record<string, string> = {};
+        if (data.processorSpecificAnswersJson) {
+          try {
+            initialAnswers = JSON.parse(data.processorSpecificAnswersJson) || {};
+          } catch {
+            initialAnswers = {};
+          }
+        }
         return (
           <div className="relative">
             {isEditing && (
@@ -1193,88 +1204,35 @@ export function ChatApp({
               </div>
             )}
             <div className="max-h-[calc(100vh-11rem)] overflow-y-auto overscroll-y-contain border-t bg-white">
-              <div className="border-b bg-slate-50/90 px-4 py-4">
-                <div className="mx-auto max-w-3xl rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Processor follow-up</p>
-                  <h3 className="mt-1 text-sm font-semibold text-slate-900">
-                    {processorQuestionSet.processor} readiness checklist
-                  </h3>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">
-                    Mark each item instead of writing a long narrative. Add short notes only where the status needs context.
-                  </p>
-                </div>
-              </div>
               <div className="p-4">
-                <form
-                  className="mx-auto max-w-3xl space-y-5"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const formData = new FormData(e.currentTarget);
-                    const lines: string[] = [`Processor follow-up for ${processorQuestionSet.processor}`];
-
-                    processorQuestionSet.sections.forEach((section, sectionIndex) => {
-                      lines.push(`\n${section.title}:`);
-                      section.questions.forEach((question, questionIndex) => {
-                        const status = String(formData.get(`followUp-${sectionIndex}-${questionIndex}`) || '');
-                        const note = String(formData.get(`followUpNote-${sectionIndex}-${questionIndex}`) || '').trim();
-                        lines.push(`- ${question}: ${status}${note ? ` (${note})` : ''}`);
+                <div className="mx-auto max-w-3xl">
+                  <ProcessorFollowUpForm
+                    processor={processorFit}
+                    initialAnswers={initialAnswers}
+                    submitLabel="Build processor package"
+                    onSubmit={(answers) => {
+                      const lines: string[] = [`${spec.processor} processor-specific follow-up`];
+                      spec.sections.forEach((section) => {
+                        const sectionLines: string[] = [];
+                        section.fields.forEach((field) => {
+                          const val = (answers[field.id] || '').trim();
+                          if (val) sectionLines.push(`- ${field.label}: ${val}`);
+                        });
+                        if (sectionLines.length) {
+                          lines.push(`\n${section.title}:`);
+                          lines.push(...sectionLines);
+                        }
                       });
-                    });
-
-                    const generalNotes = String(formData.get('processorFollowUpGeneralNotes') || '').trim();
-                    if (generalNotes) {
-                      lines.push(`\nAdditional notes: ${generalNotes}`);
-                    }
-
-                    handleAnswer({ processorSpecificAnswers: lines.join('\n') }, 'Completed processor-specific checklist');
-                  }}
-                >
-                  {processorQuestionSet.sections.map((section, sectionIndex) => (
-                    <div key={section.title} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                      <h4 className="text-sm font-semibold text-slate-900">{section.title}</h4>
-                      <div className="mt-3 space-y-3">
-                        {section.questions.map((question, questionIndex) => (
-                          <div key={question} className="rounded-xl border border-slate-200 bg-white p-3">
-                            <label className="text-sm font-medium leading-5 text-slate-800">
-                              {question}
-                            </label>
-                            <div className="mt-2 grid gap-2 md:grid-cols-[220px_1fr]">
-                              <Select
-                                name={`followUp-${sectionIndex}-${questionIndex}`}
-                                required
-                                defaultValue=""
-                                className="bg-white"
-                              >
-                                <option value="">Choose status...</option>
-                                {PROCESSOR_FOLLOW_UP_STATUS_OPTIONS.map((option) => (
-                                  <option key={option.value} value={option.value}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </Select>
-                              <Input
-                                name={`followUpNote-${sectionIndex}-${questionIndex}`}
-                                placeholder="Optional short note"
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <label className="text-sm font-semibold text-slate-900">Optional overall note</label>
-                    <textarea
-                      name="processorFollowUpGeneralNotes"
-                      rows={3}
-                      className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                      placeholder="Only add anything unusual or blocker-level here."
-                    />
-                  </div>
-                  <div className="sticky bottom-0 -mx-4 flex justify-end border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
-                    <Button type="submit">Build Processor Package</Button>
-                  </div>
-                </form>
+                      handleAnswer(
+                        {
+                          processorSpecificAnswers: lines.join('\n'),
+                          processorSpecificAnswersJson: JSON.stringify(answers),
+                        },
+                        `Completed ${spec.processor} follow-up`
+                      );
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>

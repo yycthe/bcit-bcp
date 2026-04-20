@@ -1,4 +1,5 @@
 import { FileData } from '@/src/types';
+import { uploadFileToBlob } from '@/src/lib/blobUpload';
 
 type UploadNotice = {
   level: 'success' | 'warning';
@@ -10,6 +11,8 @@ type PreparedUpload = {
   compressed: boolean;
   notices: UploadNotice[];
 };
+
+const BLOB_UPLOAD_THRESHOLD_BYTES = 3_500_000;
 
 const IMAGE_AUTO_COMPRESS_THRESHOLD_BYTES = 1_500_000;
 const IMAGE_TARGET_MAX_BYTES = 1_200_000;
@@ -135,6 +138,26 @@ async function gzipBlob(blob: Blob): Promise<Blob | undefined> {
 export async function prepareFileForUpload(file: File): Promise<PreparedUpload> {
   const mimeType = inferMimeFromFileName(file.name, file.type);
   const notices: UploadNotice[] = [];
+
+  // For PDFs (any size) and large images, prefer Vercel Blob direct upload.
+  // Falls back to the in-browser data-URL path if Blob isn't configured (dev without token).
+  const shouldUseBlob =
+    mimeType === 'application/pdf' || (mimeType.startsWith('image/') && file.size > BLOB_UPLOAD_THRESHOLD_BYTES);
+  if (shouldUseBlob) {
+    try {
+      const uploaded = await uploadFileToBlob(file);
+      notices.push({
+        level: 'success',
+        message: `${file.name} uploaded to secure storage (${formatBytes(file.size)}).`,
+      });
+      return { fileData: uploaded.fileData, compressed: false, notices };
+    } catch (err) {
+      notices.push({
+        level: 'warning',
+        message: `Blob upload failed for ${file.name}: ${err instanceof Error ? err.message : 'unknown error'}. Falling back to inline storage.`,
+      });
+    }
+  }
 
   if (mimeType.startsWith('image/') && file.size > IMAGE_AUTO_COMPRESS_THRESHOLD_BYTES) {
     try {

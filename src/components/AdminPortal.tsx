@@ -4,13 +4,14 @@ import { getMerchantDocumentChecklist, buildDefaultDocumentReminder } from '@/sr
 import { runLocalVerificationCheck, type VerificationCheckResult, type VerificationIssue } from '@/src/lib/localVerification';
 import { buildPersonaSummary } from '@/src/lib/onboardingWorkflow';
 import { getFallbackUnderwriting, type UnderwritingDisplayResult } from '@/src/lib/underwritingFallback';
+import { requestAiReview, type AiReviewResult } from '@/src/lib/aiReview';
 import {
   RULE_BASED_MASTER_PROMPT,
   RULE_BASED_PORTAL_RULES,
   RULE_BASED_WORKFLOW_STEPS,
 } from '@/src/lib/ruleBasedWorkflow';
 import { FormattedSummary } from '@/src/components/ui/formatted-summary';
-import { ShieldCheck, LayoutDashboard, Clock, CheckCircle2, FileWarning, Send, Trash2, Building, Activity, AlertCircle, Globe, FileText, FileSearch, ShieldAlert, RefreshCcw } from 'lucide-react';
+import { ShieldCheck, LayoutDashboard, Clock, CheckCircle2, FileWarning, Send, Trash2, Building, Activity, AlertCircle, Globe, FileText, FileSearch, ShieldAlert, RefreshCcw, Sparkles, ThumbsUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/src/components/ui/card';
 import { Badge } from '@/src/components/ui/badge';
 import { Button } from '@/src/components/ui/button';
@@ -49,6 +50,9 @@ export function AdminPortal({
   const [personaKybStatus, setPersonaKybStatus] = useState(merchantData.personaKybStatus || '');
   const [personaKycStatuses, setPersonaKycStatuses] = useState(merchantData.personaKycStatuses || '');
   const [personaVerificationIssues, setPersonaVerificationIssues] = useState(merchantData.personaVerificationIssues || '');
+  const [aiReview, setAiReview] = useState<AiReviewResult | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const merchantName = merchantData.legalName || merchantData.ownerName || 'Unknown Merchant';
   const docChecklist = getMerchantDocumentChecklist(merchantData);
@@ -102,6 +106,31 @@ export function AdminPortal({
     toast.success('Rule-based review complete', {
       description: `Review score: ${result.riskScore}/100 — ${result.riskCategory}`,
     });
+  };
+
+  const runAiReview = async () => {
+    setAiLoading(true);
+    setAiError(null);
+    const toastId = toast.loading('AI reviewing application...');
+    try {
+      let rule = underwritingResult;
+      if (!rule) {
+        rule = getFallbackUnderwriting(merchantData);
+        setUnderwritingResult(rule);
+      }
+      const result = await requestAiReview(merchantData, rule, documents);
+      setAiReview(result);
+      toast.success('AI review complete', {
+        id: toastId,
+        description: `${result.riskCategory} risk — ${result.recommendedProcessor} (${Math.round(result.confidence * 100)}% confidence)`,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setAiError(msg);
+      toast.error('AI review failed', { id: toastId, description: msg });
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const savePersonaResults = () => {
@@ -539,17 +568,157 @@ export function AdminPortal({
                 <h1 className="text-2xl font-bold text-slate-900">Verification & Routing Report</h1>
                 <p className="text-slate-500">Rule-based review of readiness, verification status, and processor routing.</p>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={runRuleBasedUnderwriting}
-              >
-                <RefreshCcw className="w-4 h-4" />
-                {underwritingResult ? 'Re-run Review' : 'Run Review'}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={runRuleBasedUnderwriting}
+                >
+                  <RefreshCcw className="w-4 h-4" />
+                  {underwritingResult ? 'Re-run Rule Review' : 'Run Rule Review'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-2 bg-violet-600 hover:bg-violet-700"
+                  disabled={aiLoading}
+                  onClick={runAiReview}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  {aiLoading ? 'AI reviewing...' : aiReview ? 'Re-run AI Review' : 'Run AI Review'}
+                </Button>
+              </div>
             </div>
+
+            {aiReview && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <Card className="border-violet-300 bg-gradient-to-br from-violet-50 to-white shadow-md">
+                  <CardHeader className="pb-3 border-b border-violet-200">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base flex items-center gap-2 text-violet-900">
+                        <Sparkles className="w-5 h-5 text-violet-600" />
+                        AI Review (Gemini)
+                      </CardTitle>
+                      <div className="flex gap-2">
+                        <Badge className="bg-violet-100 text-violet-900 hover:bg-violet-100">
+                          {aiReview.riskCategory} · {aiReview.riskScore}/100
+                        </Badge>
+                        <Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100">
+                          {Math.round(aiReview.confidence * 100)}% confidence
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-6 space-y-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="rounded-lg bg-white border border-violet-100 p-3">
+                        <p className="text-xs font-semibold uppercase text-violet-700 mb-1">Recommended processor</p>
+                        <p className="text-xl font-bold text-slate-900">{aiReview.recommendedProcessor}</p>
+                        {underwritingResult && aiReview.recommendedProcessor !== underwritingResult.recommendedProcessor && (
+                          <p className="text-xs text-amber-700 mt-1">
+                            Differs from rule engine ({underwritingResult.recommendedProcessor})
+                          </p>
+                        )}
+                      </div>
+                      <div className="rounded-lg bg-white border border-violet-100 p-3">
+                        <p className="text-xs font-semibold uppercase text-violet-700 mb-1">Recommended action</p>
+                        <p className="text-xl font-bold text-slate-900 capitalize">
+                          {aiReview.recommendedAction.replace(/_/g, ' ')}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs font-semibold uppercase text-red-700 mb-2 flex items-center gap-1">
+                          <ShieldAlert className="w-3.5 h-3.5" /> Red flags
+                        </p>
+                        {aiReview.redFlags.length > 0 ? (
+                          <ul className="space-y-1.5">
+                            {aiReview.redFlags.map((flag, idx) => (
+                              <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
+                                <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-500" />
+                                <span>{flag}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-sm text-slate-500 italic">No red flags identified.</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase text-emerald-700 mb-2 flex items-center gap-1">
+                          <ThumbsUp className="w-3.5 h-3.5" /> Strengths
+                        </p>
+                        {aiReview.strengths.length > 0 ? (
+                          <ul className="space-y-1.5">
+                            {aiReview.strengths.map((s, idx) => (
+                              <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
+                                <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-emerald-500" />
+                                <span>{s}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-sm text-slate-500 italic">No strengths identified.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {aiReview.docConsistencyNotes.length > 0 && (
+                      <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
+                        <p className="text-xs font-semibold uppercase text-amber-800 mb-2 flex items-center gap-1">
+                          <FileSearch className="w-3.5 h-3.5" /> Document consistency notes
+                        </p>
+                        <ul className="space-y-1">
+                          {aiReview.docConsistencyNotes.map((note, idx) => (
+                            <li key={idx} className="text-sm text-amber-900">• {note}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                      <p className="text-xs font-semibold uppercase text-slate-600 mb-2">Admin notes</p>
+                      <p className="text-sm text-slate-800 leading-relaxed">{aiReview.adminNotes}</p>
+                    </div>
+
+                    <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <p className="text-xs font-semibold uppercase text-blue-800 mb-2">Merchant-facing message</p>
+                          <p className="text-sm text-blue-900 italic">"{aiReview.merchantMessage}"</p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="shrink-0"
+                          onClick={() => {
+                            setMerchantNoticeFromAdmin(aiReview.merchantMessage);
+                            toast.success('Posted AI-drafted message to merchant');
+                          }}
+                        >
+                          <Send className="w-3.5 h-3.5 mr-1" /> Send to merchant
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {aiError && !aiReview && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                <p className="font-semibold mb-1">AI review unavailable</p>
+                <p>{aiError}</p>
+                <p className="text-xs mt-2 text-red-600">
+                  Check that <code>GOOGLE_API_KEY</code> is set in Vercel environment variables. Rule-based review still works below.
+                </p>
+              </div>
+            )}
 
             {!underwritingResult ? (
               <div className="flex flex-col items-center justify-center h-64 text-center">
