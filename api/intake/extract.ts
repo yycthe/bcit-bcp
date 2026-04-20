@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import { GEMINI_MODEL_FLASH, isGeminiQuotaError, resolveExtractModel } from '../geminiModel';
 
 export const config = { runtime: 'nodejs', maxDuration: 60 };
 
@@ -21,6 +22,35 @@ const RESPONSE_SCHEMA = {
 function json(res: any, status: number, body: unknown) {
   res.status(status).setHeader('Content-Type', 'application/json');
   res.send(JSON.stringify(body));
+}
+
+type ExtractUserPart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } };
+
+async function runSlotExtract(
+  ai: GoogleGenAI,
+  model: string,
+  parts: ExtractUserPart[]
+): Promise<{ extracted?: Record<string, unknown>; confidence?: number; notes?: string }> {
+  const response = await ai.models.generateContent({
+    model,
+    contents: [{ role: 'user', parts }],
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: RESPONSE_SCHEMA,
+      temperature: 0.1,
+    },
+  });
+  const text = response.text;
+  if (!text) {
+    throw new Error('Empty response from Gemini');
+  }
+  try {
+    return JSON.parse(text) as { extracted?: Record<string, unknown>; confidence?: number; notes?: string };
+  } catch {
+    throw new Error('Invalid JSON from model');
+  }
 }
 
 function allowedKeysForSlot(slot: string): Set<string> {
@@ -111,41 +141,22 @@ Use ISO-like dates where applicable. Never invent values — omit a key if unrea
 If you see full bank account numbers, mask to last 4 digits in extracted.accountNumber.
 Known merchant context (may be empty): ${JSON.stringify(body.knownContext ?? {})}`;
 
+    const parts: ExtractUserPart[] = [
+      { text: `${sys}\n\nFilename context: extraction for slot "${slot}".` },
+      { inlineData: { mimeType, data: b64 } },
+      { text: 'Return JSON per schema with extracted fields.' },
+    ];
+    const primaryModel = resolveExtractModel();
     const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-pro',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: `${sys}\n\nFilename context: extraction for slot "${slot}".` },
-            {
-              inlineData: {
-                mimeType,
-                data: b64,
-              },
-            },
-            { text: 'Return JSON per schema with extracted fields.' },
-          ],
-        },
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: RESPONSE_SCHEMA,
-        temperature: 0.1,
-      },
-    });
-
-    const text = response.text;
-    if (!text) {
-      return json(res, 502, { error: 'Empty response from Gemini' });
-    }
-
     let parsed: { extracted?: Record<string, unknown>; confidence?: number; notes?: string };
     try {
-      parsed = JSON.parse(text);
-    } catch {
-      return json(res, 502, { error: 'Invalid JSON from model' });
+      parsed = await runSlotExtract(ai, primaryModel, parts);
+    } catch (firstErr) {
+      if (primaryModel !== GEMINI_MODEL_FLASH && isGeminiQuotaError(firstErr)) {
+        parsed = await runSlotExtract(ai, GEMINI_MODEL_FLASH, parts);
+      } else {
+        throw firstErr;
+      }
     }
 
     const extracted = sanitizeExtracted(slot, parsed.extracted || {});

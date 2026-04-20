@@ -946,7 +946,7 @@ function AiVerdict({
       <Section
         icon={Sparkles}
         title="AI reviewing application"
-        description="Gemini 2.5 Pro is reading intake fields, attached PDFs/images, and your policy rules."
+        description="Gemini is reading intake fields, attached PDFs/images, and your policy rules."
       >
         <div className="space-y-3">
           <div className="h-3 w-full animate-pulse rounded-full bg-surface-subtle" />
@@ -987,7 +987,7 @@ function AiVerdict({
       <Section
         icon={Sparkles}
         title="AI verdict"
-        description="Powered by Gemini 2.5 Pro — recommendation from documents, intake answers, and onboarding policy."
+        description="Powered by Gemini — recommendation from documents, intake answers, and onboarding policy."
         actions={
           <span className="text-[10px] font-medium uppercase tracking-wider text-foreground-subtle">
             Multimodal review

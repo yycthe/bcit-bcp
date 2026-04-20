@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import { GEMINI_MODEL_FLASH, isGeminiQuotaError, resolveReviewModel } from './geminiModel';
 
 export const config = { runtime: 'nodejs', maxDuration: 60 };
 
@@ -154,6 +155,38 @@ function json(res: any, status: number, body: unknown) {
   res.send(JSON.stringify(body));
 }
 
+async function runStructuredReview(
+  ai: GoogleGenAI,
+  model: string,
+  userParts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }>
+): Promise<ReviewResponse> {
+  const response = await ai.models.generateContent({
+    model,
+    contents: [
+      {
+        role: 'user',
+        parts: userParts,
+      },
+    ],
+    config: {
+      systemInstruction: SYSTEM_INSTRUCTION,
+      responseMimeType: 'application/json',
+      responseSchema: RESPONSE_SCHEMA,
+      temperature: 0.2,
+    },
+  });
+
+  const text = response.text;
+  if (!text) {
+    throw new Error('Empty response from Gemini');
+  }
+  try {
+    return JSON.parse(text) as ReviewResponse;
+  } catch {
+    throw new Error(`Gemini returned non-JSON output: ${text.slice(0, 200)}`);
+  }
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return json(res, 405, { error: 'Method not allowed' });
@@ -182,34 +215,20 @@ export default async function handler(req: any, res: any) {
     skipped.length ? `\n- skipped_reasons: ${skipped.join('; ')}` : ''
   }\n\nProduce your independent review now as JSON per schema.`;
 
+  const userParts = [{ text: headerText }, ...docParts, { text: footerText }];
+  const primaryModel = resolveReviewModel();
+
   try {
     const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-pro',
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: headerText }, ...docParts, { text: footerText }],
-        },
-      ],
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: 'application/json',
-        responseSchema: RESPONSE_SCHEMA,
-        temperature: 0.2,
-      },
-    });
-
-    const text = response.text;
-    if (!text) {
-      return json(res, 502, { error: 'Empty response from Gemini' });
-    }
-
     let parsed: ReviewResponse;
     try {
-      parsed = JSON.parse(text);
-    } catch {
-      return json(res, 502, { error: 'Gemini returned non-JSON output', raw: text });
+      parsed = await runStructuredReview(ai, primaryModel, userParts);
+    } catch (firstErr) {
+      if (primaryModel !== GEMINI_MODEL_FLASH && isGeminiQuotaError(firstErr)) {
+        parsed = await runStructuredReview(ai, GEMINI_MODEL_FLASH, userParts);
+      } else {
+        throw firstErr;
+      }
     }
 
     return json(res, 200, parsed);
