@@ -47,7 +47,7 @@ export function FormattedSummary({
 
   if (!items.length) {
     return (
-      <div className="rounded-xl border border-dashed border-slate-200 bg-white/70 px-4 py-5 text-sm italic text-slate-500">
+      <div className="rounded-xl border border-dashed border-border bg-surface-muted px-4 py-4 text-sm italic text-foreground-subtle">
         {emptyText}
       </div>
     );
@@ -56,22 +56,19 @@ export function FormattedSummary({
   const palette =
     tone === 'blue'
       ? {
-          wrapper: 'space-y-3',
-          item: 'rounded-xl border border-blue-200/70 bg-white/80 px-4 py-3 shadow-sm shadow-blue-100/40',
-          label:
-            'mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-700',
-          text: 'text-sm leading-6 text-slate-800',
+          item: 'rounded-xl border border-accent/15 bg-accent-soft/60 px-4 py-3 shadow-xs',
+          label: 'mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-info-foreground',
+          text: 'text-sm leading-6 text-foreground',
         }
       : {
-          wrapper: 'space-y-3',
-          item: 'rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm',
+          item: 'rounded-xl border border-border bg-surface px-4 py-3 shadow-xs',
           label:
-            'mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500',
-          text: 'text-sm leading-6 text-slate-700',
+            'mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground-subtle',
+          text: 'text-sm leading-6 text-foreground',
         };
 
   return (
-    <div className={palette.wrapper}>
+    <div className="space-y-2.5">
       {items.map((item, index) => (
         <div key={`${item.label ?? 'item'}-${index}`} className={palette.item}>
           {item.label ? <p className={palette.label}>{item.label}</p> : null}

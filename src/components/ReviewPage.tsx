@@ -1,11 +1,29 @@
 import React from 'react';
 import { MerchantData, FileData } from '@/src/types';
 import { getMerchantDocumentChecklist } from '@/src/lib/documentChecklist';
-import { Card, CardContent, CardHeader, CardTitle } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
+import { Banner } from '@/src/components/ui/banner';
+import { Section } from '@/src/components/ui/section';
+import { PageHeader } from '@/src/components/ui/page-header';
 import { Badge } from '@/src/components/ui/badge';
 import type { MerchantView } from './MerchantPortal';
-import { CheckCircle2, AlertCircle, Edit2, Eye, FileWarning } from 'lucide-react';
+import {
+  CheckCircle2,
+  AlertCircle,
+  Edit2,
+  Eye,
+  ArrowRight,
+  Building2,
+  Globe2,
+  Users,
+  FileText,
+  Phone,
+  TrendingUp,
+  ShoppingBag,
+  History,
+  ShieldCheck,
+  ClipboardList,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 async function openUploadedFileInNewTab(doc: FileData) {
@@ -49,226 +67,354 @@ interface Props {
   onSubmit: () => void;
 }
 
-export function ReviewPage({ data, documents, setCurrentView, onEdit, onSubmit }: Props) {
+type FieldRow = { label: string; value?: string | null };
+
+function FieldGrid({ rows }: { rows: FieldRow[] }) {
+  const visible = rows.filter((r) => r.value);
+  if (visible.length === 0) {
+    return (
+      <p className="text-sm italic text-foreground-subtle">No information provided yet.</p>
+    );
+  }
+  return (
+    <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+      {visible.map((r, i) => (
+        <div key={`${r.label}-${i}`} className="grid grid-cols-[120px_1fr] items-baseline gap-3 border-b border-border/60 pb-2 last:border-0 last:pb-0">
+          <dt className="text-[11px] font-semibold uppercase tracking-wider text-foreground-subtle">
+            {r.label}
+          </dt>
+          <dd className="text-sm font-medium text-foreground break-words">{r.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+export function ReviewPage({ data, documents, onEdit, onSubmit }: Props) {
   const isComplete = (data.legalName || data.ownerName) && data.monthlyVolume && data.industry;
   const docChecklist = getMerchantDocumentChecklist(data);
   const missingDocs = docChecklist.filter((d) => !d.present);
+  const presentDocs = docChecklist.length - missingDocs.length;
 
-  const renderSection = (title: string, sectionId: string, fields: { label: string, value: string | undefined | null }[]) => {
-    const visibleFields = fields.filter(f => f.value);
-    if (visibleFields.length === 0) return null;
-    return (
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle className="text-lg">{title}</CardTitle>
-          <Button variant="ghost" size="sm" onClick={() => onEdit(sectionId)}><Edit2 className="w-4 h-4" /></Button>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          {visibleFields.map((f, i) => (
-            <div key={i} className={`flex justify-between ${i !== visibleFields.length - 1 ? 'border-b pb-2' : ''}`}>
-              <span className="text-slate-500">{f.label}</span> 
-              <span className="font-medium text-right max-w-[60%] break-words">{f.value}</span>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-    );
-  };
+  const editAction = (section: string) => (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      onClick={() => onEdit(section)}
+      aria-label={`Edit ${section}`}
+    >
+      <Edit2 className="h-3.5 w-3.5" />
+      Edit
+    </Button>
+  );
 
   return (
-    <div className="p-8 max-w-4xl mx-auto overflow-y-auto h-full space-y-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Review Application</h1>
-          <p className="text-slate-500">Please review your information before submitting for rule-based verification and routing.</p>
+    <div className="flex h-full flex-col">
+      {/* Sticky summary header */}
+      <div className="sticky top-0 z-10 border-b border-border bg-surface/85 px-6 py-4 backdrop-blur-md sm:px-10">
+        <div className="mx-auto flex max-w-5xl flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0 space-y-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground-subtle">
+              Step 2 — Review application
+            </p>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[26px]">
+              {data.legalName || data.ownerName || 'Untitled merchant'}
+            </h1>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-foreground-muted">
+              <Badge variant="outline" className="capitalize">
+                {data.industry?.replace('_', ' ') || '—'}
+              </Badge>
+              {data.country && <Badge variant="outline">{data.country}</Badge>}
+              {data.monthlyVolume && (
+                <Badge variant="outline">{data.monthlyVolume} / mo</Badge>
+              )}
+              <Badge variant={presentDocs === docChecklist.length ? 'success' : 'warning'}>
+                Documents {presentDocs}/{docChecklist.length}
+              </Badge>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => onEdit('legalBusinessForm')}>
+              <Edit2 className="h-3.5 w-3.5" />
+              Continue editing
+            </Button>
+            <Button variant="brand" onClick={onSubmit} disabled={!isComplete}>
+              Submit for review
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
-        <Button 
-          onClick={onSubmit} 
-          disabled={!isComplete}
-          className="bg-blue-600 hover:bg-blue-700 text-white"
-        >
-          Submit for Review
-        </Button>
       </div>
 
-      {!isComplete && (
-        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 rounded-lg flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-yellow-600" />
-          <div>
-            <h4 className="font-semibold">Incomplete Application</h4>
-            <p className="text-sm mt-1">Please complete all required fields in the Intake Assistant before submitting.</p>
-          </div>
-        </div>
-      )}
-
-      {missingDocs.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-950 p-4 rounded-lg flex items-start gap-3">
-          <FileWarning className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
-          <div className="flex-1 min-w-0">
-            <h4 className="font-semibold text-amber-900">Document slots not filled (demo)</h4>
-            <p className="text-sm mt-1 text-amber-800/90">
-              You can still submit; Admin may request uploads. Missing for your profile:
-            </p>
-            <ul className="mt-2 flex flex-wrap gap-2">
-              {missingDocs.map((d) => (
-                <li key={d.key}>
-                  <Badge variant="outline" className="border-amber-300 bg-white/80 text-amber-900">
-                    {d.label}
-                  </Badge>
-                </li>
-              ))}
-            </ul>
-            <Button type="button" variant="link" className="h-auto p-0 mt-2 text-amber-800" onClick={() => onEdit('idUpload')}>
-              Add documents in Intake →
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-lg">Business Basics</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => onEdit('legalBusinessForm')}><Edit2 className="w-4 h-4" /></Button>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Type</span> <span className="font-medium capitalize">{data.businessType?.replace('_', ' ')}</span></div>
-            {data.legalName && <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Legal Name</span> <span className="font-medium">{data.legalName}</span></div>}
-            {data.businessRegistrationNumber && <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Registration</span> <span className="font-medium">{data.businessRegistrationNumber}</span></div>}
-            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Website</span> <span className="font-medium">{data.website}</span></div>
-            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Established</span> <span className="font-medium">{data.establishedDate || data.timeInBusiness}</span></div>
-            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Legal Email</span> <span className="font-medium">{data.legalBusinessEmail || data.generalEmail}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Business Category</span> <span className="font-medium">{data.businessCategory}</span></div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-lg">Geography & Industry</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => onEdit('country')}><Edit2 className="w-4 h-4" /></Button>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Country</span> <span className="font-medium">{data.country}</span></div>
-            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Industry</span> <span className="font-medium capitalize">{data.industry.replace('_', ' ')}</span></div>
-            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Monthly Volume</span> <span className="font-medium">{data.monthlyVolume}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Transactions</span> <span className="font-medium">{data.monthlyTransactions}</span></div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-lg">Owner Identity</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => onEdit('ownershipControlForm')}><Edit2 className="w-4 h-4" /></Button>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Owners</span> <span className="font-medium">{data.beneficialOwners || data.ownerName}</span></div>
-            <div className="flex justify-between border-b pb-2"><span className="text-slate-500">Signer</span> <span className="font-medium">{data.authorizedSignerName || data.ownerName}</span></div>
-            <div className="flex justify-between items-center">
-              <span className="text-slate-500">ID Uploaded</span> 
-              {data.idUpload ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <AlertCircle className="w-4 h-4 text-yellow-500" />}
-            </div>
-          </CardContent>
-        </Card>
-
-        {renderSection('Contact & Address', 'contactAddressForm', [
-          { label: 'General Email', value: data.generalEmail },
-          { label: 'Phone', value: data.phone },
-          { label: 'Registered Address', value: data.registeredAddress },
-          { label: 'Operating Address', value: data.operatingAddress },
-          { label: 'City', value: data.city },
-          { label: 'Province', value: data.province },
-        ])}
-
-        {renderSection('Business Model', 'businessModelForm', [
-          { label: 'Products / Services', value: data.productsServices },
-          { label: 'Business Description', value: data.businessDescription },
-          { label: 'Customer Type', value: data.customerType },
-          { label: 'Advance Payment', value: data.advancePayment },
-          { label: 'Recurring Billing', value: data.recurringBilling },
-          { label: 'Fulfillment Timeline', value: data.fulfillmentTimeline },
-        ])}
-
-        {renderSection('Sales Profile', 'salesProfileForm', [
-          { label: 'Avg Ticket Size', value: data.avgTicketSize },
-          { label: 'Highest Ticket', value: data.highestTicketAmount },
-          { label: 'Channel Split', value: data.transactionChannelSplit },
-          { label: 'Recurring %', value: data.recurringTransactionsPercent },
-          { label: 'Foreign Cards %', value: data.foreignCardsPercent },
-          { label: 'Processing Currencies', value: data.processingCurrencies },
-        ])}
-
-        {renderSection('Processing History', 'processingHistoryForm', [
-          { label: 'Currently Processes Cards', value: data.currentlyProcessesCards },
-          { label: 'Current / Previous Processor', value: data.currentOrPreviousProcessor },
-          { label: 'Exit Reason', value: data.processorExitReason },
-          { label: 'Prior Termination', value: data.priorTermination },
-          { label: 'Bankruptcy', value: data.bankruptcyHistory },
-          { label: 'Risk Program History', value: data.riskProgramHistory },
-        ])}
-
-        {renderSection('Website / PCI Basics', 'websiteComplianceForm', [
-          { label: 'Privacy Policy', value: data.websitePrivacyPolicy },
-          { label: 'Terms', value: data.websiteTerms },
-          { label: 'Refund Policy', value: data.websiteRefundPolicy },
-          { label: 'Shipping Policy', value: data.websiteShippingPolicy },
-          { label: 'Contact Info', value: data.websiteContactInfo },
-          { label: 'Currency Display', value: data.websiteCurrencyDisplay },
-          { label: 'SSL', value: data.websiteSsl },
-          { label: 'Stores Cards', value: data.storesCardNumbers },
-        ])}
-
-        {renderSection('Document Readiness', 'documentReadinessForm', [
-          { label: 'Registration / Articles', value: data.canProvideRegistration },
-          { label: 'Void Cheque / Bank Letter', value: data.canProvideVoidCheque },
-          { label: 'Bank Statements', value: data.canProvideBankStatements },
-          { label: 'Proof of Ownership', value: data.canProvideProofOfOwnership },
-          { label: 'Owner IDs', value: data.canProvideOwnerIds },
-          { label: 'Processing Statements', value: data.canProvideProcessingStatements },
-        ])}
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-lg">Uploaded Documents</CardTitle>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              title="Edit document uploads in Intake Assistant"
-              aria-label="Edit document uploads in Intake Assistant"
-              onClick={() => onEdit('idUpload')}
+      {/* Scrollable body */}
+      <div className="flex-1 overflow-y-auto px-6 py-8 sm:px-10">
+        <div className="mx-auto max-w-5xl space-y-6">
+          {!isComplete && (
+            <Banner
+              intent="warning"
+              title="Incomplete application"
+              description="Please complete all required fields in the intake assistant before submitting."
+            />
+          )}
+          {missingDocs.length > 0 && (
+            <Banner
+              intent="info"
+              title={`${missingDocs.length} document slot${missingDocs.length === 1 ? '' : 's'} still empty`}
+              description="You can submit now — Admin may request the remaining uploads later. Required for your profile:"
+              actions={
+                <Button
+                  variant="link"
+                  size="sm"
+                  onClick={() => onEdit('idUpload')}
+                  className="text-info-foreground"
+                >
+                  Add documents in Intake →
+                </Button>
+              }
             >
-              <Edit2 className="w-4 h-4" />
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {missingDocs.map((d) => (
+                  <li key={d.key}>
+                    <Badge variant="info">{d.label}</Badge>
+                  </li>
+                ))}
+              </ul>
+            </Banner>
+          )}
+
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <Section
+              title="Business basics"
+              icon={Building2}
+              actions={editAction('legalBusinessForm')}
+            >
+              <FieldGrid
+                rows={[
+                  { label: 'Type', value: data.businessType?.replace('_', ' ') },
+                  { label: 'Legal name', value: data.legalName },
+                  { label: 'Registration', value: data.businessRegistrationNumber },
+                  { label: 'Website', value: data.website },
+                  { label: 'Established', value: data.establishedDate || data.timeInBusiness },
+                  { label: 'Legal email', value: data.legalBusinessEmail || data.generalEmail },
+                  { label: 'Category', value: data.businessCategory },
+                ]}
+              />
+            </Section>
+
+            <Section
+              title="Geography & industry"
+              icon={Globe2}
+              actions={editAction('country')}
+            >
+              <FieldGrid
+                rows={[
+                  { label: 'Country', value: data.country },
+                  { label: 'Industry', value: data.industry?.replace('_', ' ') },
+                  { label: 'Monthly volume', value: data.monthlyVolume },
+                  { label: 'Transactions', value: data.monthlyTransactions },
+                ]}
+              />
+            </Section>
+
+            <Section
+              title="Owner identity"
+              icon={Users}
+              actions={editAction('ownershipControlForm')}
+            >
+              <FieldGrid
+                rows={[
+                  { label: 'Owners', value: data.beneficialOwners || data.ownerName },
+                  { label: 'Signer', value: data.authorizedSignerName || data.ownerName },
+                ]}
+              />
+              <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-surface-subtle px-3 py-2">
+                <span className="text-xs font-medium text-foreground">ID uploaded</span>
+                {data.idUpload ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-success">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    On file
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-warning-foreground">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    Not yet
+                  </span>
+                )}
+              </div>
+            </Section>
+
+            <Section
+              title="Contact & address"
+              icon={Phone}
+              actions={editAction('contactAddressForm')}
+            >
+              <FieldGrid
+                rows={[
+                  { label: 'General email', value: data.generalEmail },
+                  { label: 'Phone', value: data.phone },
+                  { label: 'Registered', value: data.registeredAddress },
+                  { label: 'Operating', value: data.operatingAddress },
+                  { label: 'City', value: data.city },
+                  { label: 'Province', value: data.province },
+                ]}
+              />
+            </Section>
+
+            <Section
+              title="Business model"
+              icon={ShoppingBag}
+              actions={editAction('businessModelForm')}
+            >
+              <FieldGrid
+                rows={[
+                  { label: 'Products / services', value: data.productsServices },
+                  { label: 'Description', value: data.businessDescription },
+                  { label: 'Customer type', value: data.customerType },
+                  { label: 'Advance payment', value: data.advancePayment },
+                  { label: 'Recurring', value: data.recurringBilling },
+                  { label: 'Fulfillment', value: data.fulfillmentTimeline },
+                ]}
+              />
+            </Section>
+
+            <Section
+              title="Sales profile"
+              icon={TrendingUp}
+              actions={editAction('salesProfileForm')}
+            >
+              <FieldGrid
+                rows={[
+                  { label: 'Avg ticket', value: data.avgTicketSize },
+                  { label: 'Highest ticket', value: data.highestTicketAmount },
+                  { label: 'Channel split', value: data.transactionChannelSplit },
+                  { label: 'Recurring %', value: data.recurringTransactionsPercent },
+                  { label: 'Foreign cards %', value: data.foreignCardsPercent },
+                  { label: 'Currencies', value: data.processingCurrencies },
+                ]}
+              />
+            </Section>
+
+            <Section
+              title="Processing history"
+              icon={History}
+              actions={editAction('processingHistoryForm')}
+            >
+              <FieldGrid
+                rows={[
+                  { label: 'Currently processes', value: data.currentlyProcessesCards },
+                  { label: 'Prior processor', value: data.currentOrPreviousProcessor },
+                  { label: 'Exit reason', value: data.processorExitReason },
+                  { label: 'Termination', value: data.priorTermination },
+                  { label: 'Bankruptcy', value: data.bankruptcyHistory },
+                  { label: 'Risk programs', value: data.riskProgramHistory },
+                ]}
+              />
+            </Section>
+
+            <Section
+              title="Website / PCI basics"
+              icon={ShieldCheck}
+              actions={editAction('websiteComplianceForm')}
+            >
+              <FieldGrid
+                rows={[
+                  { label: 'Privacy', value: data.websitePrivacyPolicy },
+                  { label: 'Terms', value: data.websiteTerms },
+                  { label: 'Refund', value: data.websiteRefundPolicy },
+                  { label: 'Shipping', value: data.websiteShippingPolicy },
+                  { label: 'Contact', value: data.websiteContactInfo },
+                  { label: 'Currency', value: data.websiteCurrencyDisplay },
+                  { label: 'SSL', value: data.websiteSsl },
+                  { label: 'Stores cards', value: data.storesCardNumbers },
+                ]}
+              />
+            </Section>
+
+            <Section
+              title="Document readiness"
+              icon={ClipboardList}
+              actions={editAction('documentReadinessForm')}
+            >
+              <FieldGrid
+                rows={[
+                  { label: 'Registration', value: data.canProvideRegistration },
+                  { label: 'Void cheque', value: data.canProvideVoidCheque },
+                  { label: 'Bank stmts', value: data.canProvideBankStatements },
+                  { label: 'Ownership', value: data.canProvideProofOfOwnership },
+                  { label: 'Owner IDs', value: data.canProvideOwnerIds },
+                  { label: 'Processing stmts', value: data.canProvideProcessingStatements },
+                ]}
+              />
+            </Section>
+
+            <Section
+              title="Uploaded documents"
+              icon={FileText}
+              className="lg:col-span-2"
+              actions={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onEdit('idUpload')}
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                  Manage
+                </Button>
+              }
+            >
+              {documents.length === 0 ? (
+                <p className="text-sm italic text-foreground-subtle">No documents uploaded yet.</p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {documents.map((doc) => (
+                    <li key={doc.id} className="flex items-center justify-between gap-3 py-2.5">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="h-4 w-4 shrink-0 text-foreground-subtle" />
+                        <span className="truncate text-sm text-foreground">{doc.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge variant="neutral" className="capitalize">
+                          {doc.documentType?.replace(/([A-Z])/g, ' $1').trim() || 'document'}
+                        </Badge>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void openUploadedFileInNewTab(doc)}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          View
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
+          </div>
+        </div>
+      </div>
+
+      {/* Sticky footer CTA */}
+      <div className="sticky bottom-0 border-t border-border bg-surface/95 px-6 py-3 backdrop-blur-md sm:px-10">
+        <div className="mx-auto flex max-w-5xl flex-col items-stretch justify-between gap-2 sm:flex-row sm:items-center">
+          <p className="text-xs text-foreground-muted">
+            {isComplete
+              ? 'Looks good. Submit to start verification & rule-based routing.'
+              : 'Fill in the missing required answers to enable submit.'}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => onEdit('legalBusinessForm')}>
+              Back to intake
             </Button>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {documents.length === 0 ? (
-              <p className="text-slate-500 italic">No documents uploaded.</p>
-            ) : (
-              documents.map(doc => (
-                <div key={doc.id} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0">
-                  <span className="truncate min-w-0 text-slate-700">{doc.name}</span>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-600 capitalize max-w-[100px] truncate">
-                      {doc.documentType?.replace(/([A-Z])/g, ' $1').trim()}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1"
-                      onClick={() => {
-                        void openUploadedFileInNewTab(doc);
-                      }}
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      View
-                    </Button>
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
+            <Button variant="brand" onClick={onSubmit} disabled={!isComplete}>
+              Submit for review
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

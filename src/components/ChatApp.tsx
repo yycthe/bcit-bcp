@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Upload, CheckCircle2, FileText, ShieldCheck, AlertCircle, Building, Zap, Globe, RefreshCcw, Activity, Building2 } from 'lucide-react';
+import { Send, Upload, CheckCircle2, FileText, ShieldCheck, AlertCircle, Building, Zap, Globe, RefreshCcw, Activity, Building2, Lightbulb, X, ArrowRight, Bot, User } from 'lucide-react';
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import { Select } from '@/src/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/src/components/ui/card';
 import { Badge } from '@/src/components/ui/badge';
+import { cn } from '@/src/lib/utils';
 import { toast } from 'sonner';
 import { MerchantData, FileData } from '@/src/types';
 import { runLocalVerificationCheck } from '@/src/lib/localVerification';
@@ -1083,6 +1084,62 @@ export function ChatApp({
     finishFlow(data);
   };
 
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleUploadFile = async (file: File) => {
+    try {
+      const prepared = await prepareFileForUpload(file);
+      prepared.notices.forEach((notice) => {
+        if (notice.level === 'warning') toast.warning(notice.message);
+        else toast.success(notice.message);
+      });
+      setDocuments((prev) => [...prev, prepared.fileData]);
+      handleAnswer(prepared.fileData, `Uploaded: ${prepared.fileData.name}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `Failed to prepare ${file.name}`;
+      toast.error(message);
+    }
+  };
+
+  const InputShell = ({
+    children,
+    leftHint,
+    secondary,
+  }: {
+    children: React.ReactNode;
+    leftHint?: React.ReactNode;
+    secondary?: React.ReactNode;
+  }) => (
+    <div className="shrink-0 border-t border-border bg-surface/95 backdrop-blur-md">
+      {isEditing && (
+        <div className="border-b border-border bg-warning-soft/60 px-4 py-1.5 sm:px-6">
+          <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 text-xs">
+            <span className="font-medium text-warning-foreground">Editing this answer</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={abortEditing}
+              className="text-warning-foreground hover:bg-warning/10"
+            >
+              <X className="h-3 w-3" />
+              Cancel edit
+            </Button>
+          </div>
+        </div>
+      )}
+      <div className="px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-3xl flex-col gap-2">
+          {leftHint && (
+            <div className="text-[11px] text-foreground-subtle">{leftHint}</div>
+          )}
+          {children}
+          {secondary && <div className="flex flex-wrap items-center gap-2">{secondary}</div>}
+        </div>
+      </div>
+    </div>
+  );
+
   const renderInputArea = () => {
     if (guidedAwaitContinue && guidedTourOrder?.length) {
       const snap = guidedAfterData ?? data;
@@ -1096,19 +1153,25 @@ export function ChatApp({
             snap
           ) ?? missing[0];
       return (
-        <div className="border-t bg-emerald-50/95 px-4 py-4 shadow-[0_-4px_12px_rgba(15,23,42,0.06)]">
-          <p className="text-center text-sm text-slate-800">
-            {doneAll
-              ? 'All items in this upload pass are accounted for. You can return to Application Status.'
-              : 'When you are finished with this document, continue to the next required upload.'}
-          </p>
-          <div className="mt-3 flex flex-wrap justify-center gap-2">
-            <Button type="button" className="gap-2 bg-emerald-700 hover:bg-emerald-800" onClick={handleGuidedContinue}>
+        <div className="shrink-0 border-t border-border bg-brand-soft/70">
+          <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 px-4 py-4 sm:px-6 sm:flex-row sm:justify-between">
+            <p className="text-sm text-foreground">
+              {doneAll
+                ? 'All items in this upload pass are accounted for.'
+                : 'When you are finished with this document, continue to the next required upload.'}
+            </p>
+            <Button
+              type="button"
+              variant="brand"
+              onClick={handleGuidedContinue}
+              className="gap-2"
+            >
               {doneAll
                 ? 'Back to Application Status'
                 : nextKey
-                  ? `Continue: ${MERCHANT_DOCUMENT_LABELS[nextKey]}`
-                  : 'Continue'}
+                ? `Continue: ${MERCHANT_DOCUMENT_LABELS[nextKey]}`
+                : 'Continue'}
+              <ArrowRight className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>
@@ -1123,18 +1186,27 @@ export function ChatApp({
     if (qDef.type === 'system') {
       const decision = evaluateStrictPersonaTriggers(data);
       return (
-        <div className="border-t bg-white px-4 py-5">
-          <div className="mx-auto max-w-2xl rounded-2xl border border-violet-200 bg-violet-50/70 p-5 shadow-sm">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-700">Phase 2</p>
-            <h3 className="mt-1 text-base font-semibold text-slate-950">Strict KYC / KYB invite decision</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-700">{decision.summary}</p>
+        <div className="shrink-0 border-t border-border bg-surface px-4 py-5 sm:px-6">
+          <div className="mx-auto max-w-3xl rounded-2xl border border-accent/20 bg-accent-soft/70 p-5 shadow-xs">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-accent text-accent-foreground">
+                <ShieldCheck className="h-3.5 w-3.5" />
+              </span>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-info-foreground">
+                Phase 2 — KYC / KYB routing
+              </p>
+            </div>
+            <h3 className="mt-3 text-base font-semibold text-foreground">
+              Strict KYC / KYB invite decision
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-foreground-muted">{decision.summary}</p>
             {decision.missingReadinessItems.length > 0 ? (
-              <div className="mt-3 rounded-lg border border-violet-200 bg-white p-3 text-sm text-slate-700">
-                <p className="font-medium text-slate-900">Still missing before full KYC / KYB readiness</p>
-                <ul className="mt-2 space-y-1">
+              <div className="mt-3 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-warning-foreground">
+                <p className="font-semibold">Still missing before full KYC / KYB readiness</p>
+                <ul className="mt-1.5 space-y-1">
                   {decision.missingReadinessItems.map((item) => (
-                    <li key={item} className="flex gap-2">
-                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
+                    <li key={item} className="flex gap-2 text-xs leading-relaxed">
+                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                       <span>{item}</span>
                     </li>
                   ))}
@@ -1142,27 +1214,28 @@ export function ChatApp({
               </div>
             ) : null}
             {decision.reasons.length > 0 ? (
-              <ul className="mt-3 space-y-2 text-sm text-slate-600">
+              <ul className="mt-3 space-y-1.5 text-sm text-foreground-muted">
                 {decision.reasons.map((reason) => (
                   <li key={reason} className="flex gap-2">
-                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
-                    <span>{reason}</span>
+                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                    <span className="leading-relaxed">{reason}</span>
                   </li>
                 ))}
               </ul>
             ) : null}
-            <div className="mt-4 rounded-lg border border-violet-200 bg-white p-3 text-xs leading-5 text-slate-600">
-              This routing follows the strict common-question rules. No external KYC / KYB API is called here; the plan is attached to the merchant profile, and verification results can be added before final rule-based review when available.
-            </div>
+            <p className="mt-4 rounded-lg border border-border bg-surface px-3 py-2 text-[11px] leading-relaxed text-foreground-muted">
+              This routing follows the strict common-question rules. No external KYC / KYB API is called here; the plan is attached to the merchant profile and verification results can be added before final rule-based review when available.
+            </p>
             <div className="mt-4 flex justify-end">
               <Button
                 type="button"
-                className="bg-violet-700 hover:bg-violet-800"
+                variant="accent"
                 onClick={() =>
                   handleAnswer(
                     {
                       personaInvitePlan: buildPersonaSummary(data),
-                      personaVerificationSummary: 'Pending. Attach KYB/KYC pass, fail, pending, mismatch, and incomplete verification results when available.',
+                      personaVerificationSummary:
+                        'Pending. Attach KYB/KYC pass, fail, pending, mismatch, and incomplete verification results when available.',
                       websiteReviewSummary: buildWebsiteSignalSummary(data),
                     },
                     'KYC / KYB routing plan accepted'
@@ -1170,6 +1243,7 @@ export function ChatApp({
                 }
               >
                 Continue to documents
+                <ArrowRight className="h-3.5 w-3.5" />
               </Button>
             </div>
           </div>
@@ -1190,49 +1264,52 @@ export function ChatApp({
           }
         }
         return (
-          <div className="relative">
+          <div className="shrink-0 border-t border-border bg-surface">
             {isEditing && (
-              <div className="absolute -top-10 right-4">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={abortEditing}
-                  className="text-slate-500 hover:text-slate-700 bg-white/80 backdrop-blur-sm"
-                >
-                  Cancel Edit
-                </Button>
+              <div className="border-b border-border bg-warning-soft/60 px-4 py-1.5 sm:px-6">
+                <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 text-xs">
+                  <span className="font-medium text-warning-foreground">Editing processor follow-up</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    onClick={abortEditing}
+                    className="text-warning-foreground hover:bg-warning/10"
+                  >
+                    <X className="h-3 w-3" />
+                    Cancel edit
+                  </Button>
+                </div>
               </div>
             )}
-            <div className="max-h-[calc(100vh-11rem)] overflow-y-auto overscroll-y-contain border-t bg-white">
-              <div className="p-4">
-                <div className="mx-auto max-w-3xl">
-                  <ProcessorFollowUpForm
-                    processor={processorFit}
-                    initialAnswers={initialAnswers}
-                    submitLabel="Build processor package"
-                    onSubmit={(answers) => {
-                      const lines: string[] = [`${spec.processor} processor-specific follow-up`];
-                      spec.sections.forEach((section) => {
-                        const sectionLines: string[] = [];
-                        section.fields.forEach((field) => {
-                          const val = (answers[field.id] || '').trim();
-                          if (val) sectionLines.push(`- ${field.label}: ${val}`);
-                        });
-                        if (sectionLines.length) {
-                          lines.push(`\n${section.title}:`);
-                          lines.push(...sectionLines);
-                        }
+            <div className="max-h-[calc(100vh-14rem)] overflow-y-auto overscroll-y-contain">
+              <div className="mx-auto max-w-3xl px-4 py-5 sm:px-6">
+                <ProcessorFollowUpForm
+                  processor={processorFit}
+                  initialAnswers={initialAnswers}
+                  submitLabel="Build processor package"
+                  onSubmit={(answers) => {
+                    const lines: string[] = [`${spec.processor} processor-specific follow-up`];
+                    spec.sections.forEach((section) => {
+                      const sectionLines: string[] = [];
+                      section.fields.forEach((field) => {
+                        const val = (answers[field.id] || '').trim();
+                        if (val) sectionLines.push(`- ${field.label}: ${val}`);
                       });
-                      handleAnswer(
-                        {
-                          processorSpecificAnswers: lines.join('\n'),
-                          processorSpecificAnswersJson: JSON.stringify(answers),
-                        },
-                        `Completed ${spec.processor} follow-up`
-                      );
-                    }}
-                  />
-                </div>
+                      if (sectionLines.length) {
+                        lines.push(`\n${section.title}:`);
+                        lines.push(...sectionLines);
+                      }
+                    });
+                    handleAnswer(
+                      {
+                        processorSpecificAnswers: lines.join('\n'),
+                        processorSpecificAnswersJson: JSON.stringify(answers),
+                      },
+                      `Completed ${spec.processor} follow-up`
+                    );
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -1240,61 +1317,56 @@ export function ChatApp({
       }
 
       return (
-        <div className="relative">
+        <div className="shrink-0 border-t border-border bg-surface">
           {isEditing && (
-            <div className="absolute -top-10 right-4">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={abortEditing}
-                className="text-slate-500 hover:text-slate-700 bg-white/80 backdrop-blur-sm"
-              >
-                Cancel Edit
-              </Button>
+            <div className="border-b border-border bg-warning-soft/60 px-4 py-1.5 sm:px-6">
+              <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 text-xs">
+                <span className="font-medium text-warning-foreground">Editing this section</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  onClick={abortEditing}
+                  className="text-warning-foreground hover:bg-warning/10"
+                >
+                  <X className="h-3 w-3" />
+                  Cancel edit
+                </Button>
+              </div>
             </div>
           )}
-          <div className="max-h-[calc(100vh-11rem)] overflow-y-auto overscroll-y-contain border-t bg-white">
-            {smartGuide ? (
-              <div className="border-b bg-slate-50/90 px-4 py-4">
-                <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">{smartGuide.eyebrow}</p>
-                  <h3 className="mt-1 text-sm font-semibold text-slate-900">{smartGuide.title}</h3>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">{smartGuide.description}</p>
-                  <div className="mt-3 space-y-2">
-                    {smartGuide.tips.map((tip, index) => (
-                      <div key={`${tip}-${index}`} className="flex items-start gap-2 text-xs leading-5 text-slate-500">
-                        <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
-                        <span>{tip}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-            <div className="p-4">
-            <form 
-              className="space-y-4 max-w-2xl mx-auto"
+          <div className="max-h-[calc(100vh-14rem)] overflow-y-auto overscroll-y-contain">
+            <form
+              className="mx-auto max-w-3xl space-y-4 px-4 py-5 sm:px-6"
               onSubmit={(e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
                 const values: Record<string, any> = {};
                 let allFilled = true;
-                qDef.fields?.forEach(f => {
+                qDef.fields?.forEach((f) => {
                   const val = formData.get(f.id) as string;
                   values[f.id] = val;
                   if (f.required !== false && !val) allFilled = false;
                 });
                 if (!allFilled) {
-                  toast.error("Please fill out all fields.");
+                  toast.error('Please fill out all fields.');
                   return;
                 }
-                handleAnswer(values, "Provided details");
+                handleAnswer(values, 'Provided details');
               }}
             >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {qDef.fields?.map(field => (
-                  <div key={field.id} className={`space-y-1 ${field.type === 'textarea' ? 'md:col-span-2' : ''}`}>
-                    <label className="text-sm font-medium text-slate-700">{field.label}</label>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {qDef.fields?.map((field) => (
+                  <div
+                    key={field.id}
+                    className={cn('space-y-1.5', field.type === 'textarea' && 'md:col-span-2')}
+                  >
+                    <label className="text-xs font-semibold text-foreground">
+                      {field.label}
+                      {field.required !== false && (
+                        <span className="ml-1 text-danger">*</span>
+                      )}
+                    </label>
                     {field.type === 'textarea' ? (
                       <textarea
                         name={field.id}
@@ -1304,15 +1376,14 @@ export function ChatApp({
                             ? getProcessorQuestionPrompt(data.matchedProcessor || 'Nuvei')
                             : getFieldPlaceholder(field.id, data)
                         }
-                        defaultValue={data[field.id as keyof MerchantData] as string || ''}
-                        className="min-h-[112px] w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                        defaultValue={(data[field.id as keyof MerchantData] as string) || ''}
+                        className="min-h-[120px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm shadow-xs outline-none transition-colors hover:border-border-strong focus:border-brand"
                       />
                     ) : field.type === 'select' ? (
                       <Select
                         name={field.id}
                         required={field.required !== false}
-                        defaultValue={data[field.id as keyof MerchantData] as string || ''}
-                        className="bg-white"
+                        defaultValue={(data[field.id as keyof MerchantData] as string) || ''}
                       >
                         <option value="">Select one...</option>
                         {field.options?.map((option) => (
@@ -1327,17 +1398,19 @@ export function ChatApp({
                         type={field.type}
                         required={field.required !== false}
                         placeholder={getFieldPlaceholder(field.id, data)}
-                        defaultValue={data[field.id as keyof MerchantData] as string || ''}
+                        defaultValue={(data[field.id as keyof MerchantData] as string) || ''}
                       />
                     )}
                   </div>
                 ))}
               </div>
-              <div className="sticky bottom-0 -mx-4 flex justify-end border-t border-slate-200 bg-white/95 px-4 py-3 pt-3 backdrop-blur">
-                <Button type="submit">Submit Details</Button>
+              <div className="sticky -bottom-px -mx-4 flex justify-end border-t border-border bg-surface/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+                <Button type="submit" variant="brand">
+                  Submit details
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
               </div>
             </form>
-          </div>
           </div>
         </div>
       );
@@ -1345,40 +1418,19 @@ export function ChatApp({
 
     if (qDef.type === 'buttons') {
       return (
-        <div className="relative">
-          {isEditing && (
-            <div className="absolute -top-10 right-4">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={abortEditing}
-                className="text-slate-500 hover:text-slate-700 bg-white/80 backdrop-blur-sm"
-              >
-                Cancel Edit
-              </Button>
-            </div>
-          )}
-          <div className="border-t bg-white">
-            {smartGuide ? (
-              <div className="border-b bg-slate-50/90 px-4 py-4">
-                <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">{smartGuide.eyebrow}</p>
-                  <h3 className="mt-1 text-sm font-semibold text-slate-900">{smartGuide.title}</h3>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">{smartGuide.description}</p>
-                </div>
-              </div>
-            ) : null}
-            <div className="flex flex-wrap gap-2 p-4 justify-center">
-            {qDef.options?.map(opt => (
+        <InputShell leftHint={`Pick one to continue`}>
+          <div className="flex flex-wrap items-center gap-2">
+            {qDef.options?.map((opt) => (
               <motion.div
                 key={opt.value}
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
+                transition={{ duration: 0.18 }}
               >
                 <Button
+                  type="button"
                   variant="outline"
-                  className="hover:bg-emerald-50 hover:border-emerald-500"
+                  className="hover:border-brand hover:bg-brand-soft hover:text-brand-strong"
                   onClick={() => handleAnswer(opt.value, opt.label)}
                 >
                   {opt.label}
@@ -1386,175 +1438,124 @@ export function ChatApp({
               </motion.div>
             ))}
           </div>
-          </div>
-        </div>
+        </InputShell>
       );
     }
 
     if (qDef.type === 'dropdown') {
       return (
-        <div className="relative">
-          {isEditing && (
-            <div className="absolute -top-10 right-4">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={abortEditing}
-                className="text-slate-500 hover:text-slate-700 bg-white/80 backdrop-blur-sm"
-              >
-                Cancel Edit
-              </Button>
-            </div>
-          )}
-          <div className="border-t bg-white">
-            {smartGuide ? (
-              <div className="border-b bg-slate-50/90 px-4 py-4">
-                <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">{smartGuide.eyebrow}</p>
-                  <h3 className="mt-1 text-sm font-semibold text-slate-900">{smartGuide.title}</h3>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">{smartGuide.description}</p>
-                </div>
-              </div>
-            ) : null}
-            <div className="flex gap-2 p-4 max-w-md mx-auto">
+        <InputShell leftHint="Choose from the list">
+          <div className="flex items-center gap-2">
             <Select
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               className="flex-1"
             >
               <option value="">Select an option...</option>
-              {qDef.options?.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              {qDef.options?.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
               ))}
             </Select>
             <Button
+              type="button"
+              variant="brand"
+              size="icon"
               onClick={() => {
                 if (inputValue) {
-                  const opt = qDef.options?.find(o => o.value === inputValue);
+                  const opt = qDef.options?.find((o) => o.value === inputValue);
                   handleAnswer(inputValue, opt?.label);
                 }
               }}
               disabled={!inputValue}
+              aria-label="Submit selection"
             >
               <Send className="h-4 w-4" />
             </Button>
           </div>
-          </div>
-        </div>
+        </InputShell>
       );
     }
 
     if (qDef.type === 'upload') {
       return (
-        <div className="relative">
-          {isEditing && (
-            <div className="absolute -top-10 right-4">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={abortEditing}
-                className="text-slate-500 hover:text-slate-700 bg-white/80 backdrop-blur-sm"
-              >
-                Cancel Edit
-              </Button>
-            </div>
-          )}
-          <div className="border-t bg-white">
-            {smartGuide ? (
-              <div className="border-b bg-slate-50/90 px-4 py-4">
-                <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">{smartGuide.eyebrow}</p>
-                  <h3 className="mt-1 text-sm font-semibold text-slate-900">{smartGuide.title}</h3>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">{smartGuide.description}</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {smartGuide.tips.map((tip, index) => (
-                      <span key={`${tip}-${index}`} className="rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-600">
-                        {tip}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-            <div className="p-4">
-            <div className="max-w-md mx-auto">
-              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <Upload className="w-8 h-8 mb-2 text-slate-400" />
-                  <p className="text-sm text-slate-500">Click to upload or drag and drop</p>
-                  <p className="text-xs text-slate-400">PDF, PNG, JPG up to 10MB. Large images and PDFs are optimized before upload when possible.</p>
-                </div>
-                <input
-                  type="file"
-                  className="hidden"
-                  accept=".pdf,.png,.jpg,.jpeg"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      try {
-                        const prepared = await prepareFileForUpload(file);
-                        prepared.notices.forEach((notice) => {
-                          if (notice.level === 'warning') {
-                            toast.warning(notice.message);
-                          } else {
-                            toast.success(notice.message);
-                          }
-                        });
-                        setDocuments(prev => [...prev, prepared.fileData]);
-                        handleAnswer(prepared.fileData, `Uploaded: ${prepared.fileData.name}`);
-                      } catch (error) {
-                        const message = error instanceof Error ? error.message : `Failed to prepare ${file.name}`;
-                        toast.error(message);
-                      }
-                    }
-                    e.target.value = '';
-                  }}
-                />
-              </label>
-              <div className="mt-3 flex justify-center">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleAnswer(null, smartGuide?.skipLabel || 'Skipped')}
-                  className="text-slate-500"
-                >
-                  {smartGuide?.skipLabel || 'Skip this document'}
-                </Button>
-              </div>
-            </div>
-          </div>
-          </div>
-        </div>
+        <InputShell
+          leftHint="PDF, PNG, JPG up to 10MB. Files are optimized client-side when possible."
+          secondary={
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => handleAnswer(null, smartGuide?.skipLabel || 'Skipped')}
+            >
+              {smartGuide?.skipLabel || 'Skip this document'}
+            </Button>
+          }
+        >
+          <label
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDragOver(true);
+            }}
+            onDragEnter={(e) => {
+              e.preventDefault();
+              setIsDragOver(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              setIsDragOver(false);
+            }}
+            onDrop={async (e) => {
+              e.preventDefault();
+              setIsDragOver(false);
+              const file = e.dataTransfer.files?.[0];
+              if (file) await handleUploadFile(file);
+            }}
+            className={cn(
+              'group relative flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-7 text-center transition-all',
+              isDragOver
+                ? 'border-brand bg-brand-soft/70 scale-[1.01]'
+                : 'border-border bg-surface-muted/60 hover:border-brand/60 hover:bg-brand-soft/40'
+            )}
+          >
+            <span
+              className={cn(
+                'flex h-10 w-10 items-center justify-center rounded-full transition-colors',
+                isDragOver
+                  ? 'bg-brand text-brand-foreground'
+                  : 'bg-surface text-brand-strong border border-border'
+              )}
+            >
+              <Upload className="h-4 w-4" />
+            </span>
+            <p className="text-sm font-medium text-foreground">
+              {isDragOver ? 'Drop file to upload' : 'Click to upload or drag & drop'}
+            </p>
+            <p className="text-[11px] text-foreground-muted">
+              Accepted: PDF, PNG, JPG, WebP
+            </p>
+            <input
+              type="file"
+              className="hidden"
+              accept=".pdf,.png,.jpg,.jpeg,.webp,image/*,application/pdf"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (file) await handleUploadFile(file);
+                e.target.value = '';
+              }}
+            />
+          </label>
+        </InputShell>
       );
     }
 
     // Text input
     return (
-      <div className="relative">
-        {isEditing && (
-          <div className="absolute -top-10 right-4">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={abortEditing}
-              className="text-slate-500 hover:text-slate-700 bg-white/80 backdrop-blur-sm"
-            >
-              Cancel Edit
-            </Button>
-          </div>
-        )}
-        <div className="border-t bg-white">
-        {smartGuide ? (
-          <div className="border-b bg-slate-50/90 px-4 py-4">
-            <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">{smartGuide.eyebrow}</p>
-              <h3 className="mt-1 text-sm font-semibold text-slate-900">{smartGuide.title}</h3>
-              <p className="mt-1 text-sm leading-6 text-slate-600">{smartGuide.description}</p>
-            </div>
-          </div>
-        ) : null}
-        <form 
-          className="flex gap-2 p-4"
+      <InputShell leftHint="Type your answer and press Enter">
+        <form
+          className="flex items-center gap-2"
           onSubmit={(e) => {
             e.preventDefault();
             if (inputValue.trim()) {
@@ -1565,105 +1566,271 @@ export function ChatApp({
           <Input
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder={currentQuestion === 'complianceDetails' ? 'A short plain-English summary is enough...' : 'Type your answer...'}
+            placeholder={
+              currentQuestion === 'complianceDetails'
+                ? 'A short plain-English summary is enough...'
+                : 'Type your answer...'
+            }
             className="flex-1"
           />
-          <Button type="submit" disabled={!inputValue.trim()}>
+          <Button
+            type="submit"
+            variant="brand"
+            size="icon"
+            disabled={!inputValue.trim()}
+            aria-label="Submit answer"
+          >
             <Send className="h-4 w-4" />
           </Button>
         </form>
-        </div>
-      </div>
+      </InputShell>
     );
   };
 
   const getIcon = (qId?: QuestionId) => {
-    if (!qId) return <Zap className="w-5 h-5" />;
-    if (qId === 'businessType') return <Building2 className="w-5 h-5" />;
-    if (qId === 'country') return <Globe className="w-5 h-5" />;
-    if (qId === 'industry') return <Activity className="w-5 h-5" />;
-    if (qId.includes('upload') || qId.includes('Upload') || qId === 'financials' || qId === 'bankStatement' || qId === 'proofOfAddress' || qId === 'registrationCertificate' || qId === 'complianceDocument' || qId === 'proofOfFunds' || qId === 'taxDocument' || qId === 'enhancedVerification') return <FileText className="w-5 h-5" />;
-    if (qId === 'complianceDetails' || qId.includes('compliance') || qId.includes('Compliance')) return <ShieldCheck className="w-5 h-5" />;
-    return <Zap className="w-5 h-5" />;
+    if (!qId) return <Bot className="h-4 w-4" />;
+    if (qId === 'businessType') return <Building2 className="h-4 w-4" />;
+    if (qId === 'country') return <Globe className="h-4 w-4" />;
+    if (qId === 'industry') return <Activity className="h-4 w-4" />;
+    if (
+      qId.includes('upload') ||
+      qId.includes('Upload') ||
+      qId === 'financials' ||
+      qId === 'bankStatement' ||
+      qId === 'proofOfAddress' ||
+      qId === 'registrationCertificate' ||
+      qId === 'complianceDocument' ||
+      qId === 'proofOfFunds' ||
+      qId === 'taxDocument' ||
+      qId === 'enhancedVerification'
+    )
+      return <FileText className="h-4 w-4" />;
+    if (qId === 'complianceDetails' || qId.includes('compliance') || qId.includes('Compliance'))
+      return <ShieldCheck className="h-4 w-4" />;
+    return <Bot className="h-4 w-4" />;
   };
 
+  // Stages that the merchant moves through, used for the horizontal stepper.
+  const STAGES = [
+    'Common intake',
+    'KYC / KYB routing',
+    'Documents',
+    'Business profile',
+    'Processor follow-up',
+  ];
+  const currentStageLabel = currentQuestion && currentQuestion !== 'done'
+    ? getQuestionStage(currentQuestion)
+    : 'Review';
+  const currentStageIndex = Math.max(0, STAGES.indexOf(currentStageLabel));
+
   return (
-    <div className="flex flex-col h-full bg-gradient-to-b from-slate-50 to-white">
-      {!isFinished && currentQuestion !== 'done' ? (
-        <div className="border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur-sm">
-          <div className="mx-auto max-w-4xl">
-            <div className="flex items-center justify-between gap-4 text-xs text-slate-500">
-              <div>
-                <span className="font-semibold text-slate-700">{getQuestionStage(currentQuestion)}</span>
-                <span className="ml-2">Step {currentStepIndex} of {questionSequence.length}</span>
+    <div className="relative flex h-full min-h-0 w-full">
+      <div className="flex min-h-0 flex-1 flex-col bg-surface-gradient">
+        {!isFinished && currentQuestion !== 'done' ? (
+          <div className="shrink-0 border-b border-border bg-surface/85 px-4 py-3 backdrop-blur-md sm:px-6">
+            <div className="mx-auto flex max-w-4xl flex-col gap-2.5">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-soft px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-brand-strong">
+                    <Zap className="h-3 w-3" />
+                    {currentStageLabel}
+                  </span>
+                  <span className="text-xs text-foreground-muted">
+                    Step {currentStepIndex} of {questionSequence.length}
+                  </span>
+                </div>
+                <span className="text-xs font-medium text-foreground-muted">
+                  {remainingCount > 0 ? `${remainingCount} step${remainingCount === 1 ? '' : 's'} left` : 'Final step'}
+                </span>
               </div>
-              <div>{remainingCount > 0 ? `${remainingCount} step(s) left` : 'Final step'}</div>
-            </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
-                style={{ width: `${progressPercent}%` }}
-              />
+              {/* Stage stepper dots */}
+              <div className="hidden sm:flex items-center gap-1">
+                {STAGES.map((stage, idx) => {
+                  const reached = idx <= currentStageIndex;
+                  const isActive = idx === currentStageIndex;
+                  return (
+                    <div key={stage} className="flex items-center gap-1 flex-1">
+                      <div
+                        className={cn(
+                          'h-1.5 flex-1 rounded-full transition-all',
+                          isActive
+                            ? 'bg-brand'
+                            : reached
+                            ? 'bg-brand/60'
+                            : 'bg-surface-subtle'
+                        )}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Mobile progress bar */}
+              <div className="sm:hidden h-1.5 overflow-hidden rounded-full bg-surface-subtle">
+                <div
+                  className="h-full rounded-full bg-brand transition-all duration-500"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      ) : null}
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <AnimatePresence>
-          {messages.map((msg) => (
-            <motion.div
-              key={msg.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div className={`flex gap-3 max-w-[80%] ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  msg.sender === 'user' 
-                    ? 'bg-emerald-500 text-white' 
-                    : 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white'
-                }`}>
-                  {msg.sender === 'user' ? '?' : getIcon(msg.questionId)}
-                </div>
-                <div className={`rounded-2xl px-4 py-3 ${
-                  msg.sender === 'user'
-                    ? 'bg-emerald-500 text-white'
-                    : 'bg-white border border-slate-200 shadow-sm'
-                }`}>
-                  <p className="text-sm leading-relaxed">{msg.content}</p>
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+        ) : null}
 
-        {/* Typing indicator */}
-        {isTyping && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex gap-3"
-          >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-              <Zap className="w-4 h-4 text-white" />
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-3 py-5 sm:px-6">
+          <div className="mx-auto flex max-w-3xl flex-col gap-4">
+            <AnimatePresence>
+              {messages.map((msg) => {
+                const isUser = msg.sender === 'user';
+                return (
+                  <motion.div
+                    key={msg.id}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className={cn('flex', isUser ? 'justify-end' : 'justify-start')}
+                  >
+                    <div
+                      className={cn(
+                        'flex max-w-[85%] gap-2.5',
+                        isUser ? 'flex-row-reverse' : ''
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white shadow-sm',
+                          isUser
+                            ? 'bg-accent'
+                            : 'bg-gradient-to-br from-brand to-accent'
+                        )}
+                      >
+                        {isUser ? <User className="h-3.5 w-3.5" /> : getIcon(msg.questionId)}
+                      </div>
+                      <div
+                        className={cn(
+                          'rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-xs',
+                          isUser
+                            ? 'bg-accent text-accent-foreground rounded-tr-sm'
+                            : 'bg-surface text-foreground border border-border rounded-tl-sm'
+                        )}
+                      >
+                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+
+            {isTyping && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex gap-2.5"
+              >
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand to-accent text-white shadow-sm">
+                  <Bot className="h-3.5 w-3.5" />
+                </div>
+                <div className="rounded-2xl rounded-tl-sm border border-border bg-surface px-4 py-3 shadow-xs">
+                  <div className="flex gap-1">
+                    <span
+                      className="h-1.5 w-1.5 rounded-full bg-foreground-subtle animate-bounce"
+                      style={{ animationDelay: '0ms' }}
+                    />
+                    <span
+                      className="h-1.5 w-1.5 rounded-full bg-foreground-subtle animate-bounce"
+                      style={{ animationDelay: '150ms' }}
+                    />
+                    <span
+                      className="h-1.5 w-1.5 rounded-full bg-foreground-subtle animate-bounce"
+                      style={{ animationDelay: '300ms' }}
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
+
+        {/* Compact mobile guide above input */}
+        {smartGuide && !isFinished && currentQuestion !== 'done' && (
+          <div className="lg:hidden shrink-0 border-t border-border bg-surface-muted/70 px-3 py-2 sm:px-6">
+            <div className="mx-auto max-w-3xl">
+              <details className="group rounded-lg border border-border bg-surface px-3 py-2 shadow-xs">
+                <summary className="flex cursor-pointer items-center gap-2 list-none">
+                  <Lightbulb className="h-3.5 w-3.5 text-brand" />
+                  <span className="text-xs font-semibold text-foreground">{smartGuide.title}</span>
+                  <span className="ml-auto text-[10px] uppercase tracking-wider text-foreground-subtle group-open:hidden">
+                    Show tip
+                  </span>
+                  <span className="ml-auto text-[10px] uppercase tracking-wider text-foreground-subtle hidden group-open:inline">
+                    Hide
+                  </span>
+                </summary>
+                <p className="mt-2 text-xs text-foreground-muted leading-relaxed">{smartGuide.description}</p>
+                {smartGuide.tips.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {smartGuide.tips.map((tip, idx) => (
+                      <li
+                        key={`${tip}-${idx}`}
+                        className="flex gap-2 text-[11px] text-foreground-muted leading-snug"
+                      >
+                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-brand" />
+                        {tip}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </details>
             </div>
-            <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
-              <div className="flex gap-1">
-                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-            </div>
-          </motion.div>
+          </div>
         )}
 
-        <div ref={messagesEndRef} />
+        {/* Input toolbar */}
+        {renderInputArea()}
       </div>
 
-      {/* Input Area */}
-      {renderInputArea()}
+      {/* Side guide drawer (lg+) */}
+      {smartGuide && !isFinished && currentQuestion !== 'done' && (
+        <aside className="hidden lg:flex w-[300px] shrink-0 flex-col border-l border-border bg-surface-muted/40 overflow-y-auto">
+          <div className="px-5 py-5">
+            <div className="rounded-xl border border-border bg-surface p-4 shadow-xs">
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-soft text-brand-strong">
+                  <Lightbulb className="h-3.5 w-3.5" />
+                </span>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground-subtle">
+                  {smartGuide.eyebrow}
+                </p>
+              </div>
+              <h3 className="mt-3 text-sm font-semibold text-foreground leading-snug">
+                {smartGuide.title}
+              </h3>
+              <p className="mt-2 text-xs text-foreground-muted leading-relaxed">
+                {smartGuide.description}
+              </p>
+              {smartGuide.tips.length > 0 && (
+                <ul className="mt-3 space-y-2 border-t border-border pt-3">
+                  {smartGuide.tips.map((tip, idx) => (
+                    <li
+                      key={`${tip}-${idx}`}
+                      className="flex gap-2 text-xs text-foreground-muted leading-relaxed"
+                    >
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
+                      {tip}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <p className="mt-4 px-1 text-[11px] text-foreground-subtle leading-relaxed">
+              Tips and required fields update automatically based on your answers.
+            </p>
+          </div>
+        </aside>
+      )}
     </div>
   );
 }

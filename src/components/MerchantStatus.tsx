@@ -1,10 +1,19 @@
 import React from 'react';
 import { ApplicationStatus } from '@/src/types';
 import type { MerchantDocumentKey } from '@/src/lib/documentChecklist';
-import { Card, CardContent } from '@/src/components/ui/card';
 import { Button } from '@/src/components/ui/button';
-import { CheckCircle2, Clock, FileText, ArrowRight, AlertTriangle, X, Upload, Building } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Banner } from '@/src/components/ui/banner';
+import { Section } from '@/src/components/ui/section';
+import { PageHeader } from '@/src/components/ui/page-header';
+import { Timeline, type TimelineStep } from '@/src/components/ui/timeline';
+import {
+  CheckCircle2,
+  Clock,
+  FileText,
+  ArrowRight,
+  Building,
+  Upload,
+} from 'lucide-react';
 
 export type MissingDocumentItem = { key: MerchantDocumentKey; label: string };
 
@@ -32,16 +41,19 @@ function MissingDocsList({
   return (
     <ul className="mt-3 space-y-2">
       {items.map(({ key, label }) => (
-        <li key={key} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-          <span className="text-sm text-slate-800">{label}</span>
+        <li
+          key={key}
+          className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2.5 shadow-xs"
+        >
+          <span className="text-sm text-foreground">{label}</span>
           {onUpload && (
             <Button
               type="button"
               size="sm"
-              className="shrink-0 bg-blue-700 hover:bg-blue-800 gap-1"
+              variant="brand"
               onClick={() => onUpload(key)}
             >
-              <Upload className="w-3.5 h-3.5" />
+              <Upload className="h-3.5 w-3.5" />
               Upload
             </Button>
           )}
@@ -57,158 +69,139 @@ export function MerchantStatus({
   adminNotice,
   onDismissNotice,
   missingDocuments = [],
-  onStartGuidedUpload,
   onInlineUpload,
   matchedProcessor,
   processorFollowUpComplete,
   onOpenProcessorFollowUp,
 }: Props) {
-  const steps = [
+  const timelineSteps: TimelineStep[] = [
     {
       id: 'submitted',
-      title: 'Application Submitted',
+      title: 'Application submitted',
       description: 'Your application and documents have been securely received.',
       icon: FileText,
-      isActive: status !== 'draft',
-      isCompleted: status !== 'draft'
+      status: status !== 'draft' ? 'complete' : 'pending',
+      meta: status !== 'draft' ? 'Done' : undefined,
     },
     {
       id: 'under_review',
-      title: 'Verification & Routing Review',
-      description: 'Our team is checking KYC / KYB readiness, documents, and processor routing.',
+      title: 'Verification & routing review',
+      description:
+        'Our team is checking KYC / KYB readiness, supporting documents, and processor routing.',
       icon: Clock,
-      isActive: status === 'under_review' || status === 'approved' || status === 'signed',
-      isCompleted: status === 'approved' || status === 'signed'
+      status:
+        status === 'approved' || status === 'signed'
+          ? 'complete'
+          : status === 'under_review'
+          ? 'active'
+          : 'pending',
+      meta: status === 'under_review' ? 'In progress' : undefined,
+      children:
+        status === 'under_review' ? (
+          <div className="rounded-lg border border-info/20 bg-info-soft px-3 py-2 text-xs font-medium text-info-foreground">
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-info" />
+              Processing — please wait while we complete the review.
+            </span>
+          </div>
+        ) : null,
     },
     {
-      id: 'approved',
-      title: 'Decision & Agreement',
+      id: 'agreement',
+      title: 'Decision & agreement',
       description: 'Review and sign your merchant processing agreement.',
       icon: CheckCircle2,
-      isActive: status === 'approved' || status === 'signed',
-      isCompleted: status === 'signed'
-    }
+      status:
+        status === 'signed'
+          ? 'complete'
+          : status === 'approved'
+          ? 'active'
+          : 'pending',
+      meta:
+        status === 'signed'
+          ? 'Signed'
+          : status === 'approved'
+          ? 'Awaiting your signature'
+          : undefined,
+      children:
+        status === 'approved' ? (
+          <Button
+            type="button"
+            variant="brand"
+            onClick={onProceedToAgreement}
+            className="mt-1"
+          >
+            Review agreement
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Button>
+        ) : null,
+    },
   ];
 
   return (
-    <div className="p-8 pb-16 max-w-3xl mx-auto w-full min-h-min">
-      <div className="text-center mb-10">
-        <h1 className="text-3xl font-bold text-slate-900 mb-3">Application Status</h1>
-        <p className="text-slate-500 text-lg">Track the progress of your merchant account application.</p>
-      </div>
+    <div className="px-6 py-8 sm:px-10">
+      <div className="mx-auto max-w-3xl space-y-6">
+        <PageHeader
+          eyebrow="Application status"
+          title="Track your application"
+          description="Watch progress as our review team verifies KYC / KYB, documents, and processor fit."
+        />
 
-      {status === 'under_review' && adminNotice?.trim() && (
-        <div className="mb-8 rounded-lg border border-amber-200 bg-amber-50 p-4 flex gap-3 text-left">
-          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold uppercase text-amber-800">Review team requested an update</p>
-            <p className="text-sm text-amber-950 mt-1 whitespace-pre-wrap">{adminNotice}</p>
+        {status === 'under_review' && adminNotice?.trim() && (
+          <Banner
+            intent="warning"
+            title="Review team requested an update"
+            description={adminNotice}
+            onDismiss={onDismissNotice}
+          >
             {missingDocuments.length > 0 && onInlineUpload && (
               <>
-                <p className="mt-2 text-xs font-medium text-amber-900">Upload a document directly:</p>
+                <p className="mt-2 text-xs font-semibold text-warning-foreground">
+                  Upload a document directly:
+                </p>
                 <MissingDocsList items={missingDocuments} onUpload={onInlineUpload} />
               </>
             )}
-          </div>
-          {onDismissNotice && (
-            <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={onDismissNotice} aria-label="Dismiss">
-              <X className="w-4 h-4" />
-            </Button>
+          </Banner>
+        )}
+
+        {status === 'under_review' &&
+          !adminNotice?.trim() &&
+          missingDocuments.length > 0 &&
+          onInlineUpload && (
+            <Banner
+              intent="info"
+              title="Strengthen your application"
+              description="These documents are optional right now, but may speed up review."
+            >
+              <MissingDocsList items={missingDocuments} onUpload={onInlineUpload} />
+            </Banner>
           )}
-        </div>
-      )}
 
-      {status === 'under_review' && !adminNotice?.trim() && missingDocuments.length > 0 && onInlineUpload && (
-        <div className="mb-8 rounded-lg border border-slate-200 bg-slate-50 p-4 text-left text-sm text-slate-700">
-          <p className="font-medium text-slate-900">Optional: strengthen your file</p>
-          <p className="mt-1 text-slate-600">Upload the following documents directly:</p>
-          <MissingDocsList items={missingDocuments} onUpload={onInlineUpload} />
-        </div>
-      )}
+        {status === 'under_review' && matchedProcessor && onOpenProcessorFollowUp && (
+          <Banner
+            intent={processorFollowUpComplete ? 'success' : 'info'}
+            icon={Building}
+            title={`Processor routed: ${matchedProcessor}`}
+            description={
+              processorFollowUpComplete
+                ? 'Processor-specific follow-up complete.'
+                : `Please complete the ${matchedProcessor}-specific follow-up so your package is processor-ready.`
+            }
+            actions={
+              !processorFollowUpComplete && (
+                <Button type="button" variant="accent" onClick={onOpenProcessorFollowUp}>
+                  Complete follow-up
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
+              )
+            }
+          />
+        )}
 
-      {status === 'under_review' && matchedProcessor && onOpenProcessorFollowUp && (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <div className={`rounded-lg border p-4 text-left ${
-            processorFollowUpComplete
-              ? 'border-green-200 bg-green-50'
-              : 'border-blue-200 bg-blue-50'
-          }`}>
-            <div className="flex items-start gap-3">
-              <Building className={`w-5 h-5 shrink-0 mt-0.5 ${processorFollowUpComplete ? 'text-green-600' : 'text-blue-600'}`} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-900">
-                  Processor routed: {matchedProcessor}
-                </p>
-                {processorFollowUpComplete ? (
-                  <p className="text-sm text-green-800 mt-1">Processor-specific follow-up complete.</p>
-                ) : (
-                  <>
-                    <p className="text-sm text-blue-900 mt-1">
-                      Please complete the {matchedProcessor}-specific follow-up questions so your package is processor-ready.
-                    </p>
-                    <Button
-                      type="button"
-                      className="mt-3 bg-blue-700 hover:bg-blue-800 gap-2"
-                      onClick={onOpenProcessorFollowUp}
-                    >
-                      Complete Follow-up <ArrowRight className="w-4 h-4" />
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      <div className="space-y-8 relative before:absolute before:inset-0 before:ml-6 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
-        {steps.map((step, index) => {
-          const Icon = step.icon;
-          return (
-            <div key={step.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-              <div className={`flex items-center justify-center w-12 h-12 rounded-full border-4 border-white shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-sm ${
-                step.isCompleted ? 'bg-green-500 text-white' :
-                step.isActive ? 'bg-blue-600 text-white animate-pulse' :
-                'bg-slate-200 text-slate-400'
-              }`}>
-                <Icon className="w-5 h-5" />
-              </div>
-              
-              <Card className={`w-[calc(100%-4rem)] md:w-[calc(50%-3rem)] ${
-                step.isActive && !step.isCompleted ? 'border-blue-200 shadow-md ring-1 ring-blue-100' : 
-                step.isCompleted ? 'border-green-100 bg-green-50/30' : 
-                'opacity-60'
-              }`}>
-                <CardContent className="p-5">
-                  <h3 className={`font-bold text-lg mb-1 ${
-                    step.isCompleted ? 'text-green-800' :
-                    step.isActive ? 'text-blue-900' :
-                    'text-slate-500'
-                  }`}>{step.title}</h3>
-                  <p className="text-slate-600 text-sm leading-relaxed">{step.description}</p>
-                  
-                  {step.id === 'under_review' && status === 'under_review' && (
-                    <div className="mt-4 flex items-center gap-2 text-sm text-blue-600 font-medium bg-blue-50 p-2 rounded-md">
-                      <div className="w-4 h-4 rounded-full border-2 border-blue-600 border-t-transparent animate-spin shrink-0"></div>
-                      Processing... Please wait.
-                    </div>
-                  )}
-
-                  {step.id === 'approved' && status === 'approved' && (
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-5">
-                      <Button 
-                        onClick={onProceedToAgreement}
-                        className="w-full bg-green-600 hover:bg-green-700 text-white gap-2 shadow-sm"
-                      >
-                        Review Agreement <ArrowRight className="w-4 h-4" />
-                      </Button>
-                    </motion.div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          );
-        })}
+        <Section title="Application timeline" icon={Clock}>
+          <Timeline steps={timelineSteps} />
+        </Section>
       </div>
     </div>
   );
