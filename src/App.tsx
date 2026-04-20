@@ -3,15 +3,17 @@ import { Toaster } from 'sonner';
 import { MerchantPortal } from './components/MerchantPortal';
 import { AdminPortal } from './components/AdminPortal';
 import { AppShell, type ViewMode } from './components/AppShell';
-import { MerchantData, FileData, ApplicationStatus } from './types';
-import { demoMerchantData } from './lib/demoMerchantData';
+import { MerchantData, FileData, ApplicationStatus, initialMerchantData } from './types';
 import type { VerificationIssue } from './lib/localVerification';
 import type { UnderwritingDisplayResult } from './lib/underwritingFallback';
 
 export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('merchant');
   const [appStatus, setAppStatus] = useState<ApplicationStatus>('draft');
-  const [merchantData, setMerchantData] = useState<MerchantData>(demoMerchantData);
+  const [merchantData, setMerchantData] = useState<MerchantData>(() => ({
+    ...initialMerchantData,
+    additionalDocuments: [],
+  }));
   const [documents, setDocuments] = useState<FileData[]>([]);
   const [underwritingResult, setUnderwritingResult] = useState<UnderwritingDisplayResult | null>(null);
   /** Shown to merchant while under review (set from Admin). */

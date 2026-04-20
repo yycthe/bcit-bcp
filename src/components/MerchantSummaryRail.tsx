@@ -20,24 +20,34 @@ interface Props {
 
 type Field = { label: string; value?: string };
 
+const normalizeValue = (raw?: string): string | undefined => {
+  if (!raw) return undefined;
+  const normalized = raw.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  return normalized || undefined;
+};
+
 const titleCase = (s?: string) =>
-  s ? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '';
+  normalizeValue(s)?.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || '';
 
 const yesNo = (raw?: string): string | undefined => {
-  if (!raw) return undefined;
-  const v = raw.trim().toLowerCase();
+  const normalized = normalizeValue(raw);
+  if (!normalized) return undefined;
+  const v = normalized.toLowerCase();
   if (!v) return undefined;
   if (v.startsWith('yes')) return 'Yes';
   if (v.startsWith('no')) return 'No';
-  return raw;
+  return normalized;
 };
 
 const maskAccount = (acc?: string): string | undefined => {
-  if (!acc) return undefined;
-  const trimmed = acc.trim();
-  if (!trimmed) return undefined;
-  if (trimmed.length <= 4) return `••${trimmed}`;
-  return `••${trimmed.slice(-4)}`;
+  const normalized = normalizeValue(acc);
+  if (!normalized) return undefined;
+
+  const digits = normalized.replace(/\D/g, '');
+  if (digits.length >= 4) return `••${digits.slice(-4)}`;
+  if (normalized.includes('•') || normalized.includes('*')) return normalized;
+  if (normalized.length <= 4) return `••${normalized}`;
+  return `••${normalized.slice(-4)}`;
 };
 
 export function MerchantSummaryRail({ data, appStatus }: Props) {
@@ -47,41 +57,41 @@ export function MerchantSummaryRail({ data, appStatus }: Props) {
   const pct = total > 0 ? Math.round((present / total) * 100) : 0;
 
   const businessFields: Field[] = [
-    { label: 'Legal name', value: data.legalName || data.ownerName },
-    { label: 'DBA name', value: data.dbaName && data.dbaName !== data.legalName ? data.dbaName : '' },
+    { label: 'Legal name', value: normalizeValue(data.legalName || data.ownerName) },
+    { label: 'DBA name', value: normalizeValue(data.dbaName && data.dbaName !== data.legalName ? data.dbaName : '') },
     { label: 'Business type', value: titleCase(data.businessType) },
     { label: 'Industry', value: titleCase(data.industry) },
-    { label: 'Country', value: data.country },
-    { label: 'Tax ID', value: data.taxId },
-    { label: 'Established', value: data.establishedDate || data.timeInBusiness },
-    { label: 'Website', value: data.website },
+    { label: 'Country', value: normalizeValue(data.country) },
+    { label: 'Tax ID', value: normalizeValue(data.taxId) },
+    { label: 'Established', value: normalizeValue(data.establishedDate || data.timeInBusiness) },
+    { label: 'Website', value: normalizeValue(data.website) },
   ];
 
   const operationsFields: Field[] = [
-    { label: 'Monthly volume', value: data.monthlyVolume },
-    { label: 'Monthly transactions', value: data.monthlyTransactions },
-    { label: 'Avg ticket size', value: data.avgTicketSize },
-    { label: 'Highest ticket', value: data.highestTicketAmount },
+    { label: 'Monthly volume', value: normalizeValue(data.monthlyVolume) },
+    { label: 'Monthly transactions', value: normalizeValue(data.monthlyTransactions) },
+    { label: 'Avg ticket size', value: normalizeValue(data.avgTicketSize) },
+    { label: 'Highest ticket', value: normalizeValue(data.highestTicketAmount) },
     { label: 'Currently processes cards', value: yesNo(data.currentlyProcessesCards) },
-    { label: 'Channels', value: data.transactionChannelSplit },
-    { label: 'Target geography', value: data.targetGeography },
+    { label: 'Channels', value: normalizeValue(data.transactionChannelSplit) },
+    { label: 'Target geography', value: normalizeValue(data.targetGeography) },
   ];
 
   const contactFields: Field[] = [
-    { label: 'Owner', value: data.ownerName },
-    { label: 'Authorized signer', value: data.authorizedSignerName },
-    { label: 'Business phone', value: data.businessPhone || data.phone },
-    { label: 'Email', value: data.legalBusinessEmail || data.generalEmail || data.supportEmail },
-    { label: 'Bank', value: data.bankName },
+    { label: 'Owner', value: normalizeValue(data.ownerName) },
+    { label: 'Authorized signer', value: normalizeValue(data.authorizedSignerName) },
+    { label: 'Business phone', value: normalizeValue(data.businessPhone || data.phone) },
+    { label: 'Email', value: normalizeValue(data.legalBusinessEmail || data.generalEmail || data.supportEmail) },
+    { label: 'Bank', value: normalizeValue(data.bankName) },
     { label: 'Account', value: maskAccount(data.accountNumber) },
-    { label: 'Settlement currency', value: data.settlementCurrency },
+    { label: 'Settlement currency', value: normalizeValue(data.settlementCurrency) },
   ];
 
   const businessFilled = businessFields.filter((f) => f.value && f.value.trim()).length;
   const opsFilled = operationsFields.filter((f) => f.value && f.value.trim()).length;
   const contactFilled = contactFields.filter((f) => f.value && f.value.trim()).length;
 
-  const hasHeading = Boolean(data.legalName || data.ownerName || data.businessType);
+  const hasHeading = Boolean(normalizeValue(data.legalName || data.ownerName || data.businessType));
   const hasAnyProfile = hasHeading || businessFilled + opsFilled + contactFilled > 0;
   const hasDocActivity = present > 0 || appStatus !== 'draft';
 
@@ -127,14 +137,14 @@ export function MerchantSummaryRail({ data, appStatus }: Props) {
     !hasAnyProfile && !hasDocActivity && !hasKycKyb && !data.matchedProcessor && !showTimeline;
 
   return (
-    <aside className="hidden xl:flex w-[300px] shrink-0 flex-col gap-4 border-l border-border bg-surface-muted/60 px-5 py-6 overflow-y-auto">
-      <div>
+    <aside className="hidden xl:flex w-[300px] min-w-0 shrink-0 flex-col gap-4 overflow-y-auto border-l border-border bg-surface-muted/60 px-5 py-6">
+      <div className="min-w-0">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground-subtle">
           Application snapshot
         </p>
         {hasHeading ? (
           <>
-            <p className="mt-1 text-sm font-semibold text-foreground truncate">
+            <p className="mt-1 break-words text-sm font-semibold text-foreground" title={data.legalName || data.ownerName}>
               {data.legalName || data.ownerName}
             </p>
             {data.businessType ? (
@@ -162,24 +172,30 @@ export function MerchantSummaryRail({ data, appStatus }: Props) {
         <>
           {hasAnyProfile && (
             <>
-              <FieldGroup
-                icon={Building2}
-                title="Business profile"
-                fields={businessFields}
-                filledCount={businessFilled}
-              />
-              <FieldGroup
-                icon={Activity}
-                title="Volume & processing"
-                fields={operationsFields}
-                filledCount={opsFilled}
-              />
-              <FieldGroup
-                icon={Mail}
-                title="Contacts & banking"
-                fields={contactFields}
-                filledCount={contactFilled}
-              />
+              {businessFilled > 0 && (
+                <FieldGroup
+                  icon={Building2}
+                  title="Business profile"
+                  fields={businessFields}
+                  filledCount={businessFilled}
+                />
+              )}
+              {opsFilled > 0 && (
+                <FieldGroup
+                  icon={Activity}
+                  title="Volume & processing"
+                  fields={operationsFields}
+                  filledCount={opsFilled}
+                />
+              )}
+              {contactFilled > 0 && (
+                <FieldGroup
+                  icon={Mail}
+                  title="Contacts & banking"
+                  fields={contactFields}
+                  filledCount={contactFilled}
+                />
+              )}
             </>
           )}
 
@@ -272,11 +288,11 @@ interface FieldGroupProps {
 
 function FieldGroup({ icon: Icon, title, fields, filledCount }: FieldGroupProps) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-3 shadow-xs">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground-subtle">
+    <div className="overflow-hidden rounded-xl border border-border bg-surface p-3 shadow-xs">
+      <div className="mb-2 flex min-w-0 items-center justify-between gap-3">
+        <p className="min-w-0 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground-subtle">
           <Icon className="h-3.5 w-3.5 text-brand" />
-          {title}
+          <span className="truncate">{title}</span>
         </p>
         <span className="text-[10px] font-semibold text-foreground-subtle tabular-nums">
           {filledCount}/{fields.length}
@@ -288,16 +304,16 @@ function FieldGroup({ icon: Icon, title, fields, filledCount }: FieldGroupProps)
           return (
             <div
               key={f.label}
-              className="flex items-baseline justify-between gap-3 border-b border-border/60 pb-1.5 text-xs last:border-b-0 last:pb-0"
+              className="grid grid-cols-[minmax(0,112px)_minmax(0,1fr)] items-start gap-3 border-b border-border/60 pb-1.5 text-xs last:border-b-0 last:pb-0"
             >
-              <dt className="shrink-0 text-[11px] font-medium text-foreground-muted">
+              <dt className="min-w-0 text-[11px] font-medium text-foreground-muted">
                 {f.label}
               </dt>
               <dd
                 className={
                   hasValue
-                    ? 'min-w-0 truncate text-right text-xs font-medium text-foreground'
-                    : 'min-w-0 truncate text-right text-xs italic text-foreground-subtle'
+                    ? 'min-w-0 text-right text-xs font-medium text-foreground [overflow-wrap:anywhere]'
+                    : 'min-w-0 text-right text-xs italic text-foreground-subtle [overflow-wrap:anywhere]'
                 }
                 title={hasValue ? (f.value as string) : undefined}
               >
