@@ -22,6 +22,7 @@ import {
   FileWarning,
   FileSearch,
   FileText,
+  FileCheck,
   Send,
   Building,
   Globe,
@@ -48,6 +49,7 @@ import { Banner } from '@/src/components/ui/banner';
 import { Section } from '@/src/components/ui/section';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { StatusPill, type StatusIntent } from '@/src/components/ui/status-pill';
+import { KpiTile } from '@/src/components/ui/kpi-tile';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
@@ -125,6 +127,16 @@ function scoreBar(score: number) {
   if (score <= 33) return 'bg-success';
   if (score <= 66) return 'bg-warning';
   return 'bg-danger';
+}
+
+function isRoutingAction(action: ActionKind): boolean {
+  return action === 'approve' || action === 'approve_with_conditions';
+}
+
+function aiQueueLabel(aiReview: AiReviewResult | null, aiLoading: boolean): string {
+  if (aiLoading) return 'Reviewing';
+  if (aiReview) return ACTION_META[aiReview.recommendedAction as ActionKind].label;
+  return 'Not run';
 }
 
 function formatSubmittedAt(merchantData: MerchantData): string {
@@ -307,10 +319,12 @@ export function AdminPortal({
     const processor = overrides?.processor ?? aiReview.recommendedProcessor;
     const message = overrides?.merchantMessage ?? aiReview.merchantMessage;
 
-    setMerchantData((prev) => ({
-      ...prev,
-      matchedProcessor: processor,
-    }));
+    if (isRoutingAction(action)) {
+      setMerchantData((prev) => ({
+        ...prev,
+        matchedProcessor: processor,
+      }));
+    }
 
     if (message) {
       setMerchantNoticeFromAdmin(message);
@@ -499,10 +513,14 @@ export function AdminPortal({
               else toast.message('Processor assignment cleared');
             }}
             onForceApprove={() => {
+              const processor = merchantData.matchedProcessor || aiReview?.recommendedProcessor;
+              if (!processor) {
+                toast.error('Choose a processor or run AI before force approving.');
+                return;
+              }
+              setMerchantData((prev) => ({ ...prev, matchedProcessor: processor }));
               setAppStatus('approved');
-              toast.success(
-                `Manually approved${merchantData.matchedProcessor ? ` · routed to ${merchantData.matchedProcessor}` : ''}`
-              );
+              toast.success(`Manually approved · routed to ${processor}`);
             }}
           />
         )}
@@ -548,6 +566,7 @@ function QueueList({
   const aiBadge = aiReview
     ? ACTION_META[aiReview.recommendedAction as ActionKind]
     : null;
+  const docsComplete = total > 0 && missing === 0;
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-8 sm:px-10">
@@ -563,6 +582,32 @@ function QueueList({
             AI reviews every submitted application. Open one to see the verdict and execute the plan.
           </p>
         </div>
+
+        {hasApplication && (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <KpiTile
+              label="AI state"
+              value={aiQueueLabel(aiReview, aiLoading)}
+              hint={aiReview ? `${aiReview.recommendedProcessor} · ${aiReview.riskCategory} risk` : 'Open the workbench to run review'}
+              icon={Sparkles}
+              tone={aiReview ? aiBadge?.tone ?? 'brand' : aiLoading ? 'info' : 'neutral'}
+            />
+            <KpiTile
+              label="Documents"
+              value={`${present}/${total}`}
+              hint={docsComplete ? 'Checklist complete' : `${missing} missing upload${missing === 1 ? '' : 's'}`}
+              icon={FileCheck}
+              tone={docsComplete ? 'success' : 'warning'}
+            />
+            <KpiTile
+              label="Next admin move"
+              value={aiReview ? 'Confirm' : 'Review'}
+              hint={aiReview ? 'Approve, edit, hold, or request more info' : 'Generate the AI verdict first'}
+              icon={LayoutDashboard}
+              tone={aiReview ? 'brand' : 'neutral'}
+            />
+          </div>
+        )}
 
         {!hasApplication ? (
           <EmptyState
@@ -689,6 +734,7 @@ function Workbench(props: WorkbenchProps) {
     aiElapsedMs,
     aiLastDurationMs,
     inspectableDocCount,
+    lastVerification,
     merchantNoticeFromAdmin,
     onBack,
     onRunAi,
@@ -780,6 +826,17 @@ function Workbench(props: WorkbenchProps) {
             />
           )}
 
+          <CaseOverview
+            statusPill={statusPill}
+            merchantData={merchantData}
+            aiReview={aiReview}
+            aiLoading={aiLoading}
+            missing={missing}
+            docChecklist={docChecklist}
+            inspectableDocCount={inspectableDocCount}
+            lastVerification={lastVerification}
+          />
+
           <AiVerdict
             aiReview={aiReview}
             aiLoading={aiLoading}
@@ -792,9 +849,12 @@ function Workbench(props: WorkbenchProps) {
 
           <ActionPlan
             aiReview={aiReview}
+            aiLoading={aiLoading}
+            aiError={aiError}
             missing={missing}
             merchantNoticeFromAdmin={merchantNoticeFromAdmin}
             isApproved={isApproved}
+            onRunAi={onRunAi}
             onAcceptPlan={onAcceptPlan}
             onEditBeforeSend={openEditModal}
           />
@@ -907,6 +967,85 @@ function Workbench(props: WorkbenchProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Case overview
+// ---------------------------------------------------------------------------
+
+function CaseOverview({
+  statusPill,
+  merchantData,
+  aiReview,
+  aiLoading,
+  missing,
+  docChecklist,
+  inspectableDocCount,
+  lastVerification,
+}: {
+  statusPill: { intent: StatusIntent; label: string };
+  merchantData: MerchantData;
+  aiReview: AiReviewResult | null;
+  aiLoading: boolean;
+  missing: ReturnType<typeof getMerchantDocumentChecklist>;
+  docChecklist: ReturnType<typeof getMerchantDocumentChecklist>;
+  inspectableDocCount: number;
+  lastVerification: VerificationCheckResult | null;
+}) {
+  const present = docChecklist.length - missing.length;
+  const aiTone = aiReview
+    ? ACTION_META[aiReview.recommendedAction as ActionKind].tone
+    : aiLoading
+    ? 'info'
+    : 'neutral';
+  const readinessLabel =
+    lastVerification?.status === 'clear'
+      ? 'Clear'
+      : lastVerification?.status === 'needs_follow_up'
+      ? 'Needs follow-up'
+      : 'Not refreshed';
+
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <KpiTile
+        label="Application"
+        value={statusPill.label}
+        hint={merchantData.industry ? merchantData.industry.replace(/_/g, ' ') : 'Industry pending'}
+        icon={Inbox}
+        tone={statusPill.intent === 'complete' ? 'success' : statusPill.intent === 'in_progress' ? 'info' : 'neutral'}
+        trailing={<StatusPill intent={statusPill.intent} label={statusPill.label} />}
+      />
+      <KpiTile
+        label="AI recommendation"
+        value={aiQueueLabel(aiReview, aiLoading)}
+        hint={aiReview ? `${aiReview.riskCategory} risk · ${Math.round(aiReview.confidence * 100)}% confidence` : 'No local fallback decision'}
+        icon={Sparkles}
+        tone={aiTone}
+      />
+      <KpiTile
+        label="Documents"
+        value={`${present}/${docChecklist.length}`}
+        hint={
+          missing.length > 0
+            ? `${missing.length} required upload${missing.length === 1 ? '' : 's'} missing`
+            : `${inspectableDocCount} file${inspectableDocCount === 1 ? '' : 's'} ready for AI inspection`
+        }
+        icon={FileCheck}
+        tone={missing.length > 0 ? 'warning' : 'success'}
+      />
+      <KpiTile
+        label="KYC / KYB context"
+        value={readinessLabel}
+        hint={
+          lastVerification?.issues.length
+            ? `${lastVerification.issues.length} follow-up item${lastVerification.issues.length === 1 ? '' : 's'}`
+            : 'Readiness facts feed the AI context packet'
+        }
+        icon={ShieldCheck}
+        tone={lastVerification?.status === 'clear' ? 'success' : lastVerification ? 'warning' : 'neutral'}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // AI Verdict hero
 // ---------------------------------------------------------------------------
 
@@ -965,8 +1104,10 @@ function AiVerdict({
     );
   }
 
-  const meta = ACTION_META[aiReview.recommendedAction as ActionKind];
+  const action = aiReview.recommendedAction as ActionKind;
+  const meta = ACTION_META[action];
   const confidencePct = Math.round(aiReview.confidence * 100);
+  const processorVerb = isRoutingAction(action) ? 'Route' : 'Fit';
 
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
@@ -1005,7 +1146,7 @@ function AiVerdict({
                 <ShieldCheck className="h-4 w-4 text-brand" />
               )}
               {aiReview.recommendedProcessor === 'Chase' && <Globe className="h-4 w-4 text-info" />}
-              Route → {aiReview.recommendedProcessor}
+              {processorVerb} → {aiReview.recommendedProcessor}
             </div>
           </div>
 
@@ -1062,24 +1203,71 @@ function AiVerdict({
 
 function ActionPlan({
   aiReview,
+  aiLoading,
+  aiError,
   missing,
   merchantNoticeFromAdmin,
   isApproved,
+  onRunAi,
   onAcceptPlan,
   onEditBeforeSend,
 }: {
   aiReview: AiReviewResult | null;
+  aiLoading: boolean;
+  aiError: string | null;
   missing: ReturnType<typeof getMerchantDocumentChecklist>;
   merchantNoticeFromAdmin: string;
   isApproved: boolean;
+  onRunAi: () => void;
   onAcceptPlan: (overrides?: {
     merchantMessage?: string;
     processor?: AiReviewResult['recommendedProcessor'];
   }) => void;
   onEditBeforeSend: () => void;
 }) {
-  if (!aiReview) return null;
+  if (!aiReview) {
+    const steps: Array<{ label: string; status: 'done' | 'pending' | 'warning'; detail?: string }> = [
+      {
+        label: 'Run AI underwriting review',
+        status: aiLoading ? 'warning' : 'pending',
+        detail: aiError
+          ? 'AI did not return a recommendation. Re-run before taking final action.'
+          : 'Gemini must generate the risk score, route, action, and merchant message.',
+      },
+      {
+        label: 'Check evidence context',
+        status: missing.length > 0 ? 'warning' : 'pending',
+        detail:
+          missing.length > 0
+            ? `${missing.length} document${missing.length === 1 ? '' : 's'} still missing from the context packet.`
+            : 'KYC / KYB, documents, website, and intake answers are ready to review.',
+      },
+      {
+        label: 'Confirm or edit the AI decision',
+        status: 'pending',
+        detail: 'Final routing stays disabled until AI produces a recommendation.',
+      },
+    ];
+
+    return (
+      <Section
+        icon={LayoutDashboard}
+        title="Decision workflow"
+        description="Run AI first, then confirm or edit the generated decision."
+        actions={
+          <Button type="button" size="sm" variant="brand" disabled={aiLoading} onClick={onRunAi}>
+            <Sparkles className="h-3.5 w-3.5" />
+            {aiLoading ? 'Reviewing...' : 'Run AI review'}
+          </Button>
+        }
+      >
+        <PlanStepList steps={steps} />
+      </Section>
+    );
+  }
   const meta = ACTION_META[aiReview.recommendedAction as ActionKind];
+  const action = aiReview.recommendedAction as ActionKind;
+  const shouldRoute = isRoutingAction(action);
 
   const steps: Array<{ label: string; status: 'done' | 'pending' | 'warning'; detail?: string }> = [];
 
@@ -1091,11 +1279,19 @@ function ActionPlan({
     });
   }
 
-  steps.push({
-    label: `Route to ${aiReview.recommendedProcessor}`,
-    status: 'pending',
-    detail: 'Processor assignment follows the AI recommendation unless you edit before confirming.',
-  });
+  if (shouldRoute) {
+    steps.push({
+      label: `Route to ${aiReview.recommendedProcessor}`,
+      status: isApproved ? 'done' : 'pending',
+      detail: 'Processor assignment is written only when you confirm an approve action.',
+    });
+  } else {
+    steps.push({
+      label: `Hold processor route as recommendation only`,
+      status: 'warning',
+      detail: `${aiReview.recommendedProcessor} is the AI fit, but routing waits until the action becomes approve or approve with conditions.`,
+    });
+  }
 
   if (missing.length > 0) {
     steps.push({
@@ -1123,7 +1319,7 @@ function ActionPlan({
     <Section
       icon={LayoutDashboard}
       title="Action plan"
-      description="Checklist mirrors the AI recommendation. Use Confirm in the verdict card or footer, or edit first."
+      description="Checklist mirrors the AI recommendation. Non-approval decisions do not route the merchant yet."
       actions={
         <div className="flex flex-wrap gap-2">
           <Button type="button" size="sm" variant="outline" disabled={isApproved} onClick={onEditBeforeSend}>
@@ -1136,43 +1332,53 @@ function ActionPlan({
         </div>
       }
     >
-      <ol className="space-y-2">
-        {steps.map((step, idx) => (
-          <li
-            key={idx}
+      <PlanStepList steps={steps} />
+    </Section>
+  );
+}
+
+function PlanStepList({
+  steps,
+}: {
+  steps: Array<{ label: string; status: 'done' | 'pending' | 'warning'; detail?: string }>;
+}) {
+  return (
+    <ol className="space-y-2">
+      {steps.map((step, idx) => (
+        <li
+          key={idx}
+          className={cn(
+            'flex items-start gap-3 rounded-lg border px-4 py-3',
+            step.status === 'done'
+              ? 'border-success/30 bg-success-soft'
+              : step.status === 'warning'
+              ? 'border-warning/30 bg-warning-soft'
+              : 'border-border bg-surface-subtle'
+          )}
+        >
+          <span
             className={cn(
-              'flex items-start gap-3 rounded-xl border px-4 py-3',
+              'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
               step.status === 'done'
-                ? 'border-success/30 bg-success-soft'
+                ? 'bg-success text-success-foreground'
                 : step.status === 'warning'
-                ? 'border-warning/30 bg-warning-soft'
-                : 'border-border bg-surface-subtle'
+                ? 'bg-warning text-warning-foreground'
+                : 'bg-surface text-foreground-muted ring-1 ring-border'
             )}
           >
-            <span
-              className={cn(
-                'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
-                step.status === 'done'
-                  ? 'bg-success text-success-foreground'
-                  : step.status === 'warning'
-                  ? 'bg-warning text-warning-foreground'
-                  : 'bg-surface text-foreground-muted ring-1 ring-border'
-              )}
-            >
-              {step.status === 'done' ? <CheckCircle2 className="h-3.5 w-3.5" /> : idx + 1}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-foreground">{step.label}</p>
-              {step.detail && (
-                <p className="mt-0.5 text-[12px] leading-relaxed text-foreground-muted break-words">
-                  {step.detail}
-                </p>
-              )}
-            </div>
-          </li>
-        ))}
-      </ol>
-    </Section>
+            {step.status === 'done' ? <CheckCircle2 className="h-3.5 w-3.5" /> : idx + 1}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-foreground">{step.label}</p>
+            {step.detail && (
+              <p className="mt-0.5 text-[12px] leading-relaxed text-foreground-muted break-words">
+                {step.detail}
+              </p>
+            )}
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -1557,9 +1763,12 @@ function ManualOverride({
           >
             <option value="">— not assigned —</option>
             <option value="Nuvei">Nuvei</option>
-            <option value="Payroc">Payroc / Peoples</option>
+            <option value="Payroc / Peoples">Payroc / Peoples</option>
             <option value="Chase">Chase</option>
           </select>
+          <p className="text-xs text-foreground-muted">
+            Processor overrides are written immediately. Use only after the AI recommendation has been reviewed.
+          </p>
         </div>
 
         {/* Force approve */}
