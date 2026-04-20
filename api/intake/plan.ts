@@ -1,7 +1,14 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { resolvePlanModel } from '../geminiModel';
 
 export const config = { runtime: 'nodejs', maxDuration: 30 };
+
+const GEMINI_MODEL_FLASH = 'gemini-2.5-flash';
+
+function resolvePlanModel(): string {
+  const fromEnv =
+    process.env.GEMINI_PLAN_MODEL?.trim() || process.env.GEMINI_INTAKE_PLAN_MODEL?.trim();
+  return fromEnv || GEMINI_MODEL_FLASH;
+}
 
 const POLICY_SNIPPET = [
   'Merchant onboarding is AI-assisted; follow the same ordering rules as the live app.',

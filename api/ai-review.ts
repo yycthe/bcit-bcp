@@ -1,5 +1,4 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { GEMINI_MODEL_FLASH, isGeminiQuotaError, resolveReviewModel } from './geminiModel';
 
 export const config = { runtime: 'nodejs', maxDuration: 60 };
 
@@ -153,6 +152,23 @@ const RESPONSE_SCHEMA = {
 function json(res: any, status: number, body: unknown) {
   res.status(status).setHeader('Content-Type', 'application/json');
   res.send(JSON.stringify(body));
+}
+
+const GEMINI_MODEL_FLASH = 'gemini-2.5-flash';
+
+function resolveReviewModel(): string {
+  const fromEnv =
+    process.env.GEMINI_REVIEW_MODEL?.trim() || process.env.AI_REVIEW_MODEL?.trim();
+  return fromEnv || GEMINI_MODEL_FLASH;
+}
+
+function isGeminiQuotaError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  const lower = msg.toLowerCase();
+  if (lower.includes('resource_exhausted')) return true;
+  if (lower.includes('"code":429') || lower.includes(' 429') || lower.includes('status":429')) return true;
+  if (lower.includes('quota') && (lower.includes('exceeded') || lower.includes('limit: 0'))) return true;
+  return false;
 }
 
 async function runStructuredReview(
