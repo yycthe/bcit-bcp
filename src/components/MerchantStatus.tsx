@@ -13,6 +13,7 @@ import {
   ArrowRight,
   Building,
   Upload,
+  Sparkles,
 } from 'lucide-react';
 
 export type MissingDocumentItem = { key: MerchantDocumentKey; label: string };
@@ -146,6 +147,15 @@ export function MerchantStatus({
           title="Track your application"
           description="Watch progress as our review team verifies KYC / KYB, documents, and processor fit."
         />
+
+        {status === 'under_review' && !adminNotice?.trim() && (
+          <Banner
+            intent="info"
+            icon={Sparkles}
+            title="AI pre-review in progress"
+            description="Our AI assistant is reading your answers and uploaded documents. A human reviewer will confirm the final decision and reach out if anything is missing — no action needed from you right now."
+          />
+        )}
 
         {status === 'under_review' && adminNotice?.trim() && (
           <Banner

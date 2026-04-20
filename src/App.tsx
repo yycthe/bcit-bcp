@@ -6,19 +6,38 @@ import { AppShell, type ViewMode } from './components/AppShell';
 import { MerchantData, FileData, ApplicationStatus, initialMerchantData } from './types';
 import type { VerificationIssue } from './lib/localVerification';
 import type { UnderwritingDisplayResult } from './lib/underwritingFallback';
+import { usePersistentState } from './lib/persistentState';
+
+const STORAGE_KEYS = {
+  appStatus: 'bcp:appStatus',
+  merchantData: 'bcp:merchantData',
+  documents: 'bcp:documents',
+  underwritingResult: 'bcp:underwritingResult',
+  merchantNoticeFromAdmin: 'bcp:merchantNoticeFromAdmin',
+  verificationIssues: 'bcp:verificationIssues',
+} as const;
 
 export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('merchant');
-  const [appStatus, setAppStatus] = useState<ApplicationStatus>('draft');
-  const [merchantData, setMerchantData] = useState<MerchantData>(() => ({
+  const [appStatus, setAppStatus] = usePersistentState<ApplicationStatus>(STORAGE_KEYS.appStatus, 'draft');
+  const [merchantData, setMerchantData] = usePersistentState<MerchantData>(STORAGE_KEYS.merchantData, () => ({
     ...initialMerchantData,
     additionalDocuments: [],
   }));
-  const [documents, setDocuments] = useState<FileData[]>([]);
-  const [underwritingResult, setUnderwritingResult] = useState<UnderwritingDisplayResult | null>(null);
+  const [documents, setDocuments] = usePersistentState<FileData[]>(STORAGE_KEYS.documents, []);
+  const [underwritingResult, setUnderwritingResult] = usePersistentState<UnderwritingDisplayResult | null>(
+    STORAGE_KEYS.underwritingResult,
+    null
+  );
   /** Shown to merchant while under review (set from Admin). */
-  const [merchantNoticeFromAdmin, setMerchantNoticeFromAdmin] = useState('');
-  const [verificationIssues, setVerificationIssues] = useState<VerificationIssue[]>([]);
+  const [merchantNoticeFromAdmin, setMerchantNoticeFromAdmin] = usePersistentState<string>(
+    STORAGE_KEYS.merchantNoticeFromAdmin,
+    ''
+  );
+  const [verificationIssues, setVerificationIssues] = usePersistentState<VerificationIssue[]>(
+    STORAGE_KEYS.verificationIssues,
+    []
+  );
 
   return (
     <>

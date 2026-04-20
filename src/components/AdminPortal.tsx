@@ -16,6 +16,7 @@ import {
 } from '@/src/lib/underwritingFallback';
 import { requestAiReview, type AiReviewResult } from '@/src/lib/aiReview';
 import { ONBOARDING_POLICY_PROMPT } from '@/src/lib/ruleBasedWorkflow';
+import { usePersistentState } from '@/src/lib/persistentState';
 import { FormattedSummary } from '@/src/components/ui/formatted-summary';
 import {
   ShieldCheck,
@@ -43,6 +44,8 @@ import {
   Ban,
   Trash2,
   Activity,
+  ExternalLink,
+  Clock,
 } from 'lucide-react';
 import { Badge } from '@/src/components/ui/badge';
 import { Button } from '@/src/components/ui/button';
@@ -160,9 +163,12 @@ export function AdminPortal({
   setVerificationIssues,
 }: Props) {
   const [currentView, setCurrentView] = useState<AdminView>('queue');
-  const [aiReview, setAiReview] = useState<AiReviewResult | null>(null);
+  const [aiReview, setAiReview] = usePersistentState<AiReviewResult | null>('bcp:aiReview', null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiStartedAt, setAiStartedAt] = useState<number | null>(null);
+  const [aiElapsedMs, setAiElapsedMs] = useState<number | null>(null);
+  const [aiLastDurationMs, setAiLastDurationMs] = usePersistentState<number | null>('bcp:aiLastDurationMs', null);
   const [autoTriggered, setAutoTriggered] = useState(false);
 
   // Manual override state (kept local; committed to merchantData on save)
@@ -181,6 +187,18 @@ export function AdminPortal({
   const docChecklist = useMemo(() => getMerchantDocumentChecklist(merchantData), [merchantData]);
   const missing = useMemo(() => docChecklist.filter((d) => !d.present), [docChecklist]);
   const presentCount = docChecklist.length - missing.length;
+
+  // Count how many uploaded documents Gemini will actually inspect (inlineData):
+  // has an HTTPS blob URL + mime is PDF/PNG/JPEG/WebP.
+  const inspectableDocCount = useMemo(() => {
+    const SUPPORTED = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
+    const all = collectAdminDocuments(merchantData, documents);
+    return all.filter((d) => {
+      const mime = (d.mimeType || '').toLowerCase();
+      const hasUrl = typeof d.data === 'string' && /^https?:\/\//i.test(d.data);
+      return hasUrl && SUPPORTED.has(mime);
+    }).length;
+  }, [merchantData, documents]);
 
   // Keep manual override inputs in sync when the merchant data itself changes
   useEffect(() => {
@@ -228,8 +246,11 @@ export function AdminPortal({
 
   const runAiReview = async (opts: { silent?: boolean } = {}) => {
     if (aiLoading) return null;
+    const startedAt = Date.now();
     setAiLoading(true);
     setAiError(null);
+    setAiStartedAt(startedAt);
+    setAiElapsedMs(0);
     const toastId = opts.silent ? undefined : toast.loading('AI reviewing application...');
     try {
       let rule = underwritingResult;
@@ -239,10 +260,12 @@ export function AdminPortal({
       }
       const result = await requestAiReview(merchantData, rule, documents);
       setAiReview(result);
+      const elapsed = Date.now() - startedAt;
+      setAiLastDurationMs(elapsed);
       if (toastId !== undefined) {
         toast.success('AI review ready', {
           id: toastId,
-          description: `${result.riskCategory} · ${Math.round(result.confidence * 100)}% confidence`,
+          description: `${result.riskCategory} · ${Math.round(result.confidence * 100)}% confidence · ${(elapsed / 1000).toFixed(1)}s`,
         });
       }
       return result;
@@ -255,8 +278,16 @@ export function AdminPortal({
       return null;
     } finally {
       setAiLoading(false);
+      setAiStartedAt(null);
     }
   };
+
+  // Tick elapsed timer while AI is running
+  useEffect(() => {
+    if (!aiLoading || aiStartedAt === null) return;
+    const id = setInterval(() => setAiElapsedMs(Date.now() - aiStartedAt), 250);
+    return () => clearInterval(id);
+  }, [aiLoading, aiStartedAt]);
 
   // Auto-run rule + verification + AI when opening the workbench for a non-draft app.
   useEffect(() => {
@@ -271,6 +302,16 @@ export function AdminPortal({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentView, hasApplication]);
+
+  // When merchant resets to an empty draft, wipe stale AI output so we don't
+  // show a verdict that no longer matches the current (blank) application.
+  useEffect(() => {
+    if (!hasApplication && aiReview) {
+      setAiReview(null);
+      setAiError(null);
+      setAiLastDurationMs(null);
+    }
+  }, [hasApplication, aiReview, setAiReview, setAiLastDurationMs]);
 
   const openWorkbench = () => {
     setCurrentView('workbench');
@@ -453,6 +494,9 @@ export function AdminPortal({
             aiReview={aiReview}
             aiLoading={aiLoading}
             aiError={aiError}
+            aiElapsedMs={aiElapsedMs}
+            aiLastDurationMs={aiLastDurationMs}
+            inspectableDocCount={inspectableDocCount}
             lastVerification={lastVerification}
             verificationLoading={verificationLoading}
             merchantNoticeFromAdmin={merchantNoticeFromAdmin}
@@ -635,6 +679,9 @@ interface WorkbenchProps {
   aiReview: AiReviewResult | null;
   aiLoading: boolean;
   aiError: string | null;
+  aiElapsedMs: number | null;
+  aiLastDurationMs: number | null;
+  inspectableDocCount: number;
   lastVerification: VerificationCheckResult | null;
   verificationLoading: boolean;
   merchantNoticeFromAdmin: string;
@@ -672,6 +719,9 @@ function Workbench(props: WorkbenchProps) {
     aiReview,
     aiLoading,
     aiError,
+    aiElapsedMs,
+    aiLastDurationMs,
+    inspectableDocCount,
     merchantNoticeFromAdmin,
     onBack,
     onRunAi,
@@ -710,10 +760,23 @@ function Workbench(props: WorkbenchProps) {
                     <Sparkles className="h-3 w-3" /> {aiMeta.label}
                   </Badge>
                 )}
-                {aiLoading && !aiMeta && (
+                {aiLoading && (
                   <Badge variant="info">
-                    <Sparkles className="h-3 w-3" /> AI thinking…
+                    <Sparkles className="h-3 w-3" />
+                    {inspectableDocCount > 0
+                      ? `AI reading ${inspectableDocCount} doc${inspectableDocCount === 1 ? '' : 's'}`
+                      : 'AI thinking…'}
+                    {aiElapsedMs !== null ? ` · ${(aiElapsedMs / 1000).toFixed(1)}s` : ''}
                   </Badge>
+                )}
+                {!aiLoading && aiLastDurationMs !== null && aiReview && (
+                  <span
+                    className="inline-flex items-center gap-1 text-[11px] text-foreground-subtle"
+                    title="Last AI review duration"
+                  >
+                    <Clock className="h-3 w-3" />
+                    {(aiLastDurationMs / 1000).toFixed(1)}s
+                  </span>
                 )}
                 <span className="hidden sm:inline">·</span>
                 <span>{merchantData.industry ? merchantData.industry.replace(/_/g, ' ') : 'Industry pending'}</span>
@@ -1070,6 +1133,48 @@ function ActionPlan({
 // Evidence (collapsible)
 // ---------------------------------------------------------------------------
 
+const MERCHANT_FILE_SLOT_LABELS: Record<string, string> = {
+  idUpload: 'Owner ID',
+  proofOfAddress: 'Proof of address',
+  registrationCertificate: 'Registration certificate',
+  taxDocument: 'Tax document',
+  proofOfFunds: 'Proof of funds',
+  bankStatement: 'Bank statement',
+  financials: 'Financials',
+  complianceDocument: 'Compliance document',
+  enhancedVerification: 'Enhanced verification',
+};
+
+type AdminDocEntry = FileData & { slot: string; slotLabel?: string };
+
+function collectAdminDocuments(merchantData: MerchantData, extra: FileData[]): AdminDocEntry[] {
+  const entries: AdminDocEntry[] = [];
+  const seenNames = new Set<string>();
+
+  const push = (slot: string, source: FileData | undefined) => {
+    if (!source || typeof source !== 'object') return;
+    if (!source.name) return;
+    const key = `${slot}:${source.name}`;
+    if (seenNames.has(key)) return;
+    seenNames.add(key);
+    entries.push({
+      ...source,
+      slot,
+      slotLabel: MERCHANT_FILE_SLOT_LABELS[slot],
+    });
+  };
+
+  for (const slot of Object.keys(MERCHANT_FILE_SLOT_LABELS)) {
+    push(slot, (merchantData as unknown as Record<string, unknown>)[slot] as FileData | undefined);
+  }
+  (Array.isArray(merchantData.additionalDocuments) ? merchantData.additionalDocuments : []).forEach((d, i) => {
+    push(`additional-${i}`, d);
+  });
+  extra.forEach((d, i) => push(`chat-${i}`, d));
+
+  return entries;
+}
+
 function Evidence({
   underwritingResult,
   aiReview,
@@ -1084,6 +1189,7 @@ function Evidence({
   docChecklist: ReturnType<typeof getMerchantDocumentChecklist>;
   missing: ReturnType<typeof getMerchantDocumentChecklist>;
 }) {
+  const allDocumentsForReview = collectAdminDocuments(merchantData, documents);
   return (
     <details className="group rounded-2xl border border-border bg-surface shadow-xs">
       <summary className="flex cursor-pointer items-center justify-between gap-3 px-5 py-4 text-left [&::-webkit-details-marker]:hidden">
@@ -1274,21 +1380,47 @@ function Evidence({
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground-subtle">
-              Files on record
+              Files on record ({allDocumentsForReview.length})
             </p>
-            {documents.length === 0 ? (
+            {allDocumentsForReview.length === 0 ? (
               <p className="mt-2 text-sm italic text-foreground-subtle">No documents uploaded yet.</p>
             ) : (
               <ul className="mt-2 space-y-1.5">
-                {documents.map((doc) => (
-                  <li
-                    key={doc.id}
-                    className="flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground"
-                  >
-                    <FileText className="h-3.5 w-3.5 shrink-0 text-foreground-muted" />
-                    <span className="truncate">{doc.name}</span>
-                  </li>
-                ))}
+                {allDocumentsForReview.map((doc) => {
+                  const previewUrl =
+                    typeof doc.data === 'string' && /^(https?:|data:)/i.test(doc.data) ? doc.data : null;
+                  return (
+                    <li
+                      key={`${doc.slot}-${doc.name}`}
+                      className="flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground"
+                    >
+                      <FileText className="h-3.5 w-3.5 shrink-0 text-foreground-muted" />
+                      <div className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate" title={doc.name}>
+                          {doc.name}
+                        </span>
+                        {doc.slotLabel ? (
+                          <span className="text-[10px] uppercase tracking-wider text-foreground-subtle">
+                            {doc.slotLabel}
+                          </span>
+                        ) : null}
+                      </div>
+                      {previewUrl ? (
+                        <a
+                          href={previewUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-subtle px-2 py-0.5 text-[11px] font-medium text-foreground-muted transition hover:border-brand hover:bg-brand/10 hover:text-brand"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Open
+                        </a>
+                      ) : (
+                        <span className="text-[10px] italic text-foreground-subtle">metadata only</span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
