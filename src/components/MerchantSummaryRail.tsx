@@ -3,11 +3,10 @@ import {
   Building2,
   CheckCircle2,
   FileCheck,
-  Globe2,
-  Briefcase,
   Activity,
   ShieldCheck,
   Sparkles,
+  Mail,
 } from 'lucide-react';
 import { MerchantData, ApplicationStatus } from '@/src/types';
 import { getMerchantDocumentChecklist } from '@/src/lib/documentChecklist';
@@ -19,22 +18,71 @@ interface Props {
   appStatus: ApplicationStatus;
 }
 
+type Field = { label: string; value?: string };
+
+const titleCase = (s?: string) =>
+  s ? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '';
+
+const yesNo = (raw?: string): string | undefined => {
+  if (!raw) return undefined;
+  const v = raw.trim().toLowerCase();
+  if (!v) return undefined;
+  if (v.startsWith('yes')) return 'Yes';
+  if (v.startsWith('no')) return 'No';
+  return raw;
+};
+
+const maskAccount = (acc?: string): string | undefined => {
+  if (!acc) return undefined;
+  const trimmed = acc.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.length <= 4) return `••${trimmed}`;
+  return `••${trimmed.slice(-4)}`;
+};
+
 export function MerchantSummaryRail({ data, appStatus }: Props) {
   const checklist = getMerchantDocumentChecklist(data);
   const total = checklist.length;
   const present = checklist.filter((c) => c.present).length;
   const pct = total > 0 ? Math.round((present / total) * 100) : 0;
 
-  const profileFields: { label: string; value?: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { label: 'Legal name', value: data.legalName || data.ownerName, icon: Building2 },
-    { label: 'Industry', value: data.industry?.replace('_', ' '), icon: Briefcase },
-    { label: 'Country', value: data.country, icon: Globe2 },
-    { label: 'Monthly volume', value: data.monthlyVolume, icon: Activity },
+  const businessFields: Field[] = [
+    { label: 'Legal name', value: data.legalName || data.ownerName },
+    { label: 'DBA name', value: data.dbaName && data.dbaName !== data.legalName ? data.dbaName : '' },
+    { label: 'Business type', value: titleCase(data.businessType) },
+    { label: 'Industry', value: titleCase(data.industry) },
+    { label: 'Country', value: data.country },
+    { label: 'Tax ID', value: data.taxId },
+    { label: 'Established', value: data.establishedDate || data.timeInBusiness },
+    { label: 'Website', value: data.website },
   ];
 
-  const filledProfileFields = profileFields.filter((f) => f.value && f.value.trim().length > 0);
+  const operationsFields: Field[] = [
+    { label: 'Monthly volume', value: data.monthlyVolume },
+    { label: 'Monthly transactions', value: data.monthlyTransactions },
+    { label: 'Avg ticket size', value: data.avgTicketSize },
+    { label: 'Highest ticket', value: data.highestTicketAmount },
+    { label: 'Currently processes cards', value: yesNo(data.currentlyProcessesCards) },
+    { label: 'Channels', value: data.transactionChannelSplit },
+    { label: 'Target geography', value: data.targetGeography },
+  ];
+
+  const contactFields: Field[] = [
+    { label: 'Owner', value: data.ownerName },
+    { label: 'Authorized signer', value: data.authorizedSignerName },
+    { label: 'Business phone', value: data.businessPhone || data.phone },
+    { label: 'Email', value: data.legalBusinessEmail || data.generalEmail || data.supportEmail },
+    { label: 'Bank', value: data.bankName },
+    { label: 'Account', value: maskAccount(data.accountNumber) },
+    { label: 'Settlement currency', value: data.settlementCurrency },
+  ];
+
+  const businessFilled = businessFields.filter((f) => f.value && f.value.trim()).length;
+  const opsFilled = operationsFields.filter((f) => f.value && f.value.trim()).length;
+  const contactFilled = contactFields.filter((f) => f.value && f.value.trim()).length;
+
   const hasHeading = Boolean(data.legalName || data.ownerName || data.businessType);
-  const hasAnyProfile = hasHeading || filledProfileFields.length > 0;
+  const hasAnyProfile = hasHeading || businessFilled + opsFilled + contactFilled > 0;
   const hasDocActivity = present > 0 || appStatus !== 'draft';
 
   const kybStatus = data.personaKybStatus?.toLowerCase();
@@ -112,20 +160,27 @@ export function MerchantSummaryRail({ data, appStatus }: Props) {
         </div>
       ) : (
         <>
-          {filledProfileFields.length > 0 && (
-            <dl className="grid gap-2 rounded-xl border border-border bg-surface p-3 shadow-xs">
-              {filledProfileFields.map((f) => (
-                <div key={f.label} className="flex items-start gap-2 text-xs">
-                  <f.icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground-subtle" />
-                  <div className="min-w-0 flex-1">
-                    <dt className="text-[10px] font-semibold uppercase tracking-wider text-foreground-subtle">
-                      {f.label}
-                    </dt>
-                    <dd className="truncate text-foreground">{f.value}</dd>
-                  </div>
-                </div>
-              ))}
-            </dl>
+          {hasAnyProfile && (
+            <>
+              <FieldGroup
+                icon={Building2}
+                title="Business profile"
+                fields={businessFields}
+                filledCount={businessFilled}
+              />
+              <FieldGroup
+                icon={Activity}
+                title="Volume & processing"
+                fields={operationsFields}
+                filledCount={opsFilled}
+              />
+              <FieldGroup
+                icon={Mail}
+                title="Contacts & banking"
+                fields={contactFields}
+                filledCount={contactFilled}
+              />
+            </>
           )}
 
           {hasDocActivity && total > 0 && (
@@ -205,5 +260,53 @@ export function MerchantSummaryRail({ data, appStatus }: Props) {
         </>
       )}
     </aside>
+  );
+}
+
+interface FieldGroupProps {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  fields: Field[];
+  filledCount: number;
+}
+
+function FieldGroup({ icon: Icon, title, fields, filledCount }: FieldGroupProps) {
+  return (
+    <div className="rounded-xl border border-border bg-surface p-3 shadow-xs">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground-subtle">
+          <Icon className="h-3.5 w-3.5 text-brand" />
+          {title}
+        </p>
+        <span className="text-[10px] font-semibold text-foreground-subtle tabular-nums">
+          {filledCount}/{fields.length}
+        </span>
+      </div>
+      <dl className="grid gap-1.5">
+        {fields.map((f) => {
+          const hasValue = Boolean(f.value && f.value.trim().length > 0);
+          return (
+            <div
+              key={f.label}
+              className="flex items-baseline justify-between gap-3 border-b border-border/60 pb-1.5 text-xs last:border-b-0 last:pb-0"
+            >
+              <dt className="shrink-0 text-[11px] font-medium text-foreground-muted">
+                {f.label}
+              </dt>
+              <dd
+                className={
+                  hasValue
+                    ? 'min-w-0 truncate text-right text-xs font-medium text-foreground'
+                    : 'min-w-0 truncate text-right text-xs italic text-foreground-subtle'
+                }
+                title={hasValue ? (f.value as string) : undefined}
+              >
+                {hasValue ? f.value : 'N/A'}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    </div>
   );
 }
