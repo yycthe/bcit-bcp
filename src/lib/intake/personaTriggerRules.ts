@@ -410,14 +410,14 @@ export function evaluateStrictPersonaTriggers(data: MerchantData): StrictPersona
   const summaryBits = [
     `Action: ${
       action === 'none'
-        ? 'hold KYC / KYB steps'
+        ? 'hold KYC / KYB checkpoint'
         : action === 'both'
-          ? 'send KYB and KYC together'
+          ? 'run KYB and KYC together'
           : action === 'kyb_first'
-            ? 'send KYB first and hold some KYC'
+            ? 'run KYB first and hold some KYC'
             : action === 'kyb'
-              ? 'send KYB'
-              : 'send KYC'
+              ? 'run KYB'
+              : 'run KYC'
     }.`,
     `KYB required: ${flags.KYB_required ? 'yes' : 'no'}.`,
     `KYB ready: ${flags.KYB_ready_to_send ? 'yes' : 'no'}.`,
@@ -461,9 +461,9 @@ export function buildStrictPersonaSummary(data: MerchantData): string {
   const reasonText = decision.reasons.length > 0 ? ` Reasons: ${decision.reasons.join(' ')}` : '';
 
   return [
-    `KYC / KYB trigger decision: ${decision.summary}`,
-    `KYC recipients: ${recipientText}.`,
-    `Held KYC recipients: ${heldText}.`,
+    `KYC / KYB checkpoint decision: ${decision.summary}`,
+    `KYC recipients queued for verification: ${recipientText}.`,
+    `Held KYC recipients until more info is available: ${heldText}.`,
     `Shared verification sufficiently completed: ${decision.sharedVerificationSufficientlyCompleted ? 'yes' : 'no'}.`,
     reasonText,
   ]

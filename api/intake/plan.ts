@@ -13,6 +13,8 @@ function resolvePlanModel(): string {
 const POLICY_SNIPPET = [
   'Merchant onboarding is AI-assisted; follow the same ordering rules as the live app.',
   'Common intake must stay processor-agnostic until routing.',
+  'Common forms already hide irrelevant sub-questions in the UI, so prefer keeping core coverage and optimizing the section order.',
+  'personaDecisionGate represents a virtual KYC / KYB checkpoint in the UI, not a required external integration.',
   'Include personaDecisionGate before document uploads unless you have a strong reason to reorder (explain in reason).',
   'Every document slot id must be one of the allowed upload keys.',
 ].join('\n');
@@ -83,7 +85,7 @@ function defaultPlan(): { sections: PlanSection[]; summary: string } {
       required: true,
       reason: 'Default full common intake.',
     })),
-    { kind: 'persona_gate', required: true, reason: 'Standard KYC / KYB routing gate.' },
+    { kind: 'persona_gate', required: true, reason: 'Standard virtual KYC / KYB checkpoint.' },
     ...DOC_SLOTS.map((id) => ({
       kind: 'document' as const,
       id,

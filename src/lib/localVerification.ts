@@ -89,11 +89,11 @@ export function runLocalVerificationCheck(merchantData: MerchantData): Verificat
   if (personaDecision.personaNotReady) {
     pushUnique(issues, {
       id: 'persona-routing',
-      reason: `KYC / KYB invite routing is not ready yet. Missing: ${personaDecision.missingReadinessItems.join(', ')}.`,
+      reason: `The KYC / KYB checkpoint is not ready yet. Missing: ${personaDecision.missingReadinessItems.join(', ')}.`,
       target: {
         kind: 'intake',
         questionId: 'ownershipControlForm',
-        whereLabel: 'Intake Assistant → KYC / KYB routing',
+        whereLabel: 'Intake Assistant → KYC / KYB checkpoint',
       },
     });
   }

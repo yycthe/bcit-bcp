@@ -100,6 +100,9 @@ interface QuestionDef {
     type: 'text' | 'email' | 'number' | 'date' | 'textarea' | 'select';
     required?: boolean;
     options?: { label: string; value: string }[];
+    helperText?: string;
+    visibleWhen?: (answers: Partial<MerchantData>) => boolean;
+    requiredWhen?: (answers: Partial<MerchantData>) => boolean;
   }[];
 }
 
@@ -217,6 +220,9 @@ const COMMON_FORM_QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = Object.f
           type: field.type,
           required: field.required,
           options: field.options,
+          helperText: field.helperText,
+          visibleWhen: field.visibleWhen,
+          requiredWhen: field.requiredWhen,
         })),
       } satisfies QuestionDef,
     ];
@@ -243,7 +249,7 @@ function getQuestionStage(questionId: QuestionId): string {
     return 'Common intake';
   }
   if (questionId === 'personaDecisionGate') {
-    return 'KYC / KYB routing';
+    return 'KYC / KYB checkpoint';
   }
   if (questionId === 'processorSpecificFollowUpForm') {
     return 'Processor follow-up';
@@ -531,7 +537,7 @@ const getQuestionText = (qId: QuestionId, data: MerchantData): string => {
       "Next I need the common business-model details processors ask for before any processor-specific forms.",
 
     ownershipControlForm: () =>
-      "Now let's capture ownership and control. This is what decides who should receive KYC invites and whether KYB should go first.",
+      "Now let's capture ownership and control. This is what decides which owners or signers need verification and whether KYB should go first.",
 
     processingHistoryForm: () =>
       "A few processing-history questions help detect early risk before we ask for any processor-specific details.",
@@ -547,7 +553,7 @@ const getQuestionText = (qId: QuestionId, data: MerchantData): string => {
 
     personaDecisionGate: () => {
       const decision = decidePersonaInvites(data);
-      return `${decision.summary} I will attach this KYC / KYB routing plan to the merchant profile before the AI review.`;
+      return `${decision.summary} I will attach this virtual KYC / KYB checkpoint to the merchant profile before the AI review.`;
     },
 
     processorSpecificFollowUpForm: () => {
@@ -696,7 +702,7 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
   ...COMMON_FORM_QUESTIONS,
   personaDecisionGate: {
     id: 'personaDecisionGate',
-    text: 'KYC / KYB trigger decision',
+    text: 'KYC / KYB verification checkpoint',
     type: 'system',
   },
   processorSpecificFollowUpForm: {
@@ -864,6 +870,7 @@ export function ChatApp({
   const [guidedAfterData, setGuidedAfterData] = useState<MerchantData | null>(null);
   const [intakePlan, setIntakePlan] = useState<IntakePlan | null>(null);
   const [intakePlanLoading, setIntakePlanLoading] = useState(false);
+  const [draftFormValues, setDraftFormValues] = useState<Record<string, string>>({});
   const [pendingDocExtract, setPendingDocExtract] = useState<{
     slot: string;
     fileName: string;
@@ -890,6 +897,20 @@ export function ChatApp({
       setInputValue('');
     }
   }, [currentQuestion]);
+
+  useEffect(() => {
+    const qDef = currentQuestion ? QUESTIONS[currentQuestion] : null;
+    if (qDef?.type !== 'form') {
+      setDraftFormValues({});
+      return;
+    }
+    const nextValues: Record<string, string> = {};
+    qDef.fields?.forEach((field) => {
+      const raw = data[field.id];
+      nextValues[String(field.id)] = typeof raw === 'string' ? raw : '';
+    });
+    setDraftFormValues(nextValues);
+  }, [currentQuestion, data]);
   const questionSequence = buildQuestionSequence(data, intakePlan);
   const currentStepIndex = currentQuestion === 'done' ? questionSequence.length : Math.max(questionSequence.indexOf(currentQuestion), 0) + 1;
   const progressPercent = Math.min(100, Math.max(6, Math.round((currentStepIndex / questionSequence.length) * 100)));
@@ -1344,6 +1365,10 @@ export function ChatApp({
 
     if (qDef.type === 'system') {
       const decision = evaluateStrictPersonaTriggers(data);
+      const checkpointButtonLabel =
+        decision.missingReadinessItems.length > 0
+          ? 'Save draft checkpoint and continue'
+          : 'Save checkpoint and continue';
       return (
         <div className="shrink-0 border-t border-border bg-surface px-4 py-5 sm:px-6">
           <div className="mx-auto max-w-3xl rounded-2xl border border-accent/20 bg-accent-soft/70 p-5 shadow-xs">
@@ -1352,16 +1377,16 @@ export function ChatApp({
                 <ShieldCheck className="h-3.5 w-3.5" />
               </span>
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-info-foreground">
-                Phase 2 — KYC / KYB routing
+                Phase 2 — KYC / KYB checkpoint
               </p>
             </div>
             <h3 className="mt-3 text-base font-semibold text-foreground">
-              Strict KYC / KYB invite decision
+              Smart KYC / KYB verification checkpoint
             </h3>
             <p className="mt-2 text-sm leading-relaxed text-foreground-muted">{decision.summary}</p>
             {decision.missingReadinessItems.length > 0 ? (
               <div className="mt-3 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-warning-foreground">
-                <p className="font-semibold">Still missing before full KYC / KYB readiness</p>
+                <p className="font-semibold">Still missing before the checkpoint is fully ready</p>
                 <ul className="mt-1.5 space-y-1">
                   {decision.missingReadinessItems.map((item) => (
                     <li key={item} className="flex gap-2 text-xs leading-relaxed">
@@ -1383,7 +1408,7 @@ export function ChatApp({
               </ul>
             ) : null}
             <p className="mt-4 rounded-lg border border-border bg-surface px-3 py-2 text-[11px] leading-relaxed text-foreground-muted">
-              This routing follows the onboarding policy rules. No external KYC / KYB API is called here; the plan is attached to the merchant profile and verification results can be added before the AI review when available.
+              This checkpoint follows the onboarding policy rules. No external KYC / KYB provider is called here; we save the verification plan locally and the admin can attach manual results before the AI review when available.
             </p>
             <div className="mt-4 flex justify-end">
               <Button
@@ -1394,14 +1419,14 @@ export function ChatApp({
                     {
                       personaInvitePlan: buildPersonaSummary(data),
                       personaVerificationSummary:
-                        'Pending. Attach KYB/KYC pass, fail, pending, mismatch, and incomplete verification results when available.',
+                        'Pending. Virtual KYC / KYB checkpoint created. Attach KYB/KYC pass, fail, pending, mismatch, and incomplete verification results when available.',
                       websiteReviewSummary: buildWebsiteSignalSummary(data),
                     },
-                    'KYC / KYB routing plan accepted'
+                    'KYC / KYB checkpoint saved'
                   )
                 }
               >
-                Continue to documents
+                {checkpointButtonLabel}
                 <ArrowRight className="h-3.5 w-3.5" />
               </Button>
             </div>
@@ -1475,6 +1500,29 @@ export function ChatApp({
         );
       }
 
+      const mergedFormAnswers = {
+        ...data,
+        ...draftFormValues,
+      } as Partial<MerchantData>;
+
+      const visibleFields =
+        qDef.fields?.filter((field) => {
+          if (!field.visibleWhen) return true;
+          return field.visibleWhen(mergedFormAnswers);
+        }) || [];
+
+      const getFieldRequired = (field: NonNullable<QuestionDef['fields']>[number]) => {
+        if (field.requiredWhen) return field.requiredWhen(mergedFormAnswers);
+        return field.required !== false;
+      };
+
+      const handleFieldChange = (fieldId: keyof MerchantData, value: string) => {
+        setDraftFormValues((prev) => ({
+          ...prev,
+          [fieldId]: value,
+        }));
+      };
+
       return (
         <div className="shrink-0 border-t border-border bg-surface">
           {isEditing && (
@@ -1499,13 +1547,17 @@ export function ChatApp({
               className="mx-auto max-w-3xl space-y-4 px-4 py-5 sm:px-6"
               onSubmit={(e) => {
                 e.preventDefault();
-                const formData = new FormData(e.currentTarget);
                 const values: Record<string, any> = {};
                 let allFilled = true;
                 qDef.fields?.forEach((f) => {
-                  const val = formData.get(f.id) as string;
+                  const isVisible = f.visibleWhen ? f.visibleWhen(mergedFormAnswers) : true;
+                  if (!isVisible) {
+                    values[f.id] = '';
+                    return;
+                  }
+                  const val = draftFormValues[String(f.id)] || '';
                   values[f.id] = val;
-                  if (f.required !== false && !val) allFilled = false;
+                  if (getFieldRequired(f) && !val.trim()) allFilled = false;
                 });
                 if (!allFilled) {
                   toast.error('Please fill out all fields.');
@@ -1514,54 +1566,68 @@ export function ChatApp({
                 handleAnswer(values, 'Provided details');
               }}
             >
+              <div className="rounded-lg border border-brand/15 bg-brand-soft/40 px-3 py-2 text-xs text-foreground-subtle">
+                We only show the follow-up fields that matter for your answers so far.
+              </div>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {qDef.fields?.map((field) => (
-                  <div
-                    key={field.id}
-                    className={cn('space-y-1.5', field.type === 'textarea' && 'md:col-span-2')}
-                  >
-                    <label className="text-xs font-semibold text-foreground">
-                      {field.label}
-                      {field.required !== false && (
-                        <span className="ml-1 text-danger">*</span>
+                {visibleFields.map((field) => {
+                  const isRequired = getFieldRequired(field);
+                  const value = draftFormValues[String(field.id)] || '';
+
+                  return (
+                    <div
+                      key={field.id}
+                      className={cn('space-y-1.5', field.type === 'textarea' && 'md:col-span-2')}
+                    >
+                      <label className="text-xs font-semibold text-foreground">
+                        {field.label}
+                        {isRequired && (
+                          <span className="ml-1 text-danger">*</span>
+                        )}
+                      </label>
+                      {field.helperText && (
+                        <p className="text-[11px] text-foreground-subtle">{field.helperText}</p>
                       )}
-                    </label>
-                    {field.type === 'textarea' ? (
-                      <textarea
-                        name={field.id}
-                        required={field.required !== false}
-                        placeholder={
-                          field.id === 'processorSpecificAnswers'
-                            ? getProcessorQuestionPrompt(data.matchedProcessor || 'Nuvei')
-                            : getFieldPlaceholder(field.id, data)
-                        }
-                        defaultValue={(data[field.id as keyof MerchantData] as string) || ''}
-                        className="min-h-[120px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm shadow-xs outline-none transition-colors hover:border-border-strong focus:border-brand"
-                      />
-                    ) : field.type === 'select' ? (
-                      <Select
-                        name={field.id}
-                        required={field.required !== false}
-                        defaultValue={(data[field.id as keyof MerchantData] as string) || ''}
-                      >
-                        <option value="">Select one...</option>
-                        {field.options?.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </Select>
-                    ) : (
-                      <Input
-                        name={field.id}
-                        type={field.type}
-                        required={field.required !== false}
-                        placeholder={getFieldPlaceholder(field.id, data)}
-                        defaultValue={(data[field.id as keyof MerchantData] as string) || ''}
-                      />
-                    )}
-                  </div>
-                ))}
+                      {field.type === 'textarea' ? (
+                        <textarea
+                          name={field.id}
+                          required={isRequired}
+                          placeholder={
+                            field.id === 'processorSpecificAnswers'
+                              ? getProcessorQuestionPrompt(data.matchedProcessor || 'Nuvei')
+                              : getFieldPlaceholder(field.id, data)
+                          }
+                          value={value}
+                          onChange={(event) => handleFieldChange(field.id, event.target.value)}
+                          className="min-h-[120px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm shadow-xs outline-none transition-colors hover:border-border-strong focus:border-brand"
+                        />
+                      ) : field.type === 'select' ? (
+                        <Select
+                          name={field.id}
+                          required={isRequired}
+                          value={value}
+                          onChange={(event) => handleFieldChange(field.id, event.target.value)}
+                        >
+                          <option value="">Select one...</option>
+                          {field.options?.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </Select>
+                      ) : (
+                        <Input
+                          name={field.id}
+                          type={field.type}
+                          required={isRequired}
+                          placeholder={getFieldPlaceholder(field.id, data)}
+                          value={value}
+                          onChange={(event) => handleFieldChange(field.id, event.target.value)}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <div className="sticky -bottom-px -mx-4 flex justify-end border-t border-border bg-surface/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
                 <Button type="submit" variant="brand">
@@ -1772,7 +1838,7 @@ export function ChatApp({
   // Stages that the merchant moves through, used for the horizontal stepper.
   const STAGES = [
     'Common intake',
-    'KYC / KYB routing',
+    'KYC / KYB checkpoint',
     'Documents',
     'Business profile',
     'Processor follow-up',

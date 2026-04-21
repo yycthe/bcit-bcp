@@ -21,6 +21,9 @@ export type CommonQuestionSpec = {
   fieldType?: CommonFieldType;
   options?: Array<{ label: string; value: string }>;
   allowNA?: boolean;
+  helperText?: string;
+  visibleWhen?: (answers: Partial<MerchantData>) => boolean;
+  requiredWhen?: (answers: Partial<MerchantData>) => boolean;
   ruleNotes?: string[];
 };
 
@@ -31,6 +34,9 @@ export type CommonFormFieldSpec = {
   type: CommonFieldType;
   required?: boolean;
   options?: Array<{ label: string; value: string }>;
+  helperText?: string;
+  visibleWhen?: (answers: Partial<MerchantData>) => boolean;
+  requiredWhen?: (answers: Partial<MerchantData>) => boolean;
   ruleNotes?: string[];
 };
 
@@ -111,6 +117,34 @@ const PAYMENT_TYPES_OPTIONS = [
   { label: 'Cards + ACH / bank debit', value: 'Cards + ACH / bank debit' },
   { label: 'Full mix', value: 'Visa / Mastercard / Amex / Interac / ACH' },
 ];
+
+function normalizeAnswer(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function isYes(value: unknown): boolean {
+  return normalizeAnswer(value) === 'yes';
+}
+
+function hasWebsite(answers: Partial<MerchantData>): boolean {
+  const website = normalizeAnswer(answers.website);
+  return Boolean(website) && !['n/a', 'na', 'none', 'no website'].includes(website);
+}
+
+function mentionsAny(value: unknown, terms: string[]): boolean {
+  const normalized = normalizeAnswer(value);
+  return terms.some((term) => normalized.includes(term));
+}
+
+function needsWebsiteQuestions(answers: Partial<MerchantData>): boolean {
+  return (
+    hasWebsite(answers) ||
+    mentionsAny(answers.businessCategory, ['e-commerce', 'moto', 'keyed']) ||
+    mentionsAny(answers.goodsOrServicesType, ['digital']) ||
+    mentionsAny(answers.transactionChannelSplit, ['e-commerce', 'moto', 'keyed']) ||
+    isYes(answers.recurringBilling)
+  );
+}
 
 /**
  * Strict master-list implementation of Layer 1 only.
@@ -194,6 +228,9 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     formId: 'legalBusinessForm',
     fieldId: 'operatingAddress',
     fieldType: 'text',
+    helperText: 'Only needed when your operating location is different from the legal entity address.',
+    visibleWhen: (answers) => isYes(answers.operatingAddressDifferent),
+    requiredWhen: (answers) => isYes(answers.operatingAddressDifferent),
     ruleNotes: ['Ask only if Question 7 = Yes.'],
   },
   {
@@ -374,22 +411,28 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     number: 26,
     prompt: 'Who is your current or previous processor?',
     mapsTo: ['currentOrPreviousProcessor'],
-    required: true,
+    required: false,
     formId: 'processingHistoryForm',
     fieldId: 'currentOrPreviousProcessor',
     fieldType: 'text',
     allowNA: true,
+    helperText: 'Only asked when you already process card payments today.',
+    visibleWhen: (answers) => isYes(answers.currentlyProcessesCards),
+    requiredWhen: (answers) => isYes(answers.currentlyProcessesCards),
     ruleNotes: ['If Question 25 = No, N/A is acceptable.'],
   },
   {
     number: 27,
     prompt: 'Why are you leaving your current / previous processor?',
     mapsTo: ['processorExitReason'],
-    required: true,
+    required: false,
     formId: 'processingHistoryForm',
     fieldId: 'processorExitReason',
     fieldType: 'textarea',
     allowNA: true,
+    helperText: 'Only asked for merchants that already process cards.',
+    visibleWhen: (answers) => isYes(answers.currentlyProcessesCards),
+    requiredWhen: (answers) => isYes(answers.currentlyProcessesCards),
     ruleNotes: ['If Question 25 = No, N/A is acceptable.'],
   },
   {
@@ -475,10 +518,13 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     number: 36,
     prompt: 'What percentage of your transactions are recurring?',
     mapsTo: ['recurringTransactionsPercent'],
-    required: true,
+    required: false,
     formId: 'salesProfileForm',
     fieldId: 'recurringTransactionsPercent',
     fieldType: 'text',
+    helperText: 'Only needed when you offer recurring billing or subscriptions.',
+    visibleWhen: (answers) => isYes(answers.recurringBilling),
+    requiredWhen: (answers) => isYes(answers.recurringBilling),
     ruleNotes: ['If Question 18 = No but this is greater than 0, record recurring_inconsistency = yes.'],
   },
   {
@@ -494,51 +540,62 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     number: 38,
     prompt: 'Does your website include a Privacy Policy?',
     mapsTo: ['websitePrivacyPolicy'],
-    required: true,
+    required: false,
     formId: 'websiteComplianceForm',
     fieldId: 'websitePrivacyPolicy',
     fieldType: 'select',
     options: YES_NO_OPTIONS,
+    helperText: 'Shown when your business has a website or an online payment flow.',
+    visibleWhen: needsWebsiteQuestions,
+    requiredWhen: needsWebsiteQuestions,
   },
   {
     number: 39,
     prompt: 'Does your website include Terms and Conditions / Terms of Use?',
     mapsTo: ['websiteTerms'],
-    required: true,
+    required: false,
     formId: 'websiteComplianceForm',
     fieldId: 'websiteTerms',
     fieldType: 'select',
     options: YES_NO_OPTIONS,
+    visibleWhen: needsWebsiteQuestions,
+    requiredWhen: needsWebsiteQuestions,
   },
   {
     number: 40,
     prompt: 'Does your website include a Return / Refund Policy?',
     mapsTo: ['websiteRefundPolicy'],
-    required: true,
+    required: false,
     formId: 'websiteComplianceForm',
     fieldId: 'websiteRefundPolicy',
     fieldType: 'select',
     options: YES_NO_OPTIONS,
+    visibleWhen: needsWebsiteQuestions,
+    requiredWhen: needsWebsiteQuestions,
   },
   {
     number: 41,
     prompt: 'Does your website include customer service contact information?',
     mapsTo: ['websiteContactInfo'],
-    required: true,
+    required: false,
     formId: 'websiteComplianceForm',
     fieldId: 'websiteContactInfo',
     fieldType: 'select',
     options: YES_NO_OPTIONS,
+    visibleWhen: needsWebsiteQuestions,
+    requiredWhen: needsWebsiteQuestions,
   },
   {
     number: 42,
     prompt: 'Is your payment page encrypted with SSL or better?',
     mapsTo: ['websiteSsl'],
-    required: true,
+    required: false,
     formId: 'websiteComplianceForm',
     fieldId: 'websiteSsl',
     fieldType: 'select',
     options: YES_NO_NA_OPTIONS,
+    visibleWhen: needsWebsiteQuestions,
+    requiredWhen: needsWebsiteQuestions,
     ruleNotes: ['If there is no website or no online payments, N/A is acceptable.'],
   },
   {
@@ -555,10 +612,13 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     number: 44,
     prompt: 'Do you use any third-party applications to process, transmit, or store cardholder data?',
     mapsTo: ['thirdPartyCardApps'],
-    required: true,
+    required: false,
     formId: 'websiteComplianceForm',
     fieldId: 'thirdPartyCardApps',
     fieldType: 'textarea',
+    helperText: 'Only needed when you rely on external payment, gateway, cart, or storage tools.',
+    visibleWhen: (answers) => needsWebsiteQuestions(answers) || isYes(answers.currentlyProcessesCards),
+    requiredWhen: (answers) => needsWebsiteQuestions(answers) || isYes(answers.currentlyProcessesCards),
     ruleNotes: ['If Yes, ask the merchant to list them.'],
   },
   {
@@ -647,11 +707,14 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     number: 53,
     prompt: 'If you currently process payments, can you provide 3 recent processing statements?',
     mapsTo: ['canProvideProcessingStatements'],
-    required: true,
+    required: false,
     formId: 'documentReadinessForm',
     fieldId: 'canProvideProcessingStatements',
     fieldType: 'select',
     options: READINESS_OPTIONS,
+    helperText: 'Only asked for merchants with an existing processing relationship.',
+    visibleWhen: (answers) => isYes(answers.currentlyProcessesCards),
+    requiredWhen: (answers) => isYes(answers.currentlyProcessesCards),
     ruleNotes: ['Only applies if Question 25 = Yes. Otherwise record processing_statements = N/A.'],
   },
 ];
@@ -679,6 +742,9 @@ export const COMMON_INTAKE_FORMS: Record<CommonIntakeFormId, CommonIntakeFormSpe
       type: q.fieldType!,
       required: q.required,
       options: q.options,
+      helperText: q.helperText,
+      visibleWhen: q.visibleWhen,
+      requiredWhen: q.requiredWhen,
       ruleNotes: q.ruleNotes,
     })),
   },
@@ -694,6 +760,9 @@ export const COMMON_INTAKE_FORMS: Record<CommonIntakeFormId, CommonIntakeFormSpe
       type: q.fieldType!,
       required: q.required,
       options: q.options,
+      helperText: q.helperText,
+      visibleWhen: q.visibleWhen,
+      requiredWhen: q.requiredWhen,
       ruleNotes: q.ruleNotes,
     })),
   },
@@ -720,12 +789,32 @@ export const COMMON_INTAKE_FORMS: Record<CommonIntakeFormId, CommonIntakeFormSpe
         options: YES_NO_OPTIONS,
       },
       {
+        questionNumber: 21,
+        id: 'parentCompanyName',
+        label: 'Parent company legal name.',
+        type: 'text',
+        required: false,
+        helperText: 'Only needed when the business is owned by a parent or holding company.',
+        visibleWhen: (answers) => isYes(answers.parentOwned),
+        requiredWhen: (answers) => isYes(answers.parentOwned),
+      },
+      {
         questionNumber: 22,
         id: 'nonOwnerController',
         label: 'Is there anyone with significant managerial control who is not an owner?',
         type: 'select',
         required: true,
         options: YES_NO_OPTIONS,
+      },
+      {
+        questionNumber: 22,
+        id: 'nonOwnerControllerDetails',
+        label: 'Name and role of the non-owner controller.',
+        type: 'text',
+        required: false,
+        helperText: 'Only needed when a non-owner has significant managerial control.',
+        visibleWhen: (answers) => isYes(answers.nonOwnerController),
+        requiredWhen: (answers) => isYes(answers.nonOwnerController),
       },
       {
         questionNumber: 23,
@@ -763,15 +852,50 @@ export const COMMON_INTAKE_FORMS: Record<CommonIntakeFormId, CommonIntakeFormSpe
     title: 'Processing history',
     summary: 'Current processor, exit reason, and adverse processing history from the common layer.',
     questionNumbers: COMMON_QUESTION_BANK.filter((q) => q.formId === 'processingHistoryForm').map((q) => q.number),
-    fields: COMMON_QUESTION_BANK.filter((q) => q.formId === 'processingHistoryForm' && q.fieldId && q.fieldType).map((q) => ({
-      questionNumber: q.number,
-      id: q.fieldId!,
-      label: q.prompt,
-      type: q.fieldType!,
-      required: q.required,
-      options: q.options,
-      ruleNotes: q.ruleNotes,
-    })),
+    fields: [
+      ...COMMON_QUESTION_BANK.filter((q) => q.formId === 'processingHistoryForm' && q.fieldId && q.fieldType).map((q) => ({
+        questionNumber: q.number,
+        id: q.fieldId!,
+        label: q.prompt,
+        type: q.fieldType!,
+        required: q.required,
+        options: q.options,
+        helperText: q.helperText,
+        visibleWhen: q.visibleWhen,
+        requiredWhen: q.requiredWhen,
+        ruleNotes: q.ruleNotes,
+      })),
+      {
+        questionNumber: 28,
+        id: 'priorTerminationExplanation',
+        label: 'If yes, what happened and when?',
+        type: 'textarea',
+        required: false,
+        helperText: 'Only needed when there has been a prior processing termination.',
+        visibleWhen: (answers) => isYes(answers.priorTermination),
+        requiredWhen: (answers) => isYes(answers.priorTermination),
+      },
+      {
+        questionNumber: 29,
+        id: 'bankruptcyExplanation',
+        label: 'If yes, please provide the year and a short explanation.',
+        type: 'textarea',
+        required: false,
+        helperText: 'Only needed when there is bankruptcy history.',
+        visibleWhen: (answers) => isYes(answers.bankruptcyHistory),
+        requiredWhen: (answers) => isYes(answers.bankruptcyHistory),
+      },
+      {
+        questionNumber: 30,
+        id: 'riskProgramExplanation',
+        label: 'If yes, which program and what was the outcome?',
+        type: 'textarea',
+        required: false,
+        helperText: 'Only needed when a Visa or Mastercard risk program has been involved.',
+        visibleWhen: (answers) => isYes(answers.riskProgramHistory),
+        requiredWhen: (answers) => isYes(answers.riskProgramHistory),
+      },
+    ],
   },
   salesProfileForm: {
     id: 'salesProfileForm',
@@ -785,6 +909,9 @@ export const COMMON_INTAKE_FORMS: Record<CommonIntakeFormId, CommonIntakeFormSpe
       type: q.fieldType!,
       required: q.required,
       options: q.options,
+      helperText: q.helperText,
+      visibleWhen: q.visibleWhen,
+      requiredWhen: q.requiredWhen,
       ruleNotes: q.ruleNotes,
     })),
   },
@@ -800,6 +927,9 @@ export const COMMON_INTAKE_FORMS: Record<CommonIntakeFormId, CommonIntakeFormSpe
       type: q.fieldType!,
       required: q.required,
       options: q.options,
+      helperText: q.helperText,
+      visibleWhen: q.visibleWhen,
+      requiredWhen: q.requiredWhen,
       ruleNotes: q.ruleNotes,
     })),
   },
@@ -815,6 +945,9 @@ export const COMMON_INTAKE_FORMS: Record<CommonIntakeFormId, CommonIntakeFormSpe
       type: q.fieldType!,
       required: q.required,
       options: q.options,
+      helperText: q.helperText,
+      visibleWhen: q.visibleWhen,
+      requiredWhen: q.requiredWhen,
       ruleNotes: q.ruleNotes,
     })),
   },

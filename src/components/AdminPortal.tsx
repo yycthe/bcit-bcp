@@ -359,7 +359,7 @@ export function AdminPortal({
       return;
     }
     if (!personaKybStatus && !personaKycStatuses && !personaVerificationIssues) {
-      toast.error('Enter at least one KYC / KYB field before saving.');
+      toast.error('Enter at least one KYC / KYB checkpoint field before saving.');
       return;
     }
     setMerchantData((prev) => ({
@@ -376,7 +376,7 @@ export function AdminPortal({
           .filter(Boolean)
           .join('. ') || prev.personaVerificationSummary,
     }));
-    toast.success('KYC / KYB results saved to merchant profile');
+    toast.success('KYC / KYB checkpoint results saved to the merchant profile');
   };
 
   const postAutoReminder = () => {
@@ -1339,7 +1339,7 @@ function Evidence({
           <div className="mt-2">
             <FormattedSummary
               text={merchantData.personaInvitePlan || merchantData.personaVerificationSummary}
-              emptyText="No KYC / KYB routing summary yet."
+              emptyText="No KYC / KYB checkpoint summary yet."
             />
           </div>
         </div>
@@ -1456,7 +1456,7 @@ function ManualOverride({
           <div>
             <p className="text-sm font-semibold text-foreground">Advanced override (rare)</p>
             <p className="text-[11px] text-foreground-muted">
-              Persona fields, custom notices, processor override, or manual approve — only when the AI path is insufficient.
+              Verification fields, custom notices, processor override, or manual approve — only when the AI path is insufficient.
             </p>
           </div>
         </div>
@@ -1501,11 +1501,11 @@ function ManualOverride({
           </div>
         </div>
 
-        {/* Persona KYC / KYB */}
+        {/* Local KYC / KYB checkpoint */}
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground-subtle flex items-center gap-1">
-              <ShieldCheck className="h-3 w-3" /> Persona KYC / KYB results
+              <ShieldCheck className="h-3 w-3" /> Local KYC / KYB checkpoint
             </p>
             <Button
               type="button"
@@ -1554,7 +1554,7 @@ function ManualOverride({
           </div>
           <div>
             <Button type="button" size="sm" variant="brand" onClick={onSavePersona}>
-              <CheckCircle2 className="h-3.5 w-3.5" /> Save KYC / KYB results
+              <CheckCircle2 className="h-3.5 w-3.5" /> Save checkpoint results
             </Button>
           </div>
         </div>
