@@ -15,8 +15,6 @@ import {
   buildPersonaSummary,
   buildProcessorReadyPackageSummary,
   buildWebsiteSignalSummary,
-  decidePersonaInvites,
-  getProcessorQuestionSet,
   getProcessorQuestionPrompt,
   normalizeProcessorFit,
 } from '@/src/lib/onboardingWorkflow';
@@ -35,6 +33,13 @@ import {
   type MerchantDocumentKey,
 } from '@/src/lib/documentChecklist';
 import { requestIntakePlan, type IntakePlan } from '@/src/lib/intake/aiPlan';
+import {
+  buildFallbackVerificationPlan,
+  requestVerificationPlan,
+  summarizeVerificationPlan,
+  type VerificationPlan,
+  type VerificationPlacement,
+} from '@/src/lib/intake/verificationPlan';
 
 const MERCHANT_FILE_QUESTION_ID_SET = new Set<string>(MERCHANT_FILE_QUESTION_KEYS);
 
@@ -146,7 +151,34 @@ function getVolumeLabel(volume: string): string {
 }
 
 /** Legacy deterministic path (no AI plan). */
-function buildLegacyQuestionSequence(data: MerchantData): QuestionId[] {
+function insertVerificationCheckpoint(
+  sequence: QuestionId[],
+  placement: VerificationPlacement
+): QuestionId[] {
+  const next = [...sequence];
+  const existingIndex = next.indexOf('personaDecisionGate');
+  if (existingIndex !== -1) next.splice(existingIndex, 1);
+
+  const insertAfter = (target: QuestionId) => {
+    const idx = next.indexOf(target);
+    if (idx === -1) return false;
+    next.splice(idx + 1, 0, 'personaDecisionGate');
+    return true;
+  };
+
+  if (placement === 'early_checkpoint' && insertAfter('ownershipControlForm')) return next;
+  if (placement === 'standard_checkpoint' && insertAfter('documentReadinessForm')) return next;
+
+  const doneIndex = next.indexOf('done');
+  if (doneIndex === -1) next.push('personaDecisionGate');
+  else next.splice(doneIndex, 0, 'personaDecisionGate');
+  return next;
+}
+
+function buildLegacyQuestionSequence(
+  data: MerchantData,
+  verificationPlacement: VerificationPlacement
+): QuestionId[] {
   const isHighRisk = ['high_risk', 'crypto', 'gaming'].includes(data.industry);
   const isInternational = data.country !== 'CA' && data.country !== 'US' && data.country !== '';
   const isHighVolume = data.monthlyVolume === '>250k' || data.monthlyVolume === '50k-250k';
@@ -172,15 +204,17 @@ function buildLegacyQuestionSequence(data: MerchantData): QuestionId[] {
     'monthlyVolume',
     'monthlyTransactions',
     ...COMMON_INTAKE_FORM_SEQUENCE,
-    'personaDecisionGate',
     ...uploadSequence,
   ];
 
   sequence.push('done');
-  return sequence;
+  return insertVerificationCheckpoint(sequence, verificationPlacement);
 }
 
-function buildQuestionSequenceFromAiPlan(plan: IntakePlan): QuestionId[] {
+function buildQuestionSequenceFromAiPlan(
+  plan: IntakePlan,
+  verificationPlacement: VerificationPlacement
+): QuestionId[] {
   const anchor: QuestionId[] = [
     'businessType',
     'country',
@@ -191,18 +225,21 @@ function buildQuestionSequenceFromAiPlan(plan: IntakePlan): QuestionId[] {
   const tail: QuestionId[] = [];
   for (const s of plan.sections) {
     if (s.kind === 'common_form') tail.push(s.id as QuestionId);
-    else if (s.kind === 'persona_gate') tail.push('personaDecisionGate');
     else if (s.kind === 'document') tail.push(s.id as QuestionId);
   }
   tail.push('done');
-  return [...anchor, ...tail];
+  return insertVerificationCheckpoint([...anchor, ...tail], verificationPlacement);
 }
 
-function buildQuestionSequence(data: MerchantData, plan: IntakePlan | null): QuestionId[] {
+function buildQuestionSequence(
+  data: MerchantData,
+  plan: IntakePlan | null,
+  verificationPlacement: VerificationPlacement
+): QuestionId[] {
   if (!plan?.sections?.length) {
-    return buildLegacyQuestionSequence(data);
+    return buildLegacyQuestionSequence(data, verificationPlacement);
   }
-  return buildQuestionSequenceFromAiPlan(plan);
+  return buildQuestionSequenceFromAiPlan(plan, verificationPlacement);
 }
 
 const COMMON_FORM_QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = Object.fromEntries(
@@ -552,8 +589,7 @@ const getQuestionText = (qId: QuestionId, data: MerchantData): string => {
       "Last common-intake block: document readiness. This lets us separate missing documents from true risk.",
 
     personaDecisionGate: () => {
-      const decision = decidePersonaInvites(data);
-      return `${decision.summary} I will attach this virtual KYC / KYB checkpoint to the merchant profile before the AI review.`;
+      return 'I have prepared a controlled KYC / KYB verification checkpoint using the current ownership, control, and readiness profile. Review the selected entity and person targets below before continuing.';
     },
 
     processorSpecificFollowUpForm: () => {
@@ -794,8 +830,13 @@ const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
 };
 
 // Smart question flow based on context
-const getNextQuestion = (currentId: QuestionId, data: MerchantData, plan: IntakePlan | null): QuestionId => {
-  const fullSequence = buildQuestionSequence(data, plan);
+const getNextQuestion = (
+  currentId: QuestionId,
+  data: MerchantData,
+  plan: IntakePlan | null,
+  verificationPlacement: VerificationPlacement
+): QuestionId => {
+  const fullSequence = buildQuestionSequence(data, plan, verificationPlacement);
   const followUpSequence = fullSequence.slice(5);
 
   // Main question flow
@@ -870,6 +911,8 @@ export function ChatApp({
   const [guidedAfterData, setGuidedAfterData] = useState<MerchantData | null>(null);
   const [intakePlan, setIntakePlan] = useState<IntakePlan | null>(null);
   const [intakePlanLoading, setIntakePlanLoading] = useState(false);
+  const [verificationPlan, setVerificationPlan] = useState<VerificationPlan | null>(null);
+  const [verificationPlanLoading, setVerificationPlanLoading] = useState(false);
   const [draftFormValues, setDraftFormValues] = useState<Record<string, string>>({});
   const [pendingDocExtract, setPendingDocExtract] = useState<{
     slot: string;
@@ -911,7 +954,23 @@ export function ChatApp({
     });
     setDraftFormValues(nextValues);
   }, [currentQuestion, data]);
-  const questionSequence = buildQuestionSequence(data, intakePlan);
+
+  useEffect(() => {
+    if (!data.verificationTargetsJson) {
+      setVerificationPlan(null);
+      return;
+    }
+    try {
+      setVerificationPlan(JSON.parse(data.verificationTargetsJson) as VerificationPlan);
+    } catch {
+      setVerificationPlan(null);
+    }
+  }, [data.verificationTargetsJson]);
+  const resolvedVerificationPlacement: VerificationPlacement =
+    verificationPlan?.placement ||
+    (data.verificationCheckpointPlacement as VerificationPlacement) ||
+    'standard_checkpoint';
+  const questionSequence = buildQuestionSequence(data, intakePlan, resolvedVerificationPlacement);
   const currentStepIndex = currentQuestion === 'done' ? questionSequence.length : Math.max(questionSequence.indexOf(currentQuestion), 0) + 1;
   const progressPercent = Math.min(100, Math.max(6, Math.round((currentStepIndex / questionSequence.length) * 100)));
   const smartGuide = currentQuestion && currentQuestion !== 'done' ? getSmartGuide(currentQuestion, data) : null;
@@ -1001,6 +1060,31 @@ export function ChatApp({
     }, 800);
   };
 
+  const loadVerificationPlan = async (merchantData: MerchantData): Promise<VerificationPlan> => {
+    setVerificationPlanLoading(true);
+    try {
+      const plan = await requestVerificationPlan(merchantData);
+      setVerificationPlan(plan);
+      setData((prev) => ({
+        ...prev,
+        verificationCheckpointPlacement: plan.placement,
+        verificationTargetsJson: JSON.stringify(plan),
+      }));
+      return plan;
+    } catch {
+      const fallback = buildFallbackVerificationPlan(merchantData);
+      setVerificationPlan(fallback);
+      setData((prev) => ({
+        ...prev,
+        verificationCheckpointPlacement: fallback.placement,
+        verificationTargetsJson: JSON.stringify(fallback),
+      }));
+      return fallback;
+    } finally {
+      setVerificationPlanLoading(false);
+    }
+  };
+
   const handleAnswer = (value: any, displayValue?: string) => {
     if (!currentQuestion || currentQuestion === 'done') return;
 
@@ -1050,7 +1134,7 @@ export function ChatApp({
           }
           if (plan._warning) toast.warning(plan._warning);
           setIntakePlan(plan);
-          const seq = buildQuestionSequence(newData, plan);
+          const seq = buildQuestionSequence(newData, plan, resolvedVerificationPlacement);
           const nextQ = seq[5];
           setCurrentQuestion(nextQ);
           setIsTyping(false);
@@ -1064,7 +1148,7 @@ export function ChatApp({
         .catch(() => {
           toast.warning('Could not load AI intake plan — using default question path.');
           setIntakePlan(null);
-          const seq = buildQuestionSequence(newData, null);
+          const seq = buildQuestionSequence(newData, null, resolvedVerificationPlacement);
           const nextQ = seq[5];
           setCurrentQuestion(nextQ);
           setIsTyping(false);
@@ -1097,6 +1181,39 @@ export function ChatApp({
       return;
     }
 
+    const shouldRefreshVerificationPlan =
+      !isEditing &&
+      (currentQuestion === 'ownershipControlForm' ||
+        (currentQuestion === 'documentReadinessForm' &&
+          resolvedVerificationPlacement !== 'early_checkpoint'));
+
+    if (shouldRefreshVerificationPlan) {
+      setIsTyping(true);
+      void loadVerificationPlan(newData)
+        .then((plan) => {
+          const nextQ = getNextQuestion(currentQuestion, newData, intakePlan, plan.placement);
+          setCurrentQuestion(nextQ);
+          setIsTyping(false);
+          if (nextQ === 'done') {
+            finishFlow(newData);
+          } else {
+            askQuestion(nextQ);
+          }
+        })
+        .catch(() => {
+          const fallbackPlacement = resolvedVerificationPlacement;
+          const nextQ = getNextQuestion(currentQuestion, newData, intakePlan, fallbackPlacement);
+          setCurrentQuestion(nextQ);
+          setIsTyping(false);
+          if (nextQ === 'done') {
+            finishFlow(newData);
+          } else {
+            askQuestion(nextQ);
+          }
+        });
+      return;
+    }
+
     let nextQ: QuestionId;
     const inGuidedDocumentStep =
       isEditing &&
@@ -1115,7 +1232,7 @@ export function ChatApp({
       setIsEditing(false);
       nextQ = 'done';
     } else {
-      nextQ = getNextQuestion(currentQuestion, newData, intakePlan);
+      nextQ = getNextQuestion(currentQuestion, newData, intakePlan, resolvedVerificationPlacement);
     }
 
     setCurrentQuestion(nextQ);
@@ -1364,6 +1481,7 @@ export function ChatApp({
     if (!qDef) return null;
 
     if (qDef.type === 'system') {
+      const activeVerificationPlan = verificationPlan || buildFallbackVerificationPlan(data);
       const decision = evaluateStrictPersonaTriggers(data);
       const checkpointButtonLabel =
         decision.missingReadinessItems.length > 0
@@ -1383,7 +1501,10 @@ export function ChatApp({
             <h3 className="mt-3 text-base font-semibold text-foreground">
               Smart KYC / KYB verification checkpoint
             </h3>
-            <p className="mt-2 text-sm leading-relaxed text-foreground-muted">{decision.summary}</p>
+            <p className="mt-2 text-sm leading-relaxed text-foreground-muted">{activeVerificationPlan.reason}</p>
+            <div className="mt-3 rounded-lg border border-border bg-surface px-3 py-2 text-xs text-foreground-muted">
+              Placement: <span className="font-medium text-foreground">{activeVerificationPlan.placement}</span>
+            </div>
             {decision.missingReadinessItems.length > 0 ? (
               <div className="mt-3 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2.5 text-sm text-warning-foreground">
                 <p className="font-semibold">Still missing before the checkpoint is fully ready</p>
@@ -1397,36 +1518,75 @@ export function ChatApp({
                 </ul>
               </div>
             ) : null}
-            {decision.reasons.length > 0 ? (
-              <ul className="mt-3 space-y-1.5 text-sm text-foreground-muted">
-                {decision.reasons.map((reason) => (
-                  <li key={reason} className="flex gap-2">
-                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-                    <span className="leading-relaxed">{reason}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="rounded-lg border border-border bg-surface px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground-subtle">
+                  KYB Targets
+                </p>
+                {activeVerificationPlan.kyb_targets.length === 0 ? (
+                  <p className="mt-2 text-sm text-foreground-muted">No entity verification targets selected.</p>
+                ) : (
+                  <ul className="mt-2 space-y-2">
+                    {activeVerificationPlan.kyb_targets.map((target) => (
+                      <li key={target.entity_key} className="rounded-md border border-border bg-surface-subtle px-3 py-2">
+                        <p className="text-sm font-medium text-foreground">
+                          {target.entity_name || target.entity_key}
+                        </p>
+                        <p className="mt-1 text-[11px] text-foreground-subtle">
+                          Roles: {target.roles.join(', ')}
+                        </p>
+                        <p className="mt-1 text-xs text-foreground-muted">{target.reason}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="rounded-lg border border-border bg-surface px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground-subtle">
+                  KYC Targets
+                </p>
+                {activeVerificationPlan.kyc_targets.length === 0 ? (
+                  <p className="mt-2 text-sm text-foreground-muted">No individual verification targets selected.</p>
+                ) : (
+                  <ul className="mt-2 space-y-2">
+                    {activeVerificationPlan.kyc_targets.map((target) => (
+                      <li key={target.person_key} className="rounded-md border border-border bg-surface-subtle px-3 py-2">
+                        <p className="text-sm font-medium text-foreground">
+                          {target.full_name || target.person_key}
+                        </p>
+                        <p className="mt-1 text-[11px] text-foreground-subtle">
+                          Roles: {target.roles.join(', ')}
+                        </p>
+                        <p className="mt-1 text-xs text-foreground-muted">{target.reason}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
             <p className="mt-4 rounded-lg border border-border bg-surface px-3 py-2 text-[11px] leading-relaxed text-foreground-muted">
               This checkpoint follows the onboarding policy rules. No external KYC / KYB provider is called here; we save the verification plan locally and the admin can attach manual results before the AI review when available.
             </p>
             <div className="mt-4 flex justify-end">
               <Button
                 type="button"
+                disabled={verificationPlanLoading}
                 variant="accent"
                 onClick={() =>
                   handleAnswer(
                     {
-                      personaInvitePlan: buildPersonaSummary(data),
+                      personaInvitePlan: summarizeVerificationPlan(activeVerificationPlan),
                       personaVerificationSummary:
                         'Pending. Virtual KYC / KYB checkpoint created. Attach KYB/KYC pass, fail, pending, mismatch, and incomplete verification results when available.',
+                      verificationCheckpointPlacement: activeVerificationPlan.placement,
+                      verificationTargetsJson: JSON.stringify(activeVerificationPlan),
                       websiteReviewSummary: buildWebsiteSignalSummary(data),
                     },
                     'KYC / KYB checkpoint saved'
                   )
                 }
               >
-                {checkpointButtonLabel}
+                {verificationPlanLoading ? 'Refreshing verification targets...' : checkpointButtonLabel}
                 <ArrowRight className="h-3.5 w-3.5" />
               </Button>
             </div>

@@ -4,6 +4,10 @@ import {
   evaluateStrictPersonaTriggers,
   type PersonaInviteAction,
 } from '@/src/lib/intake/personaTriggerRules';
+import {
+  summarizeVerificationPlan,
+  type VerificationPlan,
+} from '@/src/lib/intake/verificationPlan';
 export type ProcessorFit = 'Nuvei' | 'Payroc / Peoples' | 'Chase';
 
 export type PersonaInviteDecision = {
@@ -60,6 +64,15 @@ export function buildPersonaSummary(data: MerchantData): string {
     resultParts.length > 0
       ? ` KYC / KYB verification results: ${resultParts.join('. ')}.`
       : ' Verification result capture: KYB/KYC passed, failed, pending, mismatches, and incomplete checks should be attached here when available.';
+
+  if (hasText(data.verificationTargetsJson)) {
+    try {
+      const parsed = JSON.parse(data.verificationTargetsJson) as VerificationPlan;
+      return `${summarizeVerificationPlan(parsed)}${resultsText}`;
+    } catch {
+      // fall through to deterministic summary
+    }
+  }
 
   return `${buildStrictPersonaSummary(data)}${resultsText}`;
 }
