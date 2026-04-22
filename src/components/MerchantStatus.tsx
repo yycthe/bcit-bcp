@@ -7,6 +7,10 @@ import { Section } from '@/src/components/ui/section';
 import { PageHeader } from '@/src/components/ui/page-header';
 import { Timeline, type TimelineStep } from '@/src/components/ui/timeline';
 import {
+  MerchantReviewTeamMessage,
+  type MissingDocumentItem,
+} from './MerchantReviewTeamMessage';
+import {
   CheckCircle2,
   Clock,
   FileText,
@@ -14,10 +18,9 @@ import {
   Building,
   Upload,
   Sparkles,
-  MessageSquare,
 } from 'lucide-react';
 
-export type MissingDocumentItem = { key: MerchantDocumentKey; label: string };
+export type { MissingDocumentItem };
 
 interface Props {
   status: ApplicationStatus;
@@ -159,22 +162,12 @@ export function MerchantStatus({
         )}
 
         {status === 'under_review' && adminNotice?.trim() && (
-          <Banner
-            intent="info"
-            icon={MessageSquare}
-            title="Message from review team"
-            description={adminNotice}
+          <MerchantReviewTeamMessage
+            message={adminNotice}
+            missingDocuments={missingDocuments}
+            onInlineUpload={onInlineUpload}
             onDismiss={onDismissNotice}
-          >
-            {missingDocuments.length > 0 && onInlineUpload && (
-              <>
-                <p className="mt-2 text-xs font-semibold text-info-foreground">
-                  Upload a document directly:
-                </p>
-                <MissingDocsList items={missingDocuments} onUpload={onInlineUpload} />
-              </>
-            )}
-          </Banner>
+          />
         )}
 
         {status === 'under_review' &&

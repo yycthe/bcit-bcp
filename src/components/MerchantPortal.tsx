@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { ChatApp, type ChatAppStepInfo } from './ChatApp';
 import { ReviewPage } from './ReviewPage';
 import { MerchantStatus } from './MerchantStatus';
+import { MerchantReviewTeamMessage } from './MerchantReviewTeamMessage';
 import { AgreementPage } from './AgreementPage';
 import { MerchantSummaryRail } from './MerchantSummaryRail';
 import { MerchantData, FileData, ApplicationStatus, initialMerchantData } from '@/src/types';
@@ -195,8 +196,6 @@ export function MerchantPortal({
   );
   const totalDocs = docChecklist.length;
   const presentDocs = totalDocs - missingDocumentItems.length;
-  const missingDocs = missingDocumentItems.map((i) => i.label);
-
   const getNavStatus = (id: MerchantView): { intent: StatusIntent; label?: string; subtitle?: string } => {
     if (id === 'intake') {
       if (isFinished) return { intent: 'complete', subtitle: 'All sections answered' };
@@ -623,8 +622,7 @@ export function MerchantPortal({
       <div className="relative flex min-w-0 flex-1 flex-col">
         {/* Notice stack */}
         {((appStatus === 'under_review' && currentView !== 'status') ||
-          verificationIssues.length > 0 ||
-          (merchantNoticeFromAdmin.trim() && currentView !== 'status')) && (
+          verificationIssues.length > 0) && (
           <div className="max-h-[38vh] min-h-0 shrink-0 overflow-y-auto overscroll-y-contain border-b border-border bg-surface-muted/60 px-4 py-3 sm:px-6 space-y-2">
             {appStatus === 'under_review' && currentView !== 'status' && (
               <Banner
@@ -684,43 +682,25 @@ export function MerchantPortal({
                 </ul>
               </Banner>
             )}
-            {merchantNoticeFromAdmin.trim() && currentView !== 'status' && (
-              <Banner
-                intent="info"
-                icon={MessageSquare}
-                title="Message from review team"
-                description={merchantNoticeFromAdmin}
-                onDismiss={onDismissMerchantNotice}
-              >
-                {missingDocs.length > 0 && (
-                  <>
-                    <p className="mt-3 text-xs font-medium text-info-foreground">
-                      Still expected for your profile — click Upload to add directly:
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {missingDocumentItems.map(({ key, label }) => (
-                        <Button
-                          key={key}
-                          type="button"
-                          size="sm"
-                          variant="accent"
-                          className="h-auto whitespace-normal py-1.5 text-left text-xs"
-                          onClick={() => handleInlineUpload(key)}
-                        >
-                          <Upload className="h-3 w-3 shrink-0" />
-                          {label}
-                        </Button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </Banner>
-            )}
           </div>
         )}
 
         <div className="flex min-h-0 flex-1 min-w-0">
           <div className="flex min-h-0 flex-1 min-w-0 flex-col">
+            {merchantNoticeFromAdmin.trim() && currentView !== 'status' && (
+              <div className="shrink-0 border-b border-border bg-surface px-4 py-4 sm:px-6">
+                <div className="mx-auto max-w-3xl">
+                  <MerchantReviewTeamMessage
+                    message={merchantNoticeFromAdmin}
+                    missingDocuments={missingDocumentItems}
+                    onInlineUpload={
+                      appStatus === 'under_review' ? handleInlineUpload : undefined
+                    }
+                    onDismiss={onDismissMerchantNotice}
+                  />
+                </div>
+              </div>
+            )}
             {currentView === 'intake' && (
               <div className="flex h-0 min-h-0 flex-1 min-w-0 flex-col overflow-hidden">
                 <ChatApp
