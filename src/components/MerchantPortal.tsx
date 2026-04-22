@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { ChatApp, type ChatAppStepInfo } from './ChatApp';
 import { ReviewPage } from './ReviewPage';
 import { MerchantStatus } from './MerchantStatus';
@@ -373,16 +374,21 @@ export function MerchantPortal({
           {} as Record<MerchantDocumentKey, FileData>
         )
       : {};
-    setMerchantData({ ...profile.data, ...filePatch });
-    setAiFieldHints({});
-    setDocuments([]);
-    setUnderwritingResult(null);
-    setAppStatus('draft');
-    setIsFinished(true);
-    setEditSection(null);
-    setGuidedTourOrder(null);
-    setIntakeSessionKey((k) => k + 1);
-    setCurrentView('review');
+    // Commit draft + review in one synchronous flush so we never briefly have
+    // { under_review, review } — that pair triggers useEffect below and sends
+    // the user to Status, which feels like this button "does nothing".
+    flushSync(() => {
+      setMerchantData({ ...profile.data, ...filePatch });
+      setAiFieldHints({});
+      setDocuments([]);
+      setUnderwritingResult(null);
+      setAppStatus('draft');
+      setIsFinished(true);
+      setEditSection(null);
+      setGuidedTourOrder(null);
+      setIntakeSessionKey((k) => k + 1);
+      setCurrentView('review');
+    });
     onDismissMerchantNotice();
     onClearVerificationIssues();
     toast.message(`Demo loaded — ${profile.label}`, {
