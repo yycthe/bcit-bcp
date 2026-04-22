@@ -348,14 +348,17 @@ export function MerchantPortal({
       return;
     }
     setMerchantData({ ...merchantData, ...patch });
-    if (currentStepInfo.type === 'buttons' && filledLabels.length > 0) {
+    const shouldAutoAdvance =
+      (currentStepInfo.type === 'buttons' || currentStepInfo.type === 'dropdown') &&
+      filledLabels.length > 0;
+    if (shouldAutoAdvance) {
       setAutofillAdvanceToken((t) => t + 1);
     }
     toast.success(`Autofilled this step — ${profile.label}`, {
       description:
         `${filledLabels.length} text field${filledLabels.length === 1 ? '' : 's'} filled` +
         `${uploadedLabels.length ? `, ${uploadedLabels.length} file${uploadedLabels.length === 1 ? '' : 's'} mocked` : ''}. ` +
-        `${currentStepInfo.type === 'buttons' ? 'Auto-continued to the next step.' : 'Review, edit, or continue.'}`,
+        `${shouldAutoAdvance ? 'Auto-continued to the next step.' : 'Review, edit, or continue.'}`,
     });
   };
 

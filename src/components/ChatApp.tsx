@@ -947,7 +947,7 @@ interface ChatAppProps {
   onAiDocumentExtractApplied?: (fieldKeys: string[]) => void;
   /** Fired whenever the current intake step changes, so the parent can target per-step actions (e.g. demo autofill). */
   onCurrentStepChange?: (info: ChatAppStepInfo | null) => void;
-  /** Monotonic token from parent: when it increments on a button step, auto-submit current answer and continue. */
+  /** Monotonic token from parent: when it increments on buttons/dropdown step, auto-submit current answer and continue. */
   autofillAdvanceToken?: number;
 }
 
@@ -1043,7 +1043,7 @@ export function ChatApp({
     lastAutofillAdvanceTokenRef.current = token;
     if (!currentQuestion || currentQuestion === 'done') return;
     const qDef = QUESTIONS[currentQuestion];
-    if (qDef?.type !== 'buttons') return;
+    if (qDef?.type !== 'buttons' && qDef?.type !== 'dropdown') return;
     const value = data[currentQuestion as keyof MerchantData];
     if (typeof value === 'string' && value.trim()) {
       handleAnswer(value, value);
