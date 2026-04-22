@@ -166,6 +166,47 @@ function isGeminiQuotaError(err: unknown): boolean {
   return false;
 }
 
+/** Transient overload / capacity errors — safe to retry and/or fall back to Flash. */
+function isGeminiTransientCapacityError(err: unknown): boolean {
+  if (isGeminiQuotaError(err)) return true;
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  const lower = msg.toLowerCase();
+  if (lower.includes('"code":503') || lower.includes(' 503') || lower.includes('status":503')) return true;
+  if (lower.includes('unavailable')) return true;
+  if (lower.includes('high demand')) return true;
+  if (lower.includes('"code":500') || lower.includes('status":500')) return true;
+  if (lower.includes('"code":502') || lower.includes('status":502')) return true;
+  if (lower.includes('"code":504') || lower.includes('status":504')) return true;
+  if (lower.includes('internal error') && lower.includes('generativelanguage')) return true;
+  return false;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const REVIEW_RETRY_BACKOFF_MS = [500, 1500, 3500];
+
+async function runStructuredReviewWithRetries(
+  ai: GoogleGenAI,
+  model: string,
+  userParts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }>
+): Promise<ReviewResponse> {
+  let lastErr: unknown;
+  const maxAttempts = 1 + REVIEW_RETRY_BACKOFF_MS.length;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await runStructuredReview(ai, model, userParts);
+    } catch (e) {
+      lastErr = e;
+      const canRetry = isGeminiTransientCapacityError(e) && attempt < maxAttempts - 1;
+      if (!canRetry) throw e;
+      await sleep(REVIEW_RETRY_BACKOFF_MS[attempt]!);
+    }
+  }
+  throw lastErr;
+}
+
 async function runStructuredReview(
   ai: GoogleGenAI,
   model: string,
@@ -233,10 +274,10 @@ export default async function handler(req: any, res: any) {
     const ai = new GoogleGenAI({ apiKey });
     let parsed: ReviewResponse;
     try {
-      parsed = await runStructuredReview(ai, primaryModel, userParts);
+      parsed = await runStructuredReviewWithRetries(ai, primaryModel, userParts);
     } catch (firstErr) {
-      if (primaryModel !== GEMINI_MODEL_FLASH && isGeminiQuotaError(firstErr)) {
-        parsed = await runStructuredReview(ai, GEMINI_MODEL_FLASH, userParts);
+      if (primaryModel !== GEMINI_MODEL_FLASH && isGeminiTransientCapacityError(firstErr)) {
+        parsed = await runStructuredReviewWithRetries(ai, GEMINI_MODEL_FLASH, userParts);
       } else {
         throw firstErr;
       }
