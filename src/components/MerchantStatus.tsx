@@ -14,6 +14,7 @@ import {
   Building,
   Upload,
   Sparkles,
+  MessageSquare,
 } from 'lucide-react';
 
 export type MissingDocumentItem = { key: MerchantDocumentKey; label: string };
@@ -159,14 +160,15 @@ export function MerchantStatus({
 
         {status === 'under_review' && adminNotice?.trim() && (
           <Banner
-            intent="warning"
-            title="Review team requested an update"
+            intent="info"
+            icon={MessageSquare}
+            title="Message from review team"
             description={adminNotice}
             onDismiss={onDismissNotice}
           >
             {missingDocuments.length > 0 && onInlineUpload && (
               <>
-                <p className="mt-2 text-xs font-semibold text-warning-foreground">
+                <p className="mt-2 text-xs font-semibold text-info-foreground">
                   Upload a document directly:
                 </p>
                 <MissingDocsList items={missingDocuments} onUpload={onInlineUpload} />

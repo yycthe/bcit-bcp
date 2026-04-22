@@ -622,11 +622,11 @@ export function MerchantPortal({
       {/* Main content */}
       <div className="relative flex min-w-0 flex-1 flex-col">
         {/* Notice stack */}
-        {(appStatus === 'under_review' ||
+        {((appStatus === 'under_review' && currentView !== 'status') ||
           verificationIssues.length > 0 ||
-          merchantNoticeFromAdmin.trim()) && (
-          <div className="shrink-0 border-b border-border bg-surface-muted/60 px-4 py-3 sm:px-6 space-y-2">
-            {appStatus === 'under_review' && (
+          (merchantNoticeFromAdmin.trim() && currentView !== 'status')) && (
+          <div className="max-h-[38vh] min-h-0 shrink-0 overflow-y-auto overscroll-y-contain border-b border-border bg-surface-muted/60 px-4 py-3 sm:px-6 space-y-2">
+            {appStatus === 'under_review' && currentView !== 'status' && (
               <Banner
                 intent="info"
                 title="Verification & routing review in progress"
@@ -635,7 +635,7 @@ export function MerchantPortal({
             )}
             {verificationIssues.length > 0 && (
               <Banner
-                intent="danger"
+                intent="warning"
                 title="KYC / KYB needs updates"
                 description="A local KYC / KYB review found follow-up items. Use the buttons to jump to the exact intake step."
                 onDismiss={onClearVerificationIssues}
@@ -644,7 +644,7 @@ export function MerchantPortal({
                   {verificationIssues.map((item) => (
                     <li
                       key={item.id}
-                      className="flex flex-col gap-2 rounded-lg border border-danger/15 bg-surface px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                      className="flex flex-col gap-2 rounded-lg border border-warning/15 bg-surface px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="min-w-0 text-sm">
                         <span className="text-foreground">{item.reason}</span>
@@ -684,16 +684,17 @@ export function MerchantPortal({
                 </ul>
               </Banner>
             )}
-            {merchantNoticeFromAdmin.trim() && (
+            {merchantNoticeFromAdmin.trim() && currentView !== 'status' && (
               <Banner
-                intent="warning"
+                intent="info"
+                icon={MessageSquare}
                 title="Message from review team"
                 description={merchantNoticeFromAdmin}
                 onDismiss={onDismissMerchantNotice}
               >
                 {missingDocs.length > 0 && (
                   <>
-                    <p className="mt-3 text-xs font-medium text-warning-foreground">
+                    <p className="mt-3 text-xs font-medium text-info-foreground">
                       Still expected for your profile — click Upload to add directly:
                     </p>
                     <div className="mt-2 flex flex-wrap gap-2">
