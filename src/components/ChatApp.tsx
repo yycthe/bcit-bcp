@@ -947,6 +947,8 @@ interface ChatAppProps {
   onAiDocumentExtractApplied?: (fieldKeys: string[]) => void;
   /** Fired whenever the current intake step changes, so the parent can target per-step actions (e.g. demo autofill). */
   onCurrentStepChange?: (info: ChatAppStepInfo | null) => void;
+  /** Monotonic token from parent: when it increments on a button step, auto-submit current answer and continue. */
+  autofillAdvanceToken?: number;
 }
 
 export function ChatApp({
@@ -964,6 +966,7 @@ export function ChatApp({
   onGuidedFlowAbort,
   onAiDocumentExtractApplied,
   onCurrentStepChange,
+  autofillAdvanceToken,
 }: ChatAppProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState<QuestionId>('businessType');
@@ -986,6 +989,7 @@ export function ChatApp({
     notes: string;
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastAutofillAdvanceTokenRef = useRef(0);
 
   useEffect(() => {
     if (!guidedTourOrder?.length) {
@@ -1032,6 +1036,19 @@ export function ChatApp({
       fieldKeys,
     });
   }, [currentQuestion, onCurrentStepChange]);
+
+  useEffect(() => {
+    const token = autofillAdvanceToken ?? 0;
+    if (token <= 0 || token === lastAutofillAdvanceTokenRef.current) return;
+    lastAutofillAdvanceTokenRef.current = token;
+    if (!currentQuestion || currentQuestion === 'done') return;
+    const qDef = QUESTIONS[currentQuestion];
+    if (qDef?.type !== 'buttons') return;
+    const value = data[currentQuestion as keyof MerchantData];
+    if (typeof value === 'string' && value.trim()) {
+      handleAnswer(value, value);
+    }
+  }, [autofillAdvanceToken, currentQuestion, data]);
 
   useEffect(() => {
     const qDef = currentQuestion ? QUESTIONS[currentQuestion] : null;

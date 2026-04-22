@@ -125,6 +125,8 @@ export function MerchantPortal({
   const [useMockUploads, setUseMockUploads] = useState(true);
   /** Current intake step, reported by ChatApp — used to scope the autofill shortcut. */
   const [currentStepInfo, setCurrentStepInfo] = useState<ChatAppStepInfo | null>(null);
+  /** Incremented when sidebar autofill should auto-advance a button question in ChatApp. */
+  const [autofillAdvanceToken, setAutofillAdvanceToken] = useState(0);
 
   const inlineUploadRef = useRef<HTMLInputElement>(null);
   const inlineUploadTargetRef = useRef<MerchantDocumentKey | null>(null);
@@ -346,11 +348,14 @@ export function MerchantPortal({
       return;
     }
     setMerchantData({ ...merchantData, ...patch });
+    if (currentStepInfo.type === 'buttons' && filledLabels.length > 0) {
+      setAutofillAdvanceToken((t) => t + 1);
+    }
     toast.success(`Autofilled this step — ${profile.label}`, {
       description:
         `${filledLabels.length} text field${filledLabels.length === 1 ? '' : 's'} filled` +
         `${uploadedLabels.length ? `, ${uploadedLabels.length} file${uploadedLabels.length === 1 ? '' : 's'} mocked` : ''}. ` +
-        'Review, edit, or continue.',
+        `${currentStepInfo.type === 'buttons' ? 'Auto-continued to the next step.' : 'Review, edit, or continue.'}`,
     });
   };
 
@@ -760,6 +765,7 @@ export function MerchantPortal({
                     });
                   }}
                   onCurrentStepChange={setCurrentStepInfo}
+                  autofillAdvanceToken={autofillAdvanceToken}
                 />
               </div>
             )}
