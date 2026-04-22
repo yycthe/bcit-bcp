@@ -1,11 +1,16 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { ChatApp } from './ChatApp';
+import { ChatApp, type ChatAppStepInfo } from './ChatApp';
 import { ReviewPage } from './ReviewPage';
 import { MerchantStatus } from './MerchantStatus';
 import { AgreementPage } from './AgreementPage';
 import { MerchantSummaryRail } from './MerchantSummaryRail';
 import { MerchantData, FileData, ApplicationStatus, initialMerchantData } from '@/src/types';
-import { demoMerchantData } from '@/src/lib/demoMerchantData';
+import {
+  DEMO_PROFILES,
+  DEFAULT_DEMO_PROFILE_ID,
+  getDemoProfile,
+} from '@/src/lib/demoMerchantData';
+import { Select } from '@/src/components/ui/select';
 import {
   getMerchantDocumentChecklist,
   getMissingDocumentLabels,
@@ -103,6 +108,10 @@ export function MerchantPortal({
   const [guidedTourOrder, setGuidedTourOrder] = useState<MerchantDocumentKey[] | null>(null);
   /** Keys of MerchantData prefilled via document AI extraction (merchant snapshot sparkles). */
   const [aiFieldHints, setAiFieldHints] = useState<Record<string, boolean>>({});
+  /** Demo profile powering the "Autofill this step" shortcut (swap between sample companies). */
+  const [demoProfileId, setDemoProfileId] = useState<string>(DEFAULT_DEMO_PROFILE_ID);
+  /** Current intake step, reported by ChatApp — used to scope the autofill shortcut. */
+  const [currentStepInfo, setCurrentStepInfo] = useState<ChatAppStepInfo | null>(null);
 
   const inlineUploadRef = useRef<HTMLInputElement>(null);
   const inlineUploadTargetRef = useRef<MerchantDocumentKey | null>(null);
@@ -252,8 +261,52 @@ export function MerchantPortal({
     setCurrentView('intake');
   }, []);
 
-  const autofillDemoData = () => {
-    setMerchantData({ ...demoMerchantData });
+  const activeDemoProfile = useMemo(() => getDemoProfile(demoProfileId), [demoProfileId]);
+
+  /**
+   * Fill ONLY the fields that belong to the intake step the merchant is
+   * currently looking at, using the selected demo profile. Lets you step
+   * through the wizard page by page with realistic sample data while still
+   * testing each screen's own validation & navigation.
+   */
+  const autofillCurrentStep = () => {
+    if (currentView !== 'intake') {
+      setCurrentView('intake');
+    }
+    if (!currentStepInfo || currentStepInfo.fieldKeys.length === 0) {
+      toast.message('Nothing to autofill on this step', {
+        description:
+          'The current step has no form fields (system checkpoint or document upload). Continue to the next question.',
+      });
+      return;
+    }
+    const profile = activeDemoProfile;
+    const patch: Partial<MerchantData> = {};
+    const filledLabels: string[] = [];
+    for (const key of currentStepInfo.fieldKeys) {
+      const typedKey = key as keyof MerchantData;
+      const value = profile.data[typedKey];
+      if (typeof value === 'string') {
+        (patch as Record<string, string>)[key] = value;
+        if (value.trim()) filledLabels.push(key);
+      }
+    }
+    if (filledLabels.length === 0) {
+      toast.message('No demo values for this step', {
+        description: `${profile.label} does not have sample values for these fields.`,
+      });
+      return;
+    }
+    setMerchantData({ ...merchantData, ...patch });
+    toast.success(`Autofilled this step — ${profile.label}`, {
+      description: `${filledLabels.length} field${filledLabels.length === 1 ? '' : 's'} filled. Review, edit, or continue.`,
+    });
+  };
+
+  /** Original "fill everything" flow, now scoped to the currently-selected profile. */
+  const autofillEntireApplication = () => {
+    const profile = activeDemoProfile;
+    setMerchantData({ ...profile.data });
     setAiFieldHints({});
     setDocuments([]);
     setUnderwritingResult(null);
@@ -265,7 +318,7 @@ export function MerchantPortal({
     setCurrentView('intake');
     onDismissMerchantNotice();
     onClearVerificationIssues();
-    toast.message('Demo data loaded', {
+    toast.message(`Demo loaded — ${profile.label}`, {
       description: 'All intake fields filled with sample data. Open Review when ready.',
     });
   };
@@ -289,14 +342,17 @@ export function MerchantPortal({
   };
 
   const jumpToReviewWithDemo = () => {
-    setMerchantData({ ...demoMerchantData });
+    const profile = activeDemoProfile;
+    setMerchantData({ ...profile.data });
     setDocuments([]);
     setUnderwritingResult(null);
     setGuidedTourOrder(null);
     onClearVerificationIssues();
     setIsFinished(true);
     setCurrentView('review');
-    toast.message('Demo shortcut', { description: 'Review opened with sample data.' });
+    toast.message(`Demo shortcut — ${profile.label}`, {
+      description: 'Review opened with sample data.',
+    });
   };
 
   return (
@@ -401,15 +457,59 @@ export function MerchantPortal({
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground-subtle">
             Demo shortcuts
           </p>
+          <div className="space-y-1">
+            <label
+              htmlFor="demo-profile-select"
+              className="text-[10px] font-medium uppercase tracking-wider text-foreground-muted"
+            >
+              Sample company
+            </label>
+            <Select
+              id="demo-profile-select"
+              className="h-8 text-xs"
+              value={demoProfileId}
+              onChange={(e) => setDemoProfileId(e.target.value)}
+            >
+              {DEMO_PROFILES.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </Select>
+            <p className="text-[10px] leading-snug text-foreground-subtle">
+              {activeDemoProfile.description}
+            </p>
+          </div>
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="w-full justify-start gap-2 text-xs"
-            onClick={autofillDemoData}
+            onClick={autofillCurrentStep}
+            disabled={currentView !== 'intake'}
+            title={
+              currentView !== 'intake'
+                ? 'Switch to the Intake assistant to use this shortcut.'
+                : currentStepInfo
+                ? `Fill this step (${currentStepInfo.fieldKeys.length} field${
+                    currentStepInfo.fieldKeys.length === 1 ? '' : 's'
+                  }) with sample values`
+                : 'Fill this step with sample values'
+            }
           >
             <Wand2 className="h-3.5 w-3.5 shrink-0" />
-            Autofill demo data
+            Autofill this step
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full justify-start gap-2 text-xs"
+            onClick={autofillEntireApplication}
+            title="Fill every intake field for the selected sample company"
+          >
+            <Wand2 className="h-3.5 w-3.5 shrink-0" />
+            Autofill all fields
           </Button>
           <Button
             type="button"
@@ -567,6 +667,7 @@ export function MerchantPortal({
                       return next;
                     });
                   }}
+                  onCurrentStepChange={setCurrentStepInfo}
                 />
               </div>
             )}

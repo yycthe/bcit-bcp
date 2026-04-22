@@ -921,6 +921,14 @@ type Message = {
   questionId?: QuestionId;
 };
 
+/** Metadata about the intake step currently being asked, forwarded to the parent. */
+export interface ChatAppStepInfo {
+  questionId: string;
+  type: 'buttons' | 'dropdown' | 'text' | 'upload' | 'form' | 'system';
+  /** Keys of MerchantData fields that belong to this step. Empty for system/done steps. */
+  fieldKeys: string[];
+}
+
 interface ChatAppProps {
   data: MerchantData;
   setData: React.Dispatch<React.SetStateAction<MerchantData>>;
@@ -937,6 +945,8 @@ interface ChatAppProps {
   onGuidedFlowAbort?: () => void;
   /** Fired when the user applies AI-extracted field values from a document upload. */
   onAiDocumentExtractApplied?: (fieldKeys: string[]) => void;
+  /** Fired whenever the current intake step changes, so the parent can target per-step actions (e.g. demo autofill). */
+  onCurrentStepChange?: (info: ChatAppStepInfo | null) => void;
 }
 
 export function ChatApp({
@@ -953,6 +963,7 @@ export function ChatApp({
   onGuidedFlowComplete,
   onGuidedFlowAbort,
   onAiDocumentExtractApplied,
+  onCurrentStepChange,
 }: ChatAppProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState<QuestionId>('businessType');
@@ -992,7 +1003,35 @@ export function ChatApp({
     } else {
       setInputValue('');
     }
-  }, [currentQuestion]);
+    // Depending on `data` lets external autofill (e.g. demo shortcut in the
+    // sidebar) push new values into text/dropdown inputs for the current step.
+  }, [currentQuestion, data]);
+
+  useEffect(() => {
+    if (!onCurrentStepChange) return;
+    if (!currentQuestion || currentQuestion === 'done') {
+      onCurrentStepChange(null);
+      return;
+    }
+    const qDef = QUESTIONS[currentQuestion];
+    if (!qDef) {
+      onCurrentStepChange(null);
+      return;
+    }
+    let fieldKeys: string[] = [];
+    if (qDef.type === 'form') {
+      fieldKeys = (qDef.fields ?? []).map((f) => String(f.id));
+    } else if (qDef.type === 'system') {
+      fieldKeys = [];
+    } else {
+      fieldKeys = [String(currentQuestion)];
+    }
+    onCurrentStepChange({
+      questionId: String(currentQuestion),
+      type: qDef.type,
+      fieldKeys,
+    });
+  }, [currentQuestion, onCurrentStepChange]);
 
   useEffect(() => {
     const qDef = currentQuestion ? QUESTIONS[currentQuestion] : null;
