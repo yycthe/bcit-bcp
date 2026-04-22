@@ -118,6 +118,78 @@ const PAYMENT_TYPES_OPTIONS = [
   { label: 'Full mix', value: 'Visa / Mastercard / Amex / Interac / ACH' },
 ];
 
+const PRODUCT_SERVICE_PROFILE_OPTIONS = [
+  { label: 'SaaS subscription software', value: 'SaaS subscription software' },
+  { label: 'Retail physical goods', value: 'Retail physical goods' },
+  { label: 'Professional services / consulting', value: 'Professional services / consulting' },
+  { label: 'Crypto exchange / wallet services', value: 'Crypto exchange / wallet services' },
+  { label: 'Gaming / digital entertainment', value: 'Gaming / digital entertainment' },
+  { label: 'Other standardized profile', value: 'Other standardized profile' },
+];
+
+const BUSINESS_DESCRIPTION_OPTIONS = [
+  { label: 'Low-risk standard business model', value: 'Low-risk standard business model' },
+  { label: 'Digital-first with recurring revenue', value: 'Digital-first with recurring revenue' },
+  { label: 'Physical goods with fulfillment operations', value: 'Physical goods with fulfillment operations' },
+  { label: 'Regulated / high-risk with compliance controls', value: 'Regulated / high-risk with compliance controls' },
+  { label: 'Mixed channels and mixed customer types', value: 'Mixed channels and mixed customer types' },
+];
+
+const PROCESSOR_NAME_OPTIONS = [
+  { label: 'No previous processor (new merchant)', value: 'No previous processor' },
+  { label: 'Stripe', value: 'Stripe' },
+  { label: 'Shopify Payments', value: 'Shopify Payments' },
+  { label: 'Square', value: 'Square' },
+  { label: 'Adyen', value: 'Adyen' },
+  { label: 'Checkout.com', value: 'Checkout.com' },
+  { label: 'Authorize.net', value: 'Authorize.net' },
+  { label: 'Other known processor', value: 'Other known processor' },
+];
+
+const PROCESSOR_EXIT_REASON_OPTIONS = [
+  { label: 'Lower processing cost / pricing', value: 'Lower processing cost / pricing' },
+  { label: 'Better approval rate / risk appetite', value: 'Better approval rate / risk appetite' },
+  { label: 'Need better settlement / currency support', value: 'Need better settlement / currency support' },
+  { label: 'Feature gaps (subscriptions, reporting, routing)', value: 'Feature gaps (subscriptions, reporting, routing)' },
+  { label: 'Support or service quality issues', value: 'Support or service quality issues' },
+  { label: 'No prior processor', value: 'No prior processor' },
+  { label: 'Other standardized reason', value: 'Other standardized reason' },
+];
+
+const TXN_CHANNEL_SPLIT_OPTIONS = [
+  { label: '100% card present', value: '100% card present / 0% e-commerce / 0% MOTO' },
+  { label: 'Mostly card present', value: '70% card present / 25% e-commerce / 5% MOTO' },
+  { label: 'Mostly e-commerce', value: '10% card present / 85% e-commerce / 5% MOTO' },
+  { label: '100% e-commerce', value: '0% card present / 100% e-commerce / 0% MOTO' },
+  { label: 'Mostly MOTO / keyed', value: '5% card present / 20% e-commerce / 75% MOTO' },
+  { label: 'Mixed balanced', value: '33% card present / 33% e-commerce / 34% MOTO' },
+];
+
+const PERCENT_BUCKET_OPTIONS = [
+  { label: '0%', value: '0%' },
+  { label: '1-10%', value: '1-10%' },
+  { label: '11-25%', value: '11-25%' },
+  { label: '26-50%', value: '26-50%' },
+  { label: '51-75%', value: '51-75%' },
+  { label: '76-100%', value: '76-100%' },
+];
+
+const THIRD_PARTY_APPS_OPTIONS = [
+  { label: 'None', value: 'None' },
+  { label: 'Hosted checkout only', value: 'Hosted checkout only' },
+  { label: 'Stripe + billing integration', value: 'Stripe + billing integration' },
+  { label: 'Shopify + payment apps', value: 'Shopify + payment apps' },
+  { label: 'Gateway + fraud tooling', value: 'Gateway + fraud tooling' },
+  { label: 'Other standardized stack', value: 'Other standardized stack' },
+];
+
+const ADVERSE_EVENT_EXPLANATION_OPTIONS = [
+  { label: 'Resolved with no ongoing impact', value: 'Resolved with no ongoing impact' },
+  { label: 'Resolved with remediation controls added', value: 'Resolved with remediation controls added' },
+  { label: 'Historical event, currently under monitoring', value: 'Historical event, currently under monitoring' },
+  { label: 'Needs manual review details', value: 'Needs manual review details' },
+];
+
 function normalizeAnswer(value: unknown): string {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
@@ -269,7 +341,8 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     required: true,
     formId: 'legalBusinessForm',
     fieldId: 'productsServices',
-    fieldType: 'textarea',
+    fieldType: 'select',
+    options: PRODUCT_SERVICE_PROFILE_OPTIONS,
   },
   {
     number: 13,
@@ -278,7 +351,8 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     required: true,
     formId: 'legalBusinessForm',
     fieldId: 'businessDescription',
-    fieldType: 'textarea',
+    fieldType: 'select',
+    options: BUSINESS_DESCRIPTION_OPTIONS,
     ruleNotes: ['If too vague, record insufficient_business_description = yes.'],
   },
   {
@@ -414,7 +488,8 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     required: false,
     formId: 'processingHistoryForm',
     fieldId: 'currentOrPreviousProcessor',
-    fieldType: 'text',
+    fieldType: 'select',
+    options: PROCESSOR_NAME_OPTIONS,
     allowNA: true,
     helperText: 'Only asked when you already process card payments today.',
     visibleWhen: (answers) => isYes(answers.currentlyProcessesCards),
@@ -428,7 +503,8 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     required: false,
     formId: 'processingHistoryForm',
     fieldId: 'processorExitReason',
-    fieldType: 'textarea',
+    fieldType: 'select',
+    options: PROCESSOR_EXIT_REASON_OPTIONS,
     allowNA: true,
     helperText: 'Only asked for merchants that already process cards.',
     visibleWhen: (answers) => isYes(answers.currentlyProcessesCards),
@@ -501,7 +577,8 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     required: true,
     formId: 'salesProfileForm',
     fieldId: 'transactionChannelSplit',
-    fieldType: 'text',
+    fieldType: 'select',
+    options: TXN_CHANNEL_SPLIT_OPTIONS,
     ruleNotes: ['If the total does not cleanly reach 100%, record later_clarification_required = yes.'],
   },
   {
@@ -521,7 +598,8 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     required: false,
     formId: 'salesProfileForm',
     fieldId: 'recurringTransactionsPercent',
-    fieldType: 'text',
+    fieldType: 'select',
+    options: PERCENT_BUCKET_OPTIONS,
     helperText: 'Only needed when you offer recurring billing or subscriptions.',
     visibleWhen: (answers) => isYes(answers.recurringBilling),
     requiredWhen: (answers) => isYes(answers.recurringBilling),
@@ -534,7 +612,8 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     required: true,
     formId: 'salesProfileForm',
     fieldId: 'foreignCardsPercent',
-    fieldType: 'text',
+    fieldType: 'select',
+    options: PERCENT_BUCKET_OPTIONS,
   },
   {
     number: 38,
@@ -615,7 +694,8 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     required: false,
     formId: 'websiteComplianceForm',
     fieldId: 'thirdPartyCardApps',
-    fieldType: 'textarea',
+    fieldType: 'select',
+    options: THIRD_PARTY_APPS_OPTIONS,
     helperText: 'Only needed when you rely on external payment, gateway, cart, or storage tools.',
     visibleWhen: (answers) => needsWebsiteQuestions(answers) || isYes(answers.currentlyProcessesCards),
     requiredWhen: (answers) => needsWebsiteQuestions(answers) || isYes(answers.currentlyProcessesCards),
@@ -869,8 +949,9 @@ export const COMMON_INTAKE_FORMS: Record<CommonIntakeFormId, CommonIntakeFormSpe
         questionNumber: 28,
         id: 'priorTerminationExplanation',
         label: 'If yes, what happened and when?',
-        type: 'textarea',
+        type: 'select',
         required: false,
+        options: ADVERSE_EVENT_EXPLANATION_OPTIONS,
         helperText: 'Only needed when there has been a prior processing termination.',
         visibleWhen: (answers) => isYes(answers.priorTermination),
         requiredWhen: (answers) => isYes(answers.priorTermination),
@@ -879,8 +960,9 @@ export const COMMON_INTAKE_FORMS: Record<CommonIntakeFormId, CommonIntakeFormSpe
         questionNumber: 29,
         id: 'bankruptcyExplanation',
         label: 'If yes, please provide the year and a short explanation.',
-        type: 'textarea',
+        type: 'select',
         required: false,
+        options: ADVERSE_EVENT_EXPLANATION_OPTIONS,
         helperText: 'Only needed when there is bankruptcy history.',
         visibleWhen: (answers) => isYes(answers.bankruptcyHistory),
         requiredWhen: (answers) => isYes(answers.bankruptcyHistory),
@@ -889,8 +971,9 @@ export const COMMON_INTAKE_FORMS: Record<CommonIntakeFormId, CommonIntakeFormSpe
         questionNumber: 30,
         id: 'riskProgramExplanation',
         label: 'If yes, which program and what was the outcome?',
-        type: 'textarea',
+        type: 'select',
         required: false,
+        options: ADVERSE_EVENT_EXPLANATION_OPTIONS,
         helperText: 'Only needed when a Visa or Mastercard risk program has been involved.',
         visibleWhen: (answers) => isYes(answers.riskProgramHistory),
         requiredWhen: (answers) => isYes(answers.riskProgramHistory),

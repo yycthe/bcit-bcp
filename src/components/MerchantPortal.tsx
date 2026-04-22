@@ -101,6 +101,17 @@ export function MerchantPortal({
   verificationIssues,
   onClearVerificationIssues,
 }: Props) {
+  const DOCUMENT_KEYS: MerchantDocumentKey[] = [
+    'idUpload',
+    'proofOfAddress',
+    'registrationCertificate',
+    'taxDocument',
+    'proofOfFunds',
+    'bankStatement',
+    'financials',
+    'complianceDocument',
+    'enhancedVerification',
+  ];
   const [currentView, setCurrentView] = useState<MerchantView>('intake');
   const [isFinished, setIsFinished] = useState(false);
   const [editSection, setEditSection] = useState<string | null>(null);
@@ -110,6 +121,8 @@ export function MerchantPortal({
   const [aiFieldHints, setAiFieldHints] = useState<Record<string, boolean>>({});
   /** Demo profile powering the "Autofill this step" shortcut (swap between sample companies). */
   const [demoProfileId, setDemoProfileId] = useState<string>(DEFAULT_DEMO_PROFILE_ID);
+  /** Demo upload mode toggle: mock files for demos, or real uploads for realistic testing. */
+  const [useMockUploads, setUseMockUploads] = useState(true);
   /** Current intake step, reported by ChatApp — used to scope the autofill shortcut. */
   const [currentStepInfo, setCurrentStepInfo] = useState<ChatAppStepInfo | null>(null);
 
@@ -263,6 +276,26 @@ export function MerchantPortal({
 
   const activeDemoProfile = useMemo(() => getDemoProfile(demoProfileId), [demoProfileId]);
 
+  const makeDemoFile = useCallback(
+    (key: MerchantDocumentKey): FileData => {
+      const stamp = new Date().toISOString();
+      const safeProfileId = activeDemoProfile.id.replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
+      const body =
+        `Demo document for ${activeDemoProfile.label}\n` +
+        `Document key: ${key}\n` +
+        `Generated at: ${stamp}\n`;
+      return {
+        name: `${safeProfileId}-${key}.txt`,
+        mimeType: 'text/plain',
+        data: `data:text/plain;base64,${btoa(body)}`,
+        uploadDate: stamp,
+        documentType: key,
+        status: 'Uploaded',
+      };
+    },
+    [activeDemoProfile.id, activeDemoProfile.label]
+  );
+
   /**
    * Fill ONLY the fields that belong to the intake step the merchant is
    * currently looking at, using the selected demo profile. Lets you step
@@ -283,15 +316,30 @@ export function MerchantPortal({
     const profile = activeDemoProfile;
     const patch: Partial<MerchantData> = {};
     const filledLabels: string[] = [];
+    const uploadedLabels: string[] = [];
     for (const key of currentStepInfo.fieldKeys) {
       const typedKey = key as keyof MerchantData;
       const value = profile.data[typedKey];
       if (typeof value === 'string') {
         (patch as Record<string, string>)[key] = value;
         if (value.trim()) filledLabels.push(key);
+      } else if (DOCUMENT_KEYS.includes(key as MerchantDocumentKey)) {
+        if (useMockUploads) {
+          (patch as Record<string, FileData>)[key] = makeDemoFile(key as MerchantDocumentKey);
+          uploadedLabels.push(key);
+        }
       }
     }
-    if (filledLabels.length === 0) {
+    if (filledLabels.length === 0 && uploadedLabels.length === 0) {
+      const onUploadStep = currentStepInfo.fieldKeys.some((k) =>
+        DOCUMENT_KEYS.includes(k as MerchantDocumentKey)
+      );
+      if (onUploadStep && !useMockUploads) {
+        toast.message('Real upload mode is on', {
+          description: 'This step expects a real file upload. Use the Upload control to continue.',
+        });
+        return;
+      }
       toast.message('No demo values for this step', {
         description: `${profile.label} does not have sample values for these fields.`,
       });
@@ -299,14 +347,26 @@ export function MerchantPortal({
     }
     setMerchantData({ ...merchantData, ...patch });
     toast.success(`Autofilled this step — ${profile.label}`, {
-      description: `${filledLabels.length} field${filledLabels.length === 1 ? '' : 's'} filled. Review, edit, or continue.`,
+      description:
+        `${filledLabels.length} text field${filledLabels.length === 1 ? '' : 's'} filled` +
+        `${uploadedLabels.length ? `, ${uploadedLabels.length} file${uploadedLabels.length === 1 ? '' : 's'} mocked` : ''}. ` +
+        'Review, edit, or continue.',
     });
   };
 
   /** Original "fill everything" flow, now scoped to the currently-selected profile. */
   const autofillEntireApplication = () => {
     const profile = activeDemoProfile;
-    setMerchantData({ ...profile.data });
+    const filePatch = useMockUploads
+      ? DOCUMENT_KEYS.reduce(
+          (acc, key) => {
+            acc[key] = makeDemoFile(key);
+            return acc;
+          },
+          {} as Record<MerchantDocumentKey, FileData>
+        )
+      : {};
+    setMerchantData({ ...profile.data, ...filePatch });
     setAiFieldHints({});
     setDocuments([]);
     setUnderwritingResult(null);
@@ -319,7 +379,9 @@ export function MerchantPortal({
     onDismissMerchantNotice();
     onClearVerificationIssues();
     toast.message(`Demo loaded — ${profile.label}`, {
-      description: 'All intake fields filled with sample data. Open Review when ready.',
+      description: useMockUploads
+        ? 'All intake fields filled and upload steps are mocked with demo files.'
+        : 'All non-file intake fields filled. Upload steps remain real-file only.',
     });
   };
 
@@ -478,6 +540,36 @@ export function MerchantPortal({
             </Select>
             <p className="text-[10px] leading-snug text-foreground-subtle">
               {activeDemoProfile.description}
+            </p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-foreground-muted">
+              Upload mode
+            </p>
+            <div className="grid grid-cols-2 gap-1">
+              <Button
+                type="button"
+                variant={useMockUploads ? 'brand' : 'outline'}
+                size="xs"
+                className="w-full text-[11px]"
+                onClick={() => setUseMockUploads(true)}
+              >
+                Use mock uploads
+              </Button>
+              <Button
+                type="button"
+                variant={!useMockUploads ? 'brand' : 'outline'}
+                size="xs"
+                className="w-full text-[11px]"
+                onClick={() => setUseMockUploads(false)}
+              >
+                Use real uploads
+              </Button>
+            </div>
+            <p className="text-[10px] leading-snug text-foreground-subtle">
+              {useMockUploads
+                ? 'Demo autofill will generate file placeholders for upload steps.'
+                : 'Demo autofill will skip files so you can test real upload flows.'}
             </p>
           </div>
           <Button
