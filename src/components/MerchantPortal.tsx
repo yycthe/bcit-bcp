@@ -362,8 +362,8 @@ export function MerchantPortal({
     });
   };
 
-  /** Original "fill everything" flow, now scoped to the currently-selected profile. */
-  const autofillEntireApplication = () => {
+  /** Fill complete demo profile and open Review in one click. */
+  const autofillAndOpenReview = () => {
     const profile = activeDemoProfile;
     const filePatch = useMockUploads
       ? DOCUMENT_KEYS.reduce(
@@ -383,13 +383,13 @@ export function MerchantPortal({
     setEditSection(null);
     setGuidedTourOrder(null);
     setIntakeSessionKey((k) => k + 1);
-    setCurrentView('intake');
+    setCurrentView('review');
     onDismissMerchantNotice();
     onClearVerificationIssues();
     toast.message(`Demo loaded — ${profile.label}`, {
       description: useMockUploads
-        ? 'All intake fields filled and upload steps are mocked with demo files.'
-        : 'All non-file intake fields filled. Upload steps remain real-file only.',
+        ? 'All intake fields filled with mock files. Review opened.'
+        : 'All non-file intake fields filled. Review opened; upload steps remain real-file only.',
     });
   };
 
@@ -408,20 +408,6 @@ export function MerchantPortal({
     onClearVerificationIssues();
     toast.message('Intake cleared', {
       description: 'All fields reset. Start a fresh application from Intake.',
-    });
-  };
-
-  const jumpToReviewWithDemo = () => {
-    const profile = activeDemoProfile;
-    setMerchantData({ ...profile.data });
-    setDocuments([]);
-    setUnderwritingResult(null);
-    setGuidedTourOrder(null);
-    onClearVerificationIssues();
-    setIsFinished(true);
-    setCurrentView('review');
-    toast.message(`Demo shortcut — ${profile.label}`, {
-      description: 'Review opened with sample data.',
     });
   };
 
@@ -605,11 +591,11 @@ export function MerchantPortal({
             variant="outline"
             size="sm"
             className="w-full justify-start gap-2 text-xs"
-            onClick={autofillEntireApplication}
-            title="Fill every intake field for the selected sample company"
+            onClick={autofillAndOpenReview}
+            title="Fill all fields for selected sample company and open Review"
           >
             <Wand2 className="h-3.5 w-3.5 shrink-0" />
-            Autofill all fields
+            Autofill all + Open Review
           </Button>
           <Button
             type="button"
@@ -620,16 +606,6 @@ export function MerchantPortal({
           >
             <RotateCcw className="h-3.5 w-3.5 shrink-0" />
             Clear all fields
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full justify-start gap-2 text-xs"
-            onClick={jumpToReviewWithDemo}
-          >
-            <Zap className="h-3.5 w-3.5 shrink-0" />
-            Skip to Review (demo)
           </Button>
         </div>
       </aside>
