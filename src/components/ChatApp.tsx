@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Upload, CheckCircle2, FileText, ShieldCheck, AlertCircle, Building, Zap, Globe, RefreshCcw, Activity, Building2, Lightbulb, X, ArrowRight, Bot, User, Sparkles } from 'lucide-react';
+import { Send, Upload, CheckCircle2, FileText, ShieldCheck, AlertCircle, Building, Zap, Globe, RefreshCcw, Activity, Building2, Lightbulb, X, ArrowRight, Bot, User, Sparkles, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import { Select } from '@/src/components/ui/select';
@@ -118,6 +118,58 @@ type SmartGuide = {
   tips: string[];
   skipLabel?: string;
 };
+
+type OwnerDraftRow = {
+  id: string;
+  fullName: string;
+  ownershipPercent: string;
+  title: string;
+  email: string;
+};
+
+function createOwnerDraftRow(seed?: Partial<OwnerDraftRow>): OwnerDraftRow {
+  return {
+    id: seed?.id || Math.random().toString(36).slice(2, 9),
+    fullName: seed?.fullName || '',
+    ownershipPercent: seed?.ownershipPercent || '',
+    title: seed?.title || '',
+    email: seed?.email || '',
+  };
+}
+
+function parseBeneficialOwnersText(value: string): OwnerDraftRow[] {
+  const rows = value
+    .split(/\n|;/)
+    .map((row) => row.trim())
+    .filter(Boolean)
+    .map((row, index) => {
+      const parts = row.split(',').map((part) => part.trim());
+      return createOwnerDraftRow({
+        id: `owner_row_${index + 1}`,
+        fullName: parts[0] || '',
+        ownershipPercent: parts[1]?.replace('%', '') || '',
+        title: parts[2] || '',
+        email: parts[3] || '',
+      });
+    });
+
+  return rows.length > 0 ? rows : [createOwnerDraftRow()];
+}
+
+function serializeBeneficialOwnersRows(rows: OwnerDraftRow[]): string {
+  return rows
+    .map((row) => {
+      const parts = [
+        row.fullName.trim(),
+        row.ownershipPercent.trim() ? `${row.ownershipPercent.trim()}%` : '',
+        row.title.trim(),
+        row.email.trim(),
+      ].filter(Boolean);
+      return parts.join(', ');
+    })
+    .filter(Boolean)
+    .join('\n');
+}
 
 /** readAsDataURL yields `data:...;base64,...` — must not be spread like a multi-field form answer */
 function isFileUploadAnswer(value: unknown): value is FileData {
@@ -914,6 +966,7 @@ export function ChatApp({
   const [verificationPlan, setVerificationPlan] = useState<VerificationPlan | null>(null);
   const [verificationPlanLoading, setVerificationPlanLoading] = useState(false);
   const [draftFormValues, setDraftFormValues] = useState<Record<string, string>>({});
+  const [ownerDraftRows, setOwnerDraftRows] = useState<OwnerDraftRow[]>([createOwnerDraftRow()]);
   const [pendingDocExtract, setPendingDocExtract] = useState<{
     slot: string;
     fileName: string;
@@ -945,6 +998,7 @@ export function ChatApp({
     const qDef = currentQuestion ? QUESTIONS[currentQuestion] : null;
     if (qDef?.type !== 'form') {
       setDraftFormValues({});
+      setOwnerDraftRows([createOwnerDraftRow()]);
       return;
     }
     const nextValues: Record<string, string> = {};
@@ -953,6 +1007,11 @@ export function ChatApp({
       nextValues[String(field.id)] = typeof raw === 'string' ? raw : '';
     });
     setDraftFormValues(nextValues);
+    if (qDef.fields?.some((field) => field.id === 'beneficialOwners')) {
+      setOwnerDraftRows(parseBeneficialOwnersText(nextValues.beneficialOwners || ''));
+    } else {
+      setOwnerDraftRows([createOwnerDraftRow()]);
+    }
   }, [currentQuestion, data]);
 
   useEffect(() => {
@@ -1356,19 +1415,25 @@ export function ChatApp({
 
       const url = prepared.fileData.data;
       const extractSlots = new Set(['idUpload', 'registrationCertificate', 'bankStatement', 'proofOfAddress']);
+      const canExtractInline =
+        typeof url === 'string' &&
+        url.startsWith('data:') &&
+        prepared.fileData.contentEncoding !== 'gzip';
       if (
         extractSlots.has(String(uploadSlot)) &&
         typeof url === 'string' &&
-        url.startsWith('http')
+        (url.startsWith('http') || canExtractInline)
       ) {
         void fetch('/api/intake/extract', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            blobUrl: url,
+            blobUrl: url.startsWith('http') ? url : undefined,
+            dataUrl: canExtractInline ? url : undefined,
             mimeType: prepared.fileData.mimeType,
             slot: uploadSlot,
             knownContext: buildExtractContext(data),
+            contentEncoding: prepared.fileData.contentEncoding,
           }),
         })
           .then(async (r) => {
@@ -1683,6 +1748,41 @@ export function ChatApp({
         }));
       };
 
+      const updateOwnerRows = (rows: OwnerDraftRow[]) => {
+        setOwnerDraftRows(rows);
+        const serialized = serializeBeneficialOwnersRows(rows);
+        setDraftFormValues((prev) => ({
+          ...prev,
+          beneficialOwners: serialized,
+        }));
+      };
+
+      const updateOwnerRow = (
+        rowId: string,
+        key: keyof Omit<OwnerDraftRow, 'id'>,
+        value: string
+      ) => {
+        updateOwnerRows(
+          ownerDraftRows.map((row) =>
+            row.id === rowId
+              ? {
+                  ...row,
+                  [key]: value,
+                }
+              : row
+          )
+        );
+      };
+
+      const addOwnerRow = () => {
+        updateOwnerRows([...ownerDraftRows, createOwnerDraftRow()]);
+      };
+
+      const removeOwnerRow = (rowId: string) => {
+        const nextRows = ownerDraftRows.filter((row) => row.id !== rowId);
+        updateOwnerRows(nextRows.length > 0 ? nextRows : [createOwnerDraftRow()]);
+      };
+
       return (
         <div className="shrink-0 border-t border-border bg-surface">
           {isEditing && (
@@ -1718,6 +1818,22 @@ export function ChatApp({
                   const val = draftFormValues[String(f.id)] || '';
                   values[f.id] = val;
                   if (getFieldRequired(f) && !val.trim()) allFilled = false;
+                  if (f.id === 'beneficialOwners' && getFieldRequired(f)) {
+                    const hasCompleteOwner = ownerDraftRows.some(
+                      (row) => row.fullName.trim() && row.ownershipPercent.trim()
+                    );
+                    const hasPartialOwner = ownerDraftRows.some((row) => {
+                      const hasAnyValue =
+                        row.fullName.trim() ||
+                        row.ownershipPercent.trim() ||
+                        row.title.trim() ||
+                        row.email.trim();
+                      const isComplete = row.fullName.trim() && row.ownershipPercent.trim();
+                      return Boolean(hasAnyValue) && !isComplete;
+                    });
+                    if (!hasCompleteOwner) allFilled = false;
+                    if (hasPartialOwner) allFilled = false;
+                  }
                 });
                 if (!allFilled) {
                   toast.error('Please fill out all fields.');
@@ -1748,7 +1864,59 @@ export function ChatApp({
                       {field.helperText && (
                         <p className="text-[11px] text-foreground-subtle">{field.helperText}</p>
                       )}
-                      {field.type === 'textarea' ? (
+                      {field.id === 'beneficialOwners' ? (
+                        <div className="space-y-3 rounded-lg border border-border bg-surface-subtle p-3">
+                          {ownerDraftRows.map((row, index) => (
+                            <div key={row.id} className="rounded-md border border-border bg-surface p-3">
+                              <div className="mb-3 flex items-center justify-between gap-3">
+                                <p className="text-xs font-semibold text-foreground">Owner {index + 1}</p>
+                                {ownerDraftRows.length > 1 ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="xs"
+                                    onClick={() => removeOwnerRow(row.id)}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                    Remove
+                                  </Button>
+                                ) : null}
+                              </div>
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <Input
+                                  value={row.fullName}
+                                  onChange={(event) => updateOwnerRow(row.id, 'fullName', event.target.value)}
+                                  placeholder="Full legal name"
+                                />
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.01"
+                                  value={row.ownershipPercent}
+                                  onChange={(event) => updateOwnerRow(row.id, 'ownershipPercent', event.target.value)}
+                                  placeholder="Ownership %"
+                                />
+                                <Input
+                                  value={row.title}
+                                  onChange={(event) => updateOwnerRow(row.id, 'title', event.target.value)}
+                                  placeholder="Title / role (optional)"
+                                />
+                                <Input
+                                  type="email"
+                                  value={row.email}
+                                  onChange={(event) => updateOwnerRow(row.id, 'email', event.target.value)}
+                                  placeholder="Email (optional)"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                          <Button type="button" variant="outline" size="sm" onClick={addOwnerRow}>
+                            <Plus className="h-3.5 w-3.5" />
+                            Add owner
+                          </Button>
+                        </div>
+                      ) : field.type === 'textarea' ? (
                         <textarea
                           name={field.id}
                           required={isRequired}

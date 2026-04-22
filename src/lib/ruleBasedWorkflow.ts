@@ -1,8 +1,6 @@
 /**
  * Onboarding policy text: used as the system contract for every Gemini call, for the
- * in-app “Policy prompt” panel, and as the input to the silent deterministic
- * `getFallbackUnderwriting` path (see `src/lib/underwritingFallback.ts`) when the
- * model is down—kept in source as a single spec, with a minimal copy in
+ * in-app “Policy prompt” panel. Kept in source as a single spec, with a minimal copy in
  * `api/ai-review.ts` for the serverless bundle.
  */
 import {
@@ -16,9 +14,9 @@ const PROCESSOR_SEQUENCE: ProcessorFit[] = ['Nuvei', 'Payroc / Peoples', 'Chase'
 
 export const ONBOARDING_WORKFLOW_STEPS = [
   'Merchant Portal collects only the Common Questions first.',
-  'Policy checks decide whether KYB, KYC, both, or KYB-first should be requested before any processor routing.',
+  'Controlled verification planning decides where KYC / KYB belongs and which parties require KYB or KYC before processor routing.',
   'Admin Portal records local KYC / KYB verification status and follow-up issues.',
-  'AI reviews the application end-to-end (intake answers, uploaded documents, website, policy-check output) and produces a risk score, recommended processor, and recommended action.',
+  'AI reviews the application end-to-end (intake answers, uploaded documents, website, verification context) and produces the risk score, recommended processor, and recommended action.',
   'Merchant Portal asks only the matched processor-specific second-layer questions.',
   'System assembles a processor-ready package for Admin approval and routing — admin has final say.',
 ];
@@ -27,7 +25,7 @@ export const ONBOARDING_POLICY_RULES = [
   'Do not ask Nuvei, Payroc / Peoples, or Chase-specific questions during Common Intake.',
   'Do not route to a processor until Common Intake and KYC / KYB readiness checks are sufficiently complete.',
   'AI produces all underwriting recommendations; every final processor assignment and merchant-facing message must be explicitly confirmed by a human admin.',
-  'The same onboarding policy runs as a deterministic fallback only when Gemini is unavailable (recovery path). Under normal operation the workbench hides that baseline once AI succeeds.',
+  'Readiness checks may provide context to the model, but they must not supply the final risk score, processor route, or approval recommendation.',
   'Prefer dropdowns and short structured answers. Use free text only for names, addresses, explanations, contacts, and narrative business descriptions.',
   'Admin advanced overrides remain available for disputes; the verbatim policy prompt stays exposed for audit.',
 ];
@@ -64,7 +62,7 @@ export const ONBOARDING_POLICY_PROMPT = [
   'Global rules (enforced regardless of AI output):',
   ONBOARDING_POLICY_RULES.map((rule) => `- ${rule}`).join('\n'),
   '',
-  'Processor routing guide for AI and policy checks:',
+  'Processor routing guide for AI review:',
   '- Nuvei: standard Canadian merchants, clean KYC / KYB, low-to-mid risk.',
   '- Payroc / Peoples: adverse history, higher risk, needs manual review or specialized underwriting.',
   '- Chase: larger enterprise, card-not-present heavy, advance-payment, structured ownership, international.',

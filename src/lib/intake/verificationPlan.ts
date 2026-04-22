@@ -108,6 +108,20 @@ function yes(value: unknown): boolean {
   return ['yes', 'y', 'true', 'ready / available'].includes(normalized(value));
 }
 
+const BUSINESS_ENTITY_TYPES = new Set([
+  'corporation',
+  'partnership',
+  'llc',
+  'limited_liability',
+  'non_profit',
+  'government',
+  'parent_owned',
+]);
+
+function isBusinessEntityType(value: unknown): boolean {
+  return typeof value === 'string' && BUSINESS_ENTITY_TYPES.has(value);
+}
+
 function parseRows(value: string): string[] {
   return value
     .split(/\n|;/)
@@ -467,15 +481,18 @@ export function buildFallbackVerificationPlanFromProfile(
     );
   });
 
-  const kybTargets: VerificationEntityTarget[] = [
-    {
-      entity_key: 'applicant_entity',
-      entity_name: hasText(profile.legalName) ? profile.legalName.trim() : null,
-      roles: ['applicant_legal_entity'],
-      reason_code: 'primary_business_entity',
-      reason: 'The applicant legal entity must be verified for business registration, ownership, and banking support.',
-    },
-  ];
+  const kybRequired = isBusinessEntityType(profile.businessType) || profile.parentEntities.length > 0;
+  const kybTargets: VerificationEntityTarget[] = kybRequired
+    ? [
+        {
+          entity_key: 'applicant_entity',
+          entity_name: hasText(profile.legalName) ? profile.legalName.trim() : null,
+          roles: ['applicant_legal_entity'],
+          reason_code: 'primary_business_entity',
+          reason: 'The applicant legal entity must be verified for business registration, ownership, and banking support.',
+        },
+      ]
+    : [];
   profile.parentEntities.forEach((entity) => {
     kybTargets.push({
       entity_key: entity.entity_key,
@@ -495,7 +512,7 @@ export function buildFallbackVerificationPlanFromProfile(
 
   return {
     placement,
-    kyb_required: Boolean(profile.businessType),
+    kyb_required: kybRequired,
     kyc_required: people.size > 0,
     kyb_targets: kybTargets,
     kyc_targets: Array.from(people.values()),

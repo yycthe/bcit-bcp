@@ -103,6 +103,18 @@ function sanitizeExtracted(
   return out;
 }
 
+function parseDataUrl(dataUrl: string): { mimeType: string; base64: string; bytes: number } | null {
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/i);
+  if (!match) return null;
+  const base64 = match[2];
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  return {
+    mimeType: match[1].toLowerCase(),
+    base64,
+    bytes: Math.max(0, Math.floor((base64.length * 3) / 4) - padding),
+  };
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return json(res, 405, { error: 'Method not allowed' });
@@ -115,9 +127,11 @@ export default async function handler(req: any, res: any) {
 
   let body: {
     blobUrl?: string;
+    dataUrl?: string;
     mimeType?: string;
     slot?: string;
     knownContext?: Record<string, unknown>;
+    contentEncoding?: 'gzip';
   };
   try {
     body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
@@ -126,28 +140,45 @@ export default async function handler(req: any, res: any) {
   }
 
   const blobUrl = body.blobUrl || '';
-  const mimeType = (body.mimeType || 'application/pdf').toLowerCase();
+  let mimeType = (body.mimeType || 'application/pdf').toLowerCase();
   const slot = body.slot || '';
-  if (!blobUrl.startsWith('http')) {
-    return json(res, 400, { error: 'blobUrl required (HTTPS Blob URL)' });
-  }
   if (!allowedKeysForSlot(slot).size) {
     return json(res, 400, { error: 'Unsupported slot for extraction' });
   }
-  if (!SUPPORTED.has(mimeType)) {
-    return json(res, 400, { error: `Unsupported mime ${mimeType}` });
+  if (body.contentEncoding === 'gzip') {
+    return json(res, 400, { error: 'Compressed inline upload cannot be inspected' });
   }
 
   try {
-    const resp = await fetch(blobUrl);
-    if (!resp.ok) {
-      return json(res, 502, { error: `Fetch document failed ${resp.status}` });
+    let b64: string;
+    let byteLength: number;
+
+    if (blobUrl.startsWith('http')) {
+      const resp = await fetch(blobUrl);
+      if (!resp.ok) {
+        return json(res, 502, { error: `Fetch document failed ${resp.status}` });
+      }
+      const buf = await resp.arrayBuffer();
+      byteLength = buf.byteLength;
+      b64 = Buffer.from(buf).toString('base64');
+    } else if (body.dataUrl) {
+      const parsed = parseDataUrl(body.dataUrl);
+      if (!parsed) {
+        return json(res, 400, { error: 'Invalid document data URL' });
+      }
+      mimeType = parsed.mimeType || mimeType;
+      byteLength = parsed.bytes;
+      b64 = parsed.base64;
+    } else {
+      return json(res, 400, { error: 'blobUrl or dataUrl required' });
     }
-    const buf = await resp.arrayBuffer();
-    if (buf.byteLength > MAX_BYTES) {
+
+    if (!SUPPORTED.has(mimeType)) {
+      return json(res, 400, { error: `Unsupported mime ${mimeType}` });
+    }
+    if (byteLength > MAX_BYTES) {
       return json(res, 413, { error: 'Document exceeds extraction size cap' });
     }
-    const b64 = Buffer.from(buf).toString('base64');
 
     const sys = `You extract structured onboarding fields from an uploaded merchant document image or PDF page.
 Slot: ${slot}.

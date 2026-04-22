@@ -28,6 +28,14 @@ import { toast } from 'sonner';
 
 async function openUploadedFileInNewTab(doc: FileData) {
   try {
+    if (/^https?:\/\//i.test(doc.data)) {
+      const win = window.open(doc.data, '_blank', 'noopener,noreferrer');
+      if (!win) {
+        toast.error('Pop-up blocked. Allow pop-ups for this site to view the file.');
+      }
+      return;
+    }
+
     const raw = doc.data.replace(/^data:[^;]+;base64,/, '');
     const binary = atob(raw);
     const bytes = new Uint8Array(binary.length);
@@ -247,7 +255,7 @@ export function ReviewPage({ data, documents, onEdit, onSubmit }: Props) {
             <Section
               title="Contact & address"
               icon={Phone}
-              actions={editAction('contactAddressForm')}
+              actions={editAction('legalBusinessForm')}
             >
               <FieldGrid
                 rows={[

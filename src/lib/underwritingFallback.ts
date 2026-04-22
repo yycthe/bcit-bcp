@@ -65,7 +65,7 @@ function countUploadedFiles(finalData: MerchantData): number {
   return slotCount + additionalCount;
 }
 
-/** Policy checks: deterministic baseline that scores risk, recommends processor, and audits documents alongside the AI review. */
+/** Legacy policy-check helper. Do not use this as the primary underwriting recommendation path. */
 export function getFallbackUnderwriting(finalData: MerchantData): UnderwritingDisplayResult {
   const checklist = getMerchantDocumentChecklist(finalData);
   const missingDocuments = getMissingDocumentLabels(finalData);

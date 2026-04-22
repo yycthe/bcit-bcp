@@ -194,7 +194,7 @@ export function runLocalVerificationCheck(merchantData: MerchantData): Verificat
       reason: 'High-risk businesses should include compliance or licensing context before approval.',
       target: {
         kind: 'intake',
-        questionId: merchantData.industry === 'high_risk' ? 'highRiskForm' : 'complianceDetails',
+        questionId: 'complianceDetails',
         whereLabel: 'Intake Assistant → Business profile → Compliance details',
       },
     });
@@ -206,7 +206,7 @@ export function runLocalVerificationCheck(merchantData: MerchantData): Verificat
       reason: 'Crypto submissions should describe AML / KYC procedures.',
       target: {
         kind: 'intake',
-        questionId: 'cryptoForm',
+        questionId: 'complianceDetails',
         whereLabel: 'Intake Assistant → Business profile → Crypto details',
       },
     });
@@ -231,7 +231,7 @@ export function runLocalVerificationCheck(merchantData: MerchantData): Verificat
       reason: 'Higher-volume submissions should include an average ticket size.',
       target: {
         kind: 'intake',
-        questionId: 'businessOperationsForm',
+        questionId: 'salesProfileForm',
         whereLabel: 'Intake Assistant → Business profile → Business operations',
       },
     });
@@ -243,7 +243,7 @@ export function runLocalVerificationCheck(merchantData: MerchantData): Verificat
       reason: 'International or higher-risk merchants should specify target geography.',
       target: {
         kind: 'intake',
-        questionId: 'businessOperationsForm',
+        questionId: 'salesProfileForm',
         whereLabel: 'Intake Assistant → Business profile → Business operations',
       },
     });

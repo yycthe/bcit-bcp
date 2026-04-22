@@ -1,5 +1,4 @@
 import type { MerchantData, FileData } from '@/src/types';
-import type { UnderwritingDisplayResult } from '@/src/lib/underwritingFallback';
 
 // Structured slots inside merchantData that may hold a FileData blob.
 // Keep this in sync with FILE_FIELDS in underwritingFallback.ts.
@@ -35,22 +34,38 @@ export type AiReviewResult = {
   evidenceCitations?: { claim: string; source: string }[];
 };
 
-export type CombinedReview = {
-  rule: UnderwritingDisplayResult;
-  ai: AiReviewResult | null;
-  aiError?: string;
+type DocRef = {
+  name: string;
+  mimeType?: string;
+  documentType?: string;
+  url?: string;
+  dataUrl?: string;
+  contentEncoding?: 'gzip';
 };
 
-type DocRef = { name: string; mimeType?: string; documentType?: string; url?: string };
+const MAX_INLINE_DOC_BYTES = 5 * 1024 * 1024;
+
+function estimateDataUrlBytes(data: string): number {
+  const base64 = data.replace(/^data:[^;]+;base64,/, '');
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+}
 
 function toDocRef(d: FileData, fallbackType?: string): DocRef {
+  const isRemote = typeof d.data === 'string' && /^https?:\/\//i.test(d.data);
+  const isDataUrl = typeof d.data === 'string' && /^data:[^;]+;base64,/i.test(d.data);
+  const canInlineDataUrl =
+    isDataUrl && d.contentEncoding !== 'gzip' && estimateDataUrlBytes(d.data) <= MAX_INLINE_DOC_BYTES;
+
   return {
     name: d.name,
     mimeType: d.mimeType,
     documentType: d.documentType || fallbackType,
     // `data` is a Vercel Blob HTTPS URL when uploaded via uploadFileToBlob.
-    // Only forward the URL in that case — data: URLs would blow up the payload.
-    url: typeof d.data === 'string' && /^https?:\/\//i.test(d.data) ? d.data : undefined,
+    url: isRemote ? d.data : undefined,
+    // Small in-browser uploads are data URLs. Forward them so Gemini can still inspect them.
+    dataUrl: canInlineDataUrl ? d.data : undefined,
+    contentEncoding: d.contentEncoding,
   };
 }
 
@@ -94,18 +109,19 @@ function collectAllDocuments(merchantData: MerchantData, extra: FileData[]): Doc
 
 export async function requestAiReview(
   merchantData: MerchantData,
-  ruleResult: UnderwritingDisplayResult,
   documents: FileData[]
 ): Promise<AiReviewResult> {
   const payload = {
     merchantData,
-    ruleResult: {
-      riskScore: ruleResult.riskScore,
-      riskCategory: ruleResult.riskCategory,
-      riskFactors: ruleResult.riskFactors,
-      recommendedProcessor: ruleResult.recommendedProcessor,
-      missingItems: ruleResult.missingItems,
-      reason: ruleResult.reason,
+    aiContext: {
+      verificationCheckpointPlacement: merchantData.verificationCheckpointPlacement,
+      verificationTargetsJson: merchantData.verificationTargetsJson,
+      personaInvitePlan: merchantData.personaInvitePlan,
+      personaVerificationSummary: merchantData.personaVerificationSummary,
+      websiteReviewSummary: merchantData.websiteReviewSummary,
+      personaKybStatus: merchantData.personaKybStatus,
+      personaKycStatuses: merchantData.personaKycStatuses,
+      personaVerificationIssues: merchantData.personaVerificationIssues,
     },
     documents: collectAllDocuments(merchantData, documents),
   };

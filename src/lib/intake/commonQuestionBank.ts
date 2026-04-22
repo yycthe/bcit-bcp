@@ -199,7 +199,7 @@ export const COMMON_QUESTION_BANK: CommonQuestionSpec[] = [
     required: true,
     formId: 'legalBusinessForm',
     fieldId: 'establishedDate',
-    fieldType: 'text',
+    fieldType: 'date',
   },
   {
     number: 6,

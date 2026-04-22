@@ -9,9 +9,9 @@ const ONBOARDING_POLICY_PROMPT = [
   '',
   'Required app flow:',
   '1. Merchant Portal collects only the Common Questions first.',
-  '2. Policy checks decide whether KYB, KYC, both, or KYB-first should be requested before any processor routing.',
+  '2. Controlled verification planning decides where KYC / KYB belongs and which parties require KYB or KYC before processor routing.',
   '3. Admin Portal records local KYC / KYB verification status and follow-up issues.',
-  '4. AI reviews the application end-to-end (intake answers, uploaded documents, website, policy-check output) and produces a risk score, recommended processor, and recommended action.',
+  '4. AI reviews the application end-to-end (intake answers, uploaded documents, website, verification context) and produces the risk score, recommended processor, and recommended action.',
   '5. Merchant Portal asks only the matched processor-specific second-layer questions.',
   '6. System assembles a processor-ready package for Admin approval and routing — admin has final say.',
   '',
@@ -19,11 +19,11 @@ const ONBOARDING_POLICY_PROMPT = [
   '- Do not ask Nuvei, Payroc / Peoples, or Chase-specific questions during Common Intake.',
   '- Do not route to a processor until Common Intake and KYC / KYB readiness checks are sufficiently complete.',
   '- AI produces all underwriting recommendations; every final processor assignment and merchant-facing message must be explicitly confirmed by a human admin.',
-  '- The same onboarding policy also defines a deterministic fallback when the model is unavailable. Under normal operation the live workbench does not block on that baseline after a successful AI run.',
+  '- Deterministic checks may produce readiness context, but they must not supply the final risk score, processor route, or approval recommendation.',
   '- Prefer dropdowns and short structured answers. Use free text only for names, addresses, explanations, contacts, and narrative business descriptions.',
   '- Admin advanced overrides remain available; the policy text is the audit source of truth.',
   '',
-  'Processor routing guide for AI and policy checks:',
+  'Processor routing guide for AI review:',
   '- Nuvei: standard Canadian merchants, clean KYC / KYB, low-to-mid risk.',
   '- Payroc / Peoples: adverse history, higher risk, needs manual review or specialized underwriting.',
   '- Chase: larger enterprise, card-not-present heavy, advance-payment, structured ownership, international.',
@@ -32,20 +32,15 @@ const ONBOARDING_POLICY_PROMPT = [
 type DocumentRef = {
   name: string;
   url?: string;
+  dataUrl?: string;
   mimeType?: string;
   documentType?: string;
+  contentEncoding?: 'gzip';
 };
 
 type ReviewRequest = {
   merchantData: Record<string, unknown>;
-  ruleResult: {
-    riskScore: number;
-    riskCategory: string;
-    riskFactors: string[];
-    recommendedProcessor: string;
-    missingItems: string[];
-    reason: string;
-  };
+  aiContext?: Record<string, unknown>;
   documents?: DocumentRef[];
 };
 
@@ -79,7 +74,7 @@ const SYSTEM_INSTRUCTION = `You are the senior underwriting analyst for a paymen
 
 You will receive:
 1. The policy rules that govern the workflow (authoritative — you must never contradict them).
-2. A policy-check baseline (deterministic rule output: preliminary risk score, risk factors, recommended processor, missing items). Treat it as a second opinion, not a ground truth.
+2. A structured AI review context containing verification placement, KYB/KYC targets, readiness summaries, and admin-entered local verification results.
 3. The full merchant intake answers (business details, ownership, processing history, sales profile, website URL, banking, documents status).
 4. The actual contents of any uploaded documents (PDFs or images) — inspect them directly.
 5. Optional merchant website URL for additional signal (reason about the domain / what the merchant says they sell).
@@ -88,9 +83,9 @@ Your job:
 - Produce an independent decision: risk score, risk category, recommended processor, recommended action, confidence.
 - Whenever you cite a substantive finding (risk factor, contradiction, inconsistency), add an evidenceCitation entry naming the intake field path (e.g. merchantData.legalName) or the document filename (page number if discernible from the PDF viewer context).
 - Explicitly check uploaded documents against intake answers (legal name, address, ownership, bank account, tax ID, processing volume). Surface every inconsistency in docConsistencyNotes.
-- Surface red flags the policy check may have missed (subtle inconsistencies in answers, vague descriptions, unusual patterns, claims not supported by uploaded docs, misleading website).
+- Surface red flags the intake or readiness context may have missed (subtle inconsistencies in answers, vague descriptions, unusual patterns, claims not supported by uploaded docs, misleading website).
 - Surface strengths that mitigate risk.
-- If you disagree with the policy check (score, processor, or action), briefly explain why in adminNotes.
+- Do not copy any app-side readiness context as a risk score, processor route, or approval action. You must produce those recommendations yourself from the evidence.
 - If required data or documents are missing, set recommendedAction to request_more_info and enumerate the exact missing items in redFlags.
 - Never invent facts. If data is incomplete, say so.
 - Admin notes: 3-6 sentences covering what you saw and why you recommend the action.
@@ -220,8 +215,8 @@ export default async function handler(req: any, res: any) {
     return json(res, 400, { error: 'Invalid JSON body' });
   }
 
-  if (!body?.merchantData || !body?.ruleResult) {
-    return json(res, 400, { error: 'merchantData and ruleResult are required' });
+  if (!body?.merchantData) {
+    return json(res, 400, { error: 'merchantData is required' });
   }
 
   // Build parts: a) header text, b) inlined document contents, c) footer instruction.
@@ -255,23 +250,23 @@ export default async function handler(req: any, res: any) {
 }
 
 function buildUserHeader(body: ReviewRequest): string {
-  const { merchantData, ruleResult, documents = [] } = body;
+  const { merchantData, aiContext = {}, documents = [] } = body;
 
   const merchantJson = JSON.stringify(merchantData, redactSensitive, 2);
-  const ruleJson = JSON.stringify(ruleResult, null, 2);
+  const contextJson = JSON.stringify(aiContext, null, 2);
   const docManifest = documents.length
     ? documents
         .map(
           (d) =>
-            `- ${d.name} · ${d.mimeType || 'unknown type'}${d.documentType ? ` · ${d.documentType}` : ''}${d.url ? ' · [content attached below]' : ' · [reference only, no content]'}`
+            `- ${d.name} · ${d.mimeType || 'unknown type'}${d.documentType ? ` · ${d.documentType}` : ''}${d.url || d.dataUrl ? ' · [content attached below]' : ' · [reference only, no content]'}`
         )
         .join('\n')
     : '(no documents uploaded)';
   const website = (merchantData as { website?: string })?.website || '';
   const websiteLine = website ? `MERCHANT WEBSITE: ${website}` : 'MERCHANT WEBSITE: (not provided)';
 
-  return `POLICY-CHECK BASELINE (deterministic, preliminary):
-${ruleJson}
+  return `AI REVIEW CONTEXT (readiness and verification context only; not a recommendation):
+${contextJson}
 
 MERCHANT INTAKE DATA (sensitive fields redacted):
 ${merchantJson}
@@ -284,6 +279,18 @@ ${docManifest}
 `;
 }
 
+function parseDataUrl(dataUrl: string): { mimeType: string; base64: string; bytes: number } | null {
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/i);
+  if (!match) return null;
+  const base64 = match[2];
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+  return {
+    mimeType: match[1].toLowerCase(),
+    base64,
+    bytes: Math.max(0, Math.floor((base64.length * 3) / 4) - padding),
+  };
+}
+
 async function loadDocumentParts(
   documents: DocumentRef[]
 ): Promise<{ parts: any[]; inspected: number; skipped: string[] }> {
@@ -293,28 +300,46 @@ async function loadDocumentParts(
   let used = 0;
 
   for (const d of documents) {
-    if (!d.url) {
-      skipped.push(`${d.name}: no URL`);
-      continue;
-    }
-    const mime = (d.mimeType || 'application/pdf').toLowerCase();
-    if (!SUPPORTED_INLINE_TYPES.has(mime)) {
-      skipped.push(`${d.name}: unsupported mime ${mime}`);
-      continue;
-    }
-    if (used >= MAX_TOTAL_DOC_BYTES) {
-      skipped.push(`${d.name}: aggregate size cap reached`);
-      continue;
-    }
-
     try {
-      const resp = await fetch(d.url);
-      if (!resp.ok) {
-        skipped.push(`${d.name}: fetch ${resp.status}`);
+      if (d.contentEncoding === 'gzip') {
+        skipped.push(`${d.name}: compressed inline upload cannot be inspected`);
         continue;
       }
-      const buf = await resp.arrayBuffer();
-      const size = buf.byteLength;
+      let mime = (d.mimeType || 'application/pdf').toLowerCase();
+      let base64: string;
+      let size: number;
+
+      if (d.url) {
+        const resp = await fetch(d.url);
+        if (!resp.ok) {
+          skipped.push(`${d.name}: fetch ${resp.status}`);
+          continue;
+        }
+        const buf = await resp.arrayBuffer();
+        size = buf.byteLength;
+        base64 = Buffer.from(buf).toString('base64');
+      } else if (d.dataUrl) {
+        const parsed = parseDataUrl(d.dataUrl);
+        if (!parsed) {
+          skipped.push(`${d.name}: invalid data URL`);
+          continue;
+        }
+        mime = parsed.mimeType || mime;
+        base64 = parsed.base64;
+        size = parsed.bytes;
+      } else {
+        skipped.push(`${d.name}: no inspectable content`);
+        continue;
+      }
+
+      if (!SUPPORTED_INLINE_TYPES.has(mime)) {
+        skipped.push(`${d.name}: unsupported mime ${mime}`);
+        continue;
+      }
+      if (used >= MAX_TOTAL_DOC_BYTES) {
+        skipped.push(`${d.name}: aggregate size cap reached`);
+        continue;
+      }
       if (size > MAX_DOC_BYTES) {
         skipped.push(`${d.name}: ${Math.round(size / 1024 / 1024)}MB exceeds per-doc cap`);
         continue;
@@ -332,7 +357,7 @@ async function loadDocumentParts(
       parts.push({
         inlineData: {
           mimeType: mime,
-          data: Buffer.from(buf).toString('base64'),
+          data: base64,
         },
       });
       parts.push({ text: `---\nEND DOCUMENT: ${d.name}\n---` });

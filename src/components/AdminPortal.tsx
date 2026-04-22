@@ -10,10 +10,7 @@ import {
   type VerificationIssue,
 } from '@/src/lib/localVerification';
 import { buildPersonaSummary } from '@/src/lib/onboardingWorkflow';
-import {
-  getFallbackUnderwriting,
-  type UnderwritingDisplayResult,
-} from '@/src/lib/underwritingFallback';
+import type { UnderwritingDisplayResult } from '@/src/lib/underwritingFallback';
 import { requestAiReview, type AiReviewResult } from '@/src/lib/aiReview';
 import { ONBOARDING_POLICY_PROMPT } from '@/src/lib/ruleBasedWorkflow';
 import { usePersistentState } from '@/src/lib/persistentState';
@@ -241,8 +238,7 @@ export function AdminPortal({
     setAiElapsedMs(0);
     const toastId = opts.silent ? undefined : toast.loading('AI reviewing application...');
     try {
-      const rule = underwritingResult ?? getFallbackUnderwriting(merchantData);
-      const result = await requestAiReview(merchantData, rule, documents);
+      const result = await requestAiReview(merchantData, documents);
       setAiReview(result);
       setUnderwritingResult(null);
       const elapsed = Date.now() - startedAt;
@@ -257,7 +253,7 @@ export function AdminPortal({
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setAiError(msg);
-      setUnderwritingResult(getFallbackUnderwriting(merchantData));
+      setUnderwritingResult(null);
       if (toastId !== undefined) {
         toast.error('AI review failed', { id: toastId, description: msg });
       }
@@ -786,11 +782,11 @@ function Workbench(props: WorkbenchProps) {
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-6 py-6 sm:px-10">
         <div className="mx-auto max-w-6xl space-y-6 pb-24">
-          {aiError && underwritingResult && (
+          {aiError && (
             <Banner
               intent="warning"
-              title="AI unavailable — deterministic baseline shown"
-              description={`${aiError} Local policy-check output is restored below so you can still decide. Re-run AI when the service recovers.`}
+              title="AI review unavailable"
+              description={`${aiError} No underwriting recommendation was generated. Re-run AI when the service recovers or use the advanced manual override with documented rationale.`}
             />
           )}
 

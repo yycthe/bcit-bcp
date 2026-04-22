@@ -12,7 +12,7 @@ import {
   getMissingDocumentKeys,
   type MerchantDocumentKey,
 } from '@/src/lib/documentChecklist';
-import { getFallbackUnderwriting, type UnderwritingDisplayResult } from '@/src/lib/underwritingFallback';
+import type { UnderwritingDisplayResult } from '@/src/lib/underwritingFallback';
 import { prepareFileForUpload } from '@/src/lib/uploadPreparation';
 import type { VerificationIssue } from '@/src/lib/localVerification';
 import {
@@ -230,8 +230,7 @@ export function MerchantPortal({
 
   const runUnderwritingOnSubmit = useCallback(
     (data: MerchantData) => {
-      const result = getFallbackUnderwriting(data);
-      setUnderwritingResult(result);
+      setUnderwritingResult(null);
       setMerchantData({
         ...data,
         matchedProcessor: '',
@@ -240,7 +239,7 @@ export function MerchantPortal({
         processorReadyPackageSummary: '',
       });
       toast.success('Application submitted for AI review', {
-        description: `Suggested route: ${result.recommendedProcessor}. Admin must confirm before follow-up.`,
+        description: 'AI will review the full application. Admin will confirm the final routing.',
       });
     },
     [setUnderwritingResult, setMerchantData]
@@ -487,6 +486,21 @@ export function MerchantPortal({
                         >
                           <Upload className="h-3.5 w-3.5" />
                           Upload
+                        </Button>
+                      )}
+                      {item.target.kind === 'intake' && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="brand"
+                          className="shrink-0"
+                          onClick={() => {
+                            setEditSection(item.target.questionId);
+                            setIsFinished(false);
+                            setCurrentView('intake');
+                          }}
+                        >
+                          Update
                         </Button>
                       )}
                     </li>
