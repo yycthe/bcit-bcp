@@ -128,8 +128,11 @@ export function MerchantPortal({
   const [currentStepInfo, setCurrentStepInfo] = useState<ChatAppStepInfo | null>(null);
   /** Incremented when sidebar autofill should auto-advance a button question in ChatApp. */
   const [autofillAdvanceToken, setAutofillAdvanceToken] = useState(0);
+  /** After switching to Intake, wait for ChatApp to report `currentStepInfo` then run step autofill. */
+  const [pendingStepAutofill, setPendingStepAutofill] = useState(false);
 
   const inlineUploadRef = useRef<HTMLInputElement>(null);
+  const prevIntakeSessionKeyRef = useRef<number | null>(null);
   const inlineUploadTargetRef = useRef<MerchantDocumentKey | null>(null);
 
   const handleInlineUpload = useCallback((key: MerchantDocumentKey) => {
@@ -178,6 +181,18 @@ export function MerchantPortal({
   useEffect(() => {
     if (appStatus === 'approved' && currentView === 'status') setCurrentView('agreement');
   }, [appStatus, currentView]);
+
+  /** New ChatApp mount = new wizard session; drop stale step metadata from the previous mount. */
+  useEffect(() => {
+    if (prevIntakeSessionKeyRef.current === null) {
+      prevIntakeSessionKeyRef.current = intakeSessionKey;
+      return;
+    }
+    if (prevIntakeSessionKeyRef.current !== intakeSessionKey) {
+      prevIntakeSessionKeyRef.current = intakeSessionKey;
+      setCurrentStepInfo(null);
+    }
+  }, [intakeSessionKey]);
 
   useEffect(() => {
     const hasProgress = currentView === 'intake' && !isFinished && merchantData.legalName?.trim();
@@ -297,72 +312,8 @@ export function MerchantPortal({
     [activeDemoProfile.id, activeDemoProfile.label]
   );
 
-  /**
-   * Fill ONLY the fields that belong to the intake step the merchant is
-   * currently looking at, using the selected demo profile. Lets you step
-   * through the wizard page by page with realistic sample data while still
-   * testing each screen's own validation & navigation.
-   */
-  const autofillCurrentStep = () => {
-    if (currentView !== 'intake') {
-      setCurrentView('intake');
-    }
-    if (!currentStepInfo || currentStepInfo.fieldKeys.length === 0) {
-      toast.message('Nothing to autofill on this step', {
-        description:
-          'The current step has no form fields (system checkpoint or document upload). Continue to the next question.',
-      });
-      return;
-    }
-    const profile = activeDemoProfile;
-    const patch: Partial<MerchantData> = {};
-    const filledLabels: string[] = [];
-    const uploadedLabels: string[] = [];
-    for (const key of currentStepInfo.fieldKeys) {
-      const typedKey = key as keyof MerchantData;
-      const value = profile.data[typedKey];
-      if (typeof value === 'string') {
-        (patch as Record<string, string>)[key] = value;
-        if (value.trim()) filledLabels.push(key);
-      } else if (DOCUMENT_KEYS.includes(key as MerchantDocumentKey)) {
-        if (useMockUploads) {
-          (patch as Record<string, FileData>)[key] = makeDemoFile(key as MerchantDocumentKey);
-          uploadedLabels.push(key);
-        }
-      }
-    }
-    if (filledLabels.length === 0 && uploadedLabels.length === 0) {
-      const onUploadStep = currentStepInfo.fieldKeys.some((k) =>
-        DOCUMENT_KEYS.includes(k as MerchantDocumentKey)
-      );
-      if (onUploadStep && !useMockUploads) {
-        toast.message('Real upload mode is on', {
-          description: 'This step expects a real file upload. Use the Upload control to continue.',
-        });
-        return;
-      }
-      toast.message('No demo values for this step', {
-        description: `${profile.label} does not have sample values for these fields.`,
-      });
-      return;
-    }
-    setMerchantData({ ...merchantData, ...patch });
-    const shouldAutoAdvance =
-      (currentStepInfo.type === 'buttons' || currentStepInfo.type === 'dropdown') &&
-      filledLabels.length > 0;
-    if (shouldAutoAdvance) {
-      setAutofillAdvanceToken((t) => t + 1);
-    }
-    toast.success(`Autofilled this step — ${profile.label}`, {
-      description:
-        `${filledLabels.length} text field${filledLabels.length === 1 ? '' : 's'} filled` +
-        `${uploadedLabels.length ? `, ${uploadedLabels.length} file${uploadedLabels.length === 1 ? '' : 's'} mocked` : ''}. ` +
-        `${shouldAutoAdvance ? 'Auto-continued to the next step.' : 'Review, edit, or continue.'}`,
-    });
-  };
-
-  /** Fill complete demo profile and open Review in one click. */
-  const autofillAndOpenReview = () => {
+  /** Replace merchant snapshot with the selected demo profile (+ optional mock files). */
+  const applyDemoMerchantSnapshot = useCallback(() => {
     const profile = activeDemoProfile;
     const filePatch = useMockUploads
       ? DOCUMENT_KEYS.reduce(
@@ -378,14 +329,137 @@ export function MerchantPortal({
     setDocuments([]);
     setUnderwritingResult(null);
     setAppStatus('draft');
+    onDismissMerchantNotice();
+    onClearVerificationIssues();
+  }, [
+    activeDemoProfile,
+    useMockUploads,
+    makeDemoFile,
+    setMerchantData,
+    setAiFieldHints,
+    setDocuments,
+    setUnderwritingResult,
+    setAppStatus,
+    onDismissMerchantNotice,
+    onClearVerificationIssues,
+  ]);
+
+  const executeStepAutofill = useCallback(
+    (step: ChatAppStepInfo) => {
+      const profile = activeDemoProfile;
+      const patch: Partial<MerchantData> = {};
+      const filledLabels: string[] = [];
+      const uploadedLabels: string[] = [];
+      for (const key of step.fieldKeys) {
+        const value = profile.data[key as keyof MerchantData];
+        if (typeof value === 'string') {
+          (patch as Record<string, string>)[key] = value;
+          if (value.trim()) filledLabels.push(key);
+        } else if (DOCUMENT_KEYS.includes(key as MerchantDocumentKey)) {
+          if (useMockUploads) {
+            (patch as Record<string, FileData>)[key] = makeDemoFile(key as MerchantDocumentKey);
+            uploadedLabels.push(key);
+          }
+        }
+      }
+      if (filledLabels.length === 0 && uploadedLabels.length === 0) {
+        const onUploadStep = step.fieldKeys.some((k) =>
+          DOCUMENT_KEYS.includes(k as MerchantDocumentKey)
+        );
+        if (onUploadStep && !useMockUploads) {
+          toast.message('Real upload mode is on', {
+            description: 'This step expects a real file upload. Use the Upload control to continue.',
+          });
+          return;
+        }
+        toast.message('No demo values for this step', {
+          description: `${profile.label} does not have sample values for these fields.`,
+        });
+        return;
+      }
+      setMerchantData((prev) => ({ ...prev, ...patch }));
+      const shouldAutoAdvance =
+        (step.type === 'buttons' || step.type === 'dropdown') && filledLabels.length > 0;
+      if (shouldAutoAdvance) {
+        setAutofillAdvanceToken((t) => t + 1);
+      }
+      toast.success(`Sample filled — ${profile.label}`, {
+        description:
+          `${filledLabels.length} text field${filledLabels.length === 1 ? '' : 's'} filled` +
+          `${uploadedLabels.length ? `, ${uploadedLabels.length} file${uploadedLabels.length === 1 ? '' : 's'} mocked` : ''}. ` +
+          `${shouldAutoAdvance ? 'Auto-continued to the next step.' : 'Review, edit, or continue.'}`,
+      });
+    },
+    [activeDemoProfile, useMockUploads, makeDemoFile, setMerchantData, setAutofillAdvanceToken]
+  );
+
+  useEffect(() => {
+    if (currentView !== 'intake') {
+      setPendingStepAutofill(false);
+    }
+  }, [currentView]);
+
+  useEffect(() => {
+    if (!pendingStepAutofill || currentView !== 'intake') return;
+
+    if (currentStepInfo && currentStepInfo.fieldKeys.length === 0) {
+      setPendingStepAutofill(false);
+      toast.message('Nothing to autofill on this step', {
+        description:
+          'No text fields on this screen (checkpoint or upload). Continue, or use “Fill all sample + Open Review”.',
+      });
+      return;
+    }
+
+    if (currentStepInfo && currentStepInfo.fieldKeys.length > 0) {
+      setPendingStepAutofill(false);
+      executeStepAutofill(currentStepInfo);
+      return;
+    }
+
+    const t = window.setTimeout(() => {
+      setPendingStepAutofill(false);
+      toast.message('Could not detect the current Intake step', {
+        description: 'Try “Fill all sample + Open Review”, or open Intake and wait for the first question to load.',
+      });
+    }, 2500);
+    return () => window.clearTimeout(t);
+  }, [pendingStepAutofill, currentView, currentStepInfo, executeStepAutofill]);
+
+  /**
+   * Fill the current intake step from the selected demo profile.
+   * Works from any tab: switches to Intake, re-opens the wizard if it was finished, then fills once ChatApp reports the step.
+   */
+  const onDemoFillThisStepClick = () => {
+    if (currentView !== 'intake') {
+      setCurrentView('intake');
+      setIsFinished(false);
+      setIntakeSessionKey((k) => k + 1);
+      setPendingStepAutofill(true);
+      return;
+    }
+    if (isFinished) {
+      setIsFinished(false);
+      setIntakeSessionKey((k) => k + 1);
+      setPendingStepAutofill(true);
+      return;
+    }
+    if (!currentStepInfo || currentStepInfo.fieldKeys.length === 0) {
+      setPendingStepAutofill(true);
+      return;
+    }
+    executeStepAutofill(currentStepInfo);
+  };
+
+  /** Fill complete demo profile and open Review in one click. */
+  const autofillAndOpenReview = () => {
+    applyDemoMerchantSnapshot();
     setIsFinished(true);
     setEditSection(null);
     setGuidedTourOrder(null);
     setIntakeSessionKey((k) => k + 1);
     setCurrentView('review');
-    onDismissMerchantNotice();
-    onClearVerificationIssues();
-    toast.message(`Demo loaded — ${profile.label}`, {
+    toast.message(`Demo loaded — ${activeDemoProfile.label}`, {
       description: useMockUploads
         ? 'All intake fields filled with mock files. Review opened.'
         : 'All non-file intake fields filled. Review opened; upload steps remain real-file only.',
@@ -571,20 +645,11 @@ export function MerchantPortal({
             variant="outline"
             size="sm"
             className="w-full justify-start gap-2 text-xs"
-            onClick={autofillCurrentStep}
-            disabled={currentView !== 'intake'}
-            title={
-              currentView !== 'intake'
-                ? 'Switch to the Intake assistant to use this shortcut.'
-                : currentStepInfo
-                ? `Fill this step (${currentStepInfo.fieldKeys.length} field${
-                    currentStepInfo.fieldKeys.length === 1 ? '' : 's'
-                  }) with sample values`
-                : 'Fill this step with sample values'
-            }
+            onClick={onDemoFillThisStepClick}
+            title="Fills the current Intake screen with the selected sample company. Switches to Intake automatically if needed."
           >
             <Wand2 className="h-3.5 w-3.5 shrink-0" />
-            Autofill this step
+            Fill sample for this step
           </Button>
           <Button
             type="button"
@@ -592,10 +657,10 @@ export function MerchantPortal({
             size="sm"
             className="w-full justify-start gap-2 text-xs"
             onClick={autofillAndOpenReview}
-            title="Fill all fields for selected sample company and open Review"
+            title="Load the full sample company into the form and open Review"
           >
             <Wand2 className="h-3.5 w-3.5 shrink-0" />
-            Autofill all + Open Review
+            Fill all sample + Open Review
           </Button>
           <Button
             type="button"
