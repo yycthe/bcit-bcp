@@ -366,7 +366,7 @@ function getQuestionStage(questionId: QuestionId): string {
 
 function getFieldPlaceholder(fieldId: keyof MerchantData, data: MerchantData): string {
   const placeholders: Partial<Record<keyof MerchantData, string>> = {
-    legalName: 'BCIT BCP Holdings Inc.',
+    legalName: 'Fintechwerx BCP Holdings Inc.',
     dbaName: 'Leave blank if none',
     taxId: data.country === 'US' ? '12-3456789' : 'Business number / tax registration',
     businessRegistrationNumber: 'Corporation, registration, or GST/HST number',
@@ -406,7 +406,7 @@ function getFieldPlaceholder(fieldId: keyof MerchantData, data: MerchantData): s
     ownerIdNumber: 'Passport or DL number',
     ownerCountryOfResidence: 'Canada',
     bankName: 'RBC',
-    accountHolderName: 'BCIT BCP Holdings Inc.',
+    accountHolderName: 'Fintechwerx BCP Holdings Inc.',
     accountNumber: 'Account number or IBAN',
     routingNumber: 'Transit / routing / branch code',
     settlementCurrency: 'CAD',
@@ -572,7 +572,7 @@ const getQuestionText = (qId: QuestionId, data: MerchantData): string => {
   const volume = data.monthlyVolume;
   
   const contextualTexts: Partial<Record<QuestionId, () => string>> = {
-    businessType: () => "Hi there! I'm here to help you get set up with BCIT BCP. First, what type of business structure are you operating?",
+    businessType: () => "Hi there! I'm here to help you get set up with Fintechwerx BCP. First, what type of business structure are you operating?",
     
     country: () => {
       const typeLabels: Record<string, string> = {
@@ -728,7 +728,7 @@ const getQuestionText = (qId: QuestionId, data: MerchantData): string => {
 const QUESTIONS: Partial<Record<QuestionId, QuestionDef>> = {
   businessType: {
     id: 'businessType',
-    text: "Hi there! I'm here to help you get set up with BCIT BCP. First, what type of business are you operating?",
+    text: "Hi there! I'm here to help you get set up with Fintechwerx BCP. First, what type of business are you operating?",
     type: 'buttons',
     options: [
       { label: 'Sole Proprietorship', value: 'sole_proprietorship' },

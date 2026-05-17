@@ -49,7 +49,7 @@ export function AgreementPage({ data, onSign }: Props) {
                 className="mt-1 text-2xl font-semibold tracking-tight text-foreground"
                 style={{ fontFamily: 'var(--font-serif)' }}
               >
-                BCIT BCP Master Services Agreement
+                Fintechwerx BCP Master Services Agreement
               </h1>
               <p className="mt-1 text-xs text-foreground-muted">
                 Effective {new Date().toLocaleDateString()}
@@ -66,7 +66,7 @@ export function AgreementPage({ data, onSign }: Props) {
           >
             <p>
               This Master Services Agreement (the "Agreement") is entered into by and between{' '}
-              <strong>BCIT BCP</strong> ("Provider") and <strong>{merchantName}</strong>{' '}
+              <strong>Fintechwerx BCP</strong> ("Provider") and <strong>{merchantName}</strong>{' '}
               ("Merchant"), located at <strong>{merchantAddress}</strong>.
             </p>
 
@@ -80,7 +80,7 @@ export function AgreementPage({ data, onSign }: Props) {
               </h2>
               <p>
                 Provider agrees to provide Merchant with payment processing services, gateway
-                access, and related financial technology solutions as described in the BCIT BCP
+                access, and related financial technology solutions as described in the Fintechwerx BCP
                 Terms of Service. Provider will facilitate the transmission of transaction data to
                 the applicable acquiring banks and card networks.
               </p>
@@ -112,7 +112,7 @@ export function AgreementPage({ data, onSign }: Props) {
                 3. Fees & settlement
               </h2>
               <p>
-                Fees for the Services will be assessed according to the standard BCIT BCP pricing
+                Fees for the Services will be assessed according to the standard Fintechwerx BCP pricing
                 schedule unless otherwise negotiated in writing. Settlement of funds will be made
                 to the bank account provided by the Merchant during the onboarding process,
                 subject to standard holding periods and reserve requirements.
@@ -235,12 +235,12 @@ export function AgreementPage({ data, onSign }: Props) {
               <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground-subtle">
                 Counterparty
               </p>
-              <p className="mt-1 text-sm font-medium text-foreground">BCIT BCP</p>
+              <p className="mt-1 text-sm font-medium text-foreground">Fintechwerx BCP</p>
               <p
                 className="text-2xl text-accent-strong"
                 style={{ fontFamily: "'Caveat', 'Brush Script MT', cursive" }}
               >
-                BCIT BCP Admin
+                Fintechwerx BCP Admin
               </p>
               <p className="text-[11px] text-foreground-muted">
                 Authorized representative · {new Date().toLocaleDateString()}

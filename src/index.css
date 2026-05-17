@@ -2,14 +2,14 @@
 
 @theme {
   /* ── Brand & accent ─────────────────────────────────────────────── */
-  --color-brand: hsl(160 84% 32%);
-  --color-brand-strong: hsl(160 84% 26%);
-  --color-brand-soft: hsl(152 76% 95%);
+  --color-brand: hsl(217 91% 45%);
+  --color-brand-strong: hsl(217 91% 36%);
+  --color-brand-soft: hsl(214 100% 96%);
   --color-brand-foreground: hsl(0 0% 100%);
 
-  --color-accent: hsl(217 91% 50%);
-  --color-accent-strong: hsl(217 91% 42%);
-  --color-accent-soft: hsl(214 100% 96%);
+  --color-accent: hsl(210 95% 55%);
+  --color-accent-strong: hsl(210 95% 45%);
+  --color-accent-soft: hsl(210 100% 96%);
   --color-accent-foreground: hsl(0 0% 100%);
 
   /* ── Semantic intents ───────────────────────────────────────────── */
@@ -42,7 +42,7 @@
 
   --color-border: hsl(220 16% 88%);
   --color-border-strong: hsl(220 14% 78%);
-  --color-ring: hsl(160 84% 32%);
+  --color-ring: hsl(217 91% 45%);
 
   /* ── shadcn-style aliases for ui/* primitives ───────────────────── */
   --color-background: hsl(0 0% 100%);
@@ -110,7 +110,7 @@
 
   /* Subtle, branded text-selection */
   ::selection {
-    background-color: hsl(160 84% 32% / 0.18);
+    background-color: hsl(217 91% 45% / 0.18);
     color: var(--color-foreground);
   }
 
@@ -123,8 +123,8 @@
 @layer utilities {
   .bg-surface-gradient {
     background-image:
-      radial-gradient(ellipse 60% 40% at 0% 0%, hsl(160 84% 32% / 0.06), transparent 70%),
-      radial-gradient(ellipse 60% 40% at 100% 0%, hsl(217 91% 50% / 0.05), transparent 70%),
+      radial-gradient(ellipse 60% 40% at 0% 0%, hsl(217 91% 45% / 0.08), transparent 70%),
+      radial-gradient(ellipse 60% 40% at 100% 0%, hsl(210 95% 55% / 0.06), transparent 70%),
       linear-gradient(180deg, var(--color-surface-muted), var(--color-surface));
   }
 

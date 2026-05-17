@@ -37,14 +37,14 @@ export function AppShell({ viewMode, onChangeViewMode, appStatus, children }: Ap
               className="flex h-9 w-9 items-center justify-center rounded-lg text-white shadow-sm"
               style={{
                 background:
-                  'linear-gradient(135deg, hsl(160 84% 32%), hsl(217 91% 50%))',
+                  'linear-gradient(135deg, hsl(217 91% 45%), hsl(210 95% 55%))',
               }}
             >
               <Building2 className="h-4 w-4" />
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold tracking-tight text-foreground">
-                BCIT BCP
+                Fintechwerx BCP
               </p>
               <p className="truncate text-[11px] text-foreground-subtle">
                 Merchant onboarding workspace
